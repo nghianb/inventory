@@ -50,7 +50,7 @@ Quy tắc chọn **Slot** Còn hàng cho một **Dòng xuất**: slot của **T�
 Số ngày **Hạn sử dụng** còn lại ít nhất mà một **Slot** phải có để được giao, do **Sản phẩm** khai báo, mặc định 0. Slot không đạt vẫn là tồn kho nhưng không bán được.
 
 **Giá bán** (Sale price):
-Tổng số tiền (VND) khách trả cho cả một **Dòng xuất**, không phải đơn giá; ghi tuỳ chọn khi xuất, trừ khi **Kênh bán** bắt buộc. Kho chỉ lưu để tính lãi/lỗ, không quản lý việc bán.
+Tổng số tiền (VND) khách trả cho cả một **Dòng xuất**, không phải đơn giá; ghi tuỳ chọn khi xuất, trừ khi **Kênh bán** bắt buộc. Dòng xuất loại **Giao thay** không có Giá bán. Khi khách được hoàn tiền ngoài kho, Giá bán được sửa xuống số tiền shop thực giữ. Kho chỉ lưu để tính **Lãi gộp**, không quản lý việc bán.
 
 **Giao thêm** (Additional delivery):
 Thêm **Dòng xuất** mới vào một **Phiếu xuất** đã Hoàn tất, khi khách của cùng đơn mua thêm. Phần thêm giữ đủ hoặc thất bại.
@@ -87,7 +87,17 @@ Quản trị chuyển một **Đơn vị hàng** sang Lỗi mà không cần **B
 Quản trị đưa một **Đơn vị hàng** Lỗi về Hoạt động, kèm lý do, khi nhà cung cấp sửa được hàng. Đơn vị hàng không còn tính vào **Tỉ lệ lỗi** và bị gỡ khỏi **Khiếu nại nhà cung cấp** chưa giải quyết; **Báo lỗi** và **Đổi hàng** đã làm giữ nguyên.
 
 **Chi phí đổi hàng** (Replacement cost):
-**Giá vốn** của **Slot** giao ra trong một **Đổi hàng**. Gắn với **Nhà cung cấp** của **Đơn vị hàng** lỗi, không cộng vào lãi/lỗ của **Phiếu xuất** gốc.
+**Giá vốn** của **Slot** giao ra trong một **Đổi hàng**. Gắn với **Nhà cung cấp** và **Sản phẩm** của **Đơn vị hàng** lỗi, không trừ vào **Lãi gộp** của **Phiếu xuất** gốc mà trừ vào **Lãi ròng kho**.
+
+**Lãi gộp** (Gross profit):
+**Giá bán** trừ **Giá vốn** của các **Slot** khách thực nhận, tính theo thời điểm **Giao hàng**. Slot giao nhầm đã **Huỷ hàng** không tính; Slot của **Giao thay** tính vào **Dòng xuất** gốc. Dòng xuất chưa có Giá bán không tính vào Lãi gộp. Hàng thay thế từ **Khiếu nại nhà cung cấp** không ghi thu nhập riêng, vì Giá vốn 0 đã phản ánh bồi hoàn khi bán.
+_Avoid_: lãi (khi không rõ gộp hay ròng)
+
+**Tổn thất** (Loss):
+**Giá vốn** của **Slot** rời vòng đời bán mà không thu tiền, tính theo thời điểm phát sinh: Tổn thất hàng Lỗi (Slot còn trong kho khi **Đơn vị hàng** chuyển Lỗi, mất đi nếu **Khôi phục**), Tổn thất **Huỷ hàng** (theo lý do) và Tổn thất hết hạn (Slot Còn hàng quá **Hạn sử dụng**). Mỗi Slot chỉ tính tổn thất một lần. Hàng bị **Huỷ nhập** không phải tổn thất.
+
+**Lãi ròng kho** (Net stock profit):
+**Lãi gộp** trừ **Chi phí đổi hàng** và **Tổn thất**, cộng bồi hoàn tiền từ **Khiếu nại nhà cung cấp** (tính theo ngày giải quyết). Chỉ là lãi của hàng hoá, không gồm chi phí vận hành của shop. Luôn tính lại theo dữ liệu hiện tại, nên con số của một kỳ cũ có thể đổi.
 
 **Tồn lỗi** (Defective stock):
 Các **Slot** Còn hàng của **Đơn vị hàng** Lỗi: vẫn nằm trong kho nhưng không bán được, tách khỏi **Tồn bán được** trong báo cáo và cảnh báo sắp hết.
@@ -182,4 +192,5 @@ _Avoid_: xoá nhân viên
 - "audit log" từng dùng chung cho mọi thứ được ghi lại. Đã chốt: tách thành **Nhật ký xem mã** (ai thấy mã nào), **Nhật ký bảo mật** (ai vào hệ thống, ai đổi quyền của ai), **Sổ biến động kho** (chuyển trạng thái) và lịch sử sửa **Phiếu xuất**.
 - "tỉ lệ lỗi tháng X" có thể hiểu là số hàng chuyển Lỗi trong tháng chia số hàng giao trong tháng. Đã chốt: **Tỉ lệ lỗi** tính theo lứa nhập, tử số và mẫu số trên cùng một tập Đơn vị hàng.
 - "tồn kho" từng gộp cả Slot đang giữ và hàng không bán được. Đã chốt: cảnh báo và con số chính dùng **Tồn bán được**; Slot Đã giữ, tạm ngừng, không đạt hạn tối thiểu và **Tồn lỗi** hiện tách riêng.
+- "lãi/lỗ" có thể hiểu là chỉ Giá bán trừ Giá vốn hàng đã giao. Đã chốt: tách **Lãi gộp** và **Lãi ròng kho**; hàng lỗi, huỷ, hết hạn và Chi phí đổi hàng chỉ trừ vào Lãi ròng kho.
 - Hàng nhập nhầm từng chỉ có cách Huỷ hàng, khiến Mã dùng một lần không nhập lại được. Đã chốt: tách riêng **Huỷ nhập**, giải phóng Khoá chống trùng.
