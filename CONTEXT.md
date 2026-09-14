@@ -70,20 +70,42 @@ Ngày tuỳ chọn mà sau đó **Đơn vị hàng** không được bán nữa,
 _Avoid_: thời hạn (dễ nhầm với **Hạn bảo hành**)
 
 **Hạn bảo hành** (Warranty end):
-Ngày **Giao hàng** cộng thời hạn bảo hành của **Sản phẩm**. Là giá trị suy ra, không phải trạng thái.
+Ngày **Giao hàng** cộng thời hạn bảo hành của **Sản phẩm**, nhưng không vượt quá **Hạn sử dụng** của **Slot**. Là giá trị suy ra, không phải trạng thái. **Đổi hàng** kế thừa Hạn bảo hành của lần giao gốc, không tính lại. Hết Hạn sử dụng không bao giờ là lỗi.
 
 **Huỷ hàng** (Void):
-Loại một **Slot** hoặc **Đơn vị hàng** khỏi vòng đời bán, kèm lý do: giao nhầm, nhà cung cấp thu hồi, hỏng khi còn trong kho.
+Việc shop tự loại một **Slot** hoặc **Đơn vị hàng** khỏi vòng đời bán vì lý do không phải lỗi hàng, kèm lý do: giao nhầm, nhân viên làm lộ nội dung, ngừng kinh doanh lô hàng. Hàng hỏng hoặc bị nhà cung cấp thu hồi thì dùng **Đánh dấu Lỗi**.
 _Avoid_: xoá, thu hồi về kho
 
+**Đánh dấu Lỗi** (Mark defective):
+Quản trị chuyển một **Đơn vị hàng** sang Lỗi mà không cần **Báo lỗi** của khách, khi nhà cung cấp thu hồi hoặc phát hiện hỏng trong kho. Vẫn sinh danh sách **Lần giao bị ảnh hưởng**.
+
+**Khôi phục** (Restore):
+Quản trị đưa một **Đơn vị hàng** Lỗi về Hoạt động, kèm lý do, khi nhà cung cấp sửa được hàng. Đơn vị hàng không còn tính vào **Tỉ lệ lỗi** và bị gỡ khỏi **Khiếu nại nhà cung cấp** chưa giải quyết; **Báo lỗi** và **Đổi hàng** đã làm giữ nguyên.
+
+**Chi phí đổi hàng** (Replacement cost):
+**Giá vốn** của **Slot** giao ra trong một **Đổi hàng**. Gắn với **Nhà cung cấp** của **Đơn vị hàng** lỗi, không cộng vào lãi/lỗ của **Phiếu xuất** gốc.
+
+**Tồn lỗi** (Defective stock):
+Các **Slot** Còn hàng của **Đơn vị hàng** Lỗi: vẫn nằm trong kho nhưng không bán được, tách khỏi tồn bán được trong báo cáo và cảnh báo sắp hết.
+
+**Tỉ lệ lỗi** (Defect rate):
+Của một **Nhà cung cấp**: số **Đơn vị hàng** Lỗi chia cho số Đơn vị hàng đã giao ít nhất một **Slot**. Tử số gồm Lỗi từ **Báo lỗi** có **Phạm vi lỗi** cả Đơn vị hàng và Lỗi do **Đánh dấu Lỗi**, không gồm hàng đã **Khôi phục**. Không gồm **Giao thay** hay Báo lỗi chỉ Slot.
+
 **Báo lỗi** (Defect report):
-Ghi nhận một **Slot** đã giao nhưng không dùng được. Có trạng thái Chờ xác minh, Xác nhận hoặc Bác bỏ. Trong lúc Chờ xác minh, các Slot còn trong kho của cùng **Đơn vị hàng** tạm ngừng bán; khi Xác nhận thì Đơn vị hàng chuyển sang Lỗi.
+Ghi nhận một **Slot** đã giao (của **Tài khoản** hoặc **Mã dùng một lần**) nhưng không dùng được, do nhân viên tạo trong **Hạn bảo hành**. Có trạng thái Chờ xác minh, Xác nhận hoặc Bác bỏ. Trong lúc Chờ xác minh, các Slot còn trong kho của cùng **Đơn vị hàng** tạm ngừng bán. Khi Xác nhận, người xác minh chọn **Phạm vi lỗi**. Báo lỗi đã Xác nhận có **Kết quả xử lý**: Chờ đổi, Đã đổi hoặc Không đổi.
+_Avoid_: bảo hành (khi nói về một lần khách báo)
+
+**Phạm vi lỗi** (Defect scope):
+Mức mà một **Báo lỗi** đã Xác nhận ảnh hưởng: **cả Đơn vị hàng** (Đơn vị hàng chuyển sang Lỗi, tính vào tỉ lệ lỗi **Nhà cung cấp**) hoặc **chỉ Slot** (Đơn vị hàng vẫn Hoạt động, ví dụ một profile bị khách khác phá).
+
+**Lần giao bị ảnh hưởng** (Affected delivery):
+Lần **Giao hàng** khác của một **Đơn vị hàng** vừa chuyển sang Lỗi. Hệ thống liệt kê để nhân viên chủ động liên hệ khách và tạo **Báo lỗi** hàng loạt, tự Xác nhận; không tự **Đổi hàng**.
 
 **Đổi hàng** (Replacement):
-Giao một **Slot** khác thay cho **Slot** bị **Báo lỗi**, có liên kết với lần **Giao hàng** gốc. Kho không xử lý hoàn tiền.
+Giao một **Slot** khác thay cho **Slot** có **Báo lỗi** đã Xác nhận, có liên kết với lần **Giao hàng** gốc và kế thừa **Hạn bảo hành** của nó. Mặc định cùng **Sản phẩm**; Slot thay thế phải có **Hạn sử dụng** phủ hết Hạn bảo hành kế thừa. Kho không xử lý hoàn tiền; khách nhận hoàn tiền ngoài kho thì Báo lỗi có kết quả Không đổi.
 
 **Khiếu nại nhà cung cấp** (Supplier claim):
-Việc đòi **Nhà cung cấp** bồi hoàn cho **Đơn vị hàng** lỗi.
+Việc đòi một **Nhà cung cấp** bồi hoàn cho một hoặc nhiều **Đơn vị hàng** Lỗi của họ. Có trạng thái Nháp, Đã gửi, Đã giải quyết hoặc Đã huỷ. Khi giải quyết, mỗi Đơn vị hàng có kết quả riêng: bồi hoàn tiền (kèm số tiền), hàng thay thế (vào kho bằng một **Lô nhập** liên kết với Khiếu nại) hoặc bị từ chối. Không bắt buộc khiếu nại mọi Đơn vị hàng Lỗi.
 
 **Ngừng bán** (Discontinue):
 Đánh dấu một **Sản phẩm** không còn được giữ hàng hay giao mới, nhưng vẫn dùng được cho **Đổi hàng** của các lần giao cũ.
@@ -102,7 +124,7 @@ _Avoid_: xoá lô, Huỷ hàng (Huỷ hàng không giải phóng Khoá chống t
 Bên bán hàng số cho shop.
 
 **Giá vốn** (Cost):
-Giá shop trả cho một **Đơn vị hàng**, ghi khi nhập theo **Lô nhập**, dùng để tính lãi/lỗ. Giá vốn của một **Slot** bằng giá vốn Đơn vị hàng chia đều cho số slot.
+Giá shop trả cho một **Đơn vị hàng**, ghi khi nhập theo **Lô nhập**, dùng để tính lãi/lỗ. Giá vốn của một **Slot** bằng giá vốn Đơn vị hàng chia đều cho số slot. Không bao giờ sửa sau khi nhập, kể cả khi được bồi hoàn. Hàng thay thế từ **Khiếu nại nhà cung cấp** có Giá vốn bằng 0.
 
 **Sổ biến động kho** (Stock ledger):
 Nhật ký chỉ-ghi-thêm mọi lần chuyển trạng thái của **Slot** và **Đơn vị hàng**: ai, khi nào, từ trạng thái nào sang trạng thái nào, lý do. Tách biệt với nhật ký xem nội dung mã.
@@ -117,7 +139,9 @@ Nhật ký chỉ-ghi-thêm mọi lần chuyển trạng thái của **Slot** và
 - Một **Phiếu xuất** thuộc đúng một **Kênh bán** và gồm một hoặc nhiều **Dòng xuất**
 - Một **Dòng xuất** thuộc đúng một **Sản phẩm** và gồm một hoặc nhiều lần **Giao hàng**
 - Mỗi lần **Giao hàng** trao đúng một **Slot**
-- Một **Đổi hàng** nối lần **Giao hàng** mới với lần **Giao hàng** có **Báo lỗi**
+- Một **Đổi hàng** nối lần **Giao hàng** mới với lần **Giao hàng** có **Báo lỗi**; Đổi hàng nối tiếp nhau vẫn trỏ về lần giao gốc
+- Mỗi **Báo lỗi** thuộc đúng một lần **Giao hàng**
+- Một **Khiếu nại nhà cung cấp** thuộc đúng một **Nhà cung cấp** và gồm một hoặc nhiều **Đơn vị hàng** Lỗi
 - Mỗi lần chuyển trạng thái sinh đúng một dòng trong **Sổ biến động kho**
 
 ## Flagged ambiguities
@@ -127,4 +151,5 @@ Nhật ký chỉ-ghi-thêm mọi lần chuyển trạng thái của **Slot** và
 - "thời hạn" từng dùng cho cả hạn của hàng lẫn hạn bảo hành. Đã chốt: tách thành **Hạn sử dụng** và **Hạn bảo hành**.
 - "thu hồi" có thể hiểu là đưa Slot đã giao về kho. Đã chốt: không có thao tác này, chỉ có **Huỷ hàng**.
 - "gia hạn tài khoản" có thể hiểu là sửa **Hạn sử dụng** của Đơn vị hàng cũ. Đã chốt: gia hạn là nhập lại thành **Đơn vị hàng** mới, liên kết với cái cũ, có **Giá vốn** riêng.
+- "nhà cung cấp thu hồi" và "hỏng trong kho" từng là lý do **Huỷ hàng**, khiến hàng lỗi không vào tỉ lệ lỗi. Đã chốt: đó là **Đánh dấu Lỗi**; Huỷ hàng chỉ dành cho lý do không phải lỗi hàng.
 - Hàng nhập nhầm từng chỉ có cách Huỷ hàng, khiến Mã dùng một lần không nhập lại được. Đã chốt: tách riêng **Huỷ nhập**, giải phóng Khoá chống trùng.
