@@ -5,8 +5,8 @@ Hệ thống quản lý kho nội bộ cho một shop bán hàng số (CD key, c
 ## Language
 
 **Sản phẩm** (Product):
-Một mặt hàng mà shop bán, ví dụ "Windows 11 Pro key" hay "Netflix Premium 1 tháng". Sản phẩm là loại hàng, không phải từng đơn vị hàng trong kho.
-_Avoid_: mặt hàng, SKU (khi nói về đơn vị trong kho)
+Một mặt hàng mà shop bán, ví dụ "Windows 11 Pro key" hay "Netflix Premium 1 tháng". Sản phẩm là loại hàng, không phải từng đơn vị hàng trong kho. Mỗi thời hạn bán khác nhau là một Sản phẩm riêng, có kho riêng. Sản phẩm khai báo các **Trường nội dung** của hàng thuộc nó. Sản phẩm đã có hàng thì không bị xoá, chỉ có thể **Ngừng bán**.
+_Avoid_: mặt hàng, SKU (khi nói về đơn vị trong kho), gói bán
 
 **Mã dùng một lần** (One-time code):
 Một đơn vị hàng là chuỗi kích hoạt, giao cho đúng một khách và hết giá trị sau khi giao. Gồm cả CD key (Steam, Windows...) và code (gift card, thẻ nạp có mệnh giá, voucher). CD key và code chỉ khác nhau ở thuộc tính của **Sản phẩm**.
@@ -17,24 +17,45 @@ Một đơn vị hàng là thông tin đăng nhập (username, password, có th�
 _Avoid_: acc, nick
 
 **Đơn vị hàng** (Stock unit):
-Một thứ cụ thể nằm trong kho: một **Mã dùng một lần** hoặc một **Tài khoản**.
+Một thứ cụ thể nằm trong kho: một **Mã dùng một lần** hoặc một **Tài khoản**. Có trạng thái Hoạt động, Lỗi hoặc Đã huỷ; khi Lỗi hoặc Đã huỷ thì mọi **Slot** còn trong kho của nó không bán được. Mang **Giá vốn** của cả đơn vị.
 _Avoid_: item, hàng (khi nói chung chung)
 
+**Trường nội dung** (Content field):
+Một phần nội dung của **Đơn vị hàng** do **Sản phẩm** khai báo, ví dụ Serial và Mã thẻ của thẻ nạp, hay username và password của **Tài khoản**. Mỗi trường có cờ nhạy cảm, mặc định bật: trường nhạy cảm được mã hoá và che hoàn toàn; trường không nhạy cảm (ví dụ Serial thẻ nạp) hiển thị và tìm kiếm được. Một trường được chọn làm **Khoá chống trùng**. Khi Sản phẩm đã có hàng, chỉ được thêm trường tuỳ chọn hoặc đổi tên hiển thị.
+
+**Khoá chống trùng** (Dedupe key):
+**Trường nội dung** dùng để phát hiện một **Đơn vị hàng** bị nhập hai lần. Với **Tài khoản** là định danh đăng nhập, không phải mật khẩu. Mã dùng một lần là duy nhất toàn kho mãi mãi; một Tài khoản được nhập lại khi Đơn vị hàng cũ đã bị **Huỷ hàng** hoặc quá **Hạn sử dụng**, và Đơn vị hàng mới liên kết với cái cũ.
+
 **Slot**:
-Một phần của **Tài khoản** được bán cho một khách. Shop tự khai báo số slot tối đa khi nhập; mã dùng một lần coi như có đúng một slot.
+Một phần của **Tài khoản** được bán cho một khách. Shop tự khai báo số slot tối đa khi nhập; mã dùng một lần coi như có đúng một slot. Có trạng thái Còn hàng, Đã giữ, Đã giao hoặc Đã huỷ. Slot đã giao không bao giờ quay về Còn hàng.
 
 **Giữ hàng** (Reserve):
-Tạm khoá một **Slot** cho một đơn để không giao trùng cho đơn khác, trước khi **Giao hàng**.
+Tạm khoá một **Slot** cho một **Phiếu xuất** để không giao trùng cho đơn khác, trước khi **Giao hàng**. Giữ hàng luôn có hạn; quá hạn thì Slot tự trở về Còn hàng. Xuất kho thủ công giữ và giao trong một bước.
 
 **Giao hàng** (Deliver):
-Việc trao nội dung **Slot** cho khách. Đây là thời điểm hàng rời kho và, với **Tài khoản**, là thời điểm bắt đầu tính thời hạn.
+Việc trao nội dung **Slot** cho khách. Đây là thời điểm hàng rời kho và là mốc tính **Hạn bảo hành**.
 _Avoid_: bán (kho không quản lý việc bán)
+
+**Phiếu xuất** (Dispatch):
+Một đơn cần giao từ một **Kênh bán**, gom một hoặc nhiều lần **Giao hàng**, định danh bằng mã đơn ngoài duy nhất trong kênh bán đó. Có trạng thái Đang giữ, Hoàn tất hoặc Đã huỷ; huỷ phiếu thì nhả mọi **Slot** đang giữ. Phiếu xuất giữ đủ số lượng hoặc thất bại toàn bộ, không giao thiếu.
+_Avoid_: đơn hàng (kho không quản lý đơn bán)
 
 **Kênh bán** (Sales channel):
 Nơi phát sinh đơn cần giao: xuất thủ công bởi nhân viên (chat, sàn) hoặc website gọi vào kho.
 
+**Hạn sử dụng** (Expiry date):
+Ngày tuỳ chọn mà sau đó **Đơn vị hàng** không được bán nữa, do nhà cung cấp quyết định (tài khoản hết gói, gift card hết hạn).
+_Avoid_: thời hạn (dễ nhầm với **Hạn bảo hành**)
+
+**Hạn bảo hành** (Warranty end):
+Ngày **Giao hàng** cộng thời hạn bảo hành của **Sản phẩm**. Là giá trị suy ra, không phải trạng thái.
+
+**Huỷ hàng** (Void):
+Loại một **Slot** hoặc **Đơn vị hàng** khỏi vòng đời bán, kèm lý do: giao nhầm, nhà cung cấp thu hồi, hỏng khi còn trong kho.
+_Avoid_: xoá, thu hồi về kho
+
 **Báo lỗi** (Defect report):
-Ghi nhận một **Slot** đã giao nhưng không dùng được.
+Ghi nhận một **Slot** đã giao nhưng không dùng được. Có trạng thái Chờ xác minh, Xác nhận hoặc Bác bỏ. Trong lúc Chờ xác minh, các Slot còn trong kho của cùng **Đơn vị hàng** tạm ngừng bán; khi Xác nhận thì Đơn vị hàng chuyển sang Lỗi.
 
 **Đổi hàng** (Replacement):
 Giao một **Slot** khác thay cho **Slot** bị **Báo lỗi**, có liên kết với lần **Giao hàng** gốc. Kho không xử lý hoàn tiền.
@@ -42,24 +63,35 @@ Giao một **Slot** khác thay cho **Slot** bị **Báo lỗi**, có liên kết
 **Khiếu nại nhà cung cấp** (Supplier claim):
 Việc đòi **Nhà cung cấp** bồi hoàn cho **Đơn vị hàng** lỗi.
 
+**Ngừng bán** (Discontinue):
+Đánh dấu một **Sản phẩm** không còn được giữ hàng hay giao mới, nhưng vẫn dùng được cho **Đổi hàng** của các lần giao cũ.
+
 **Lô nhập** (Batch):
-Một lần nhập hàng vào kho từ một **Nhà cung cấp**, mang **Giá vốn** của các đơn vị hàng trong lô.
+Một lần nhập hàng vào kho từ một **Nhà cung cấp**.
 
 **Nhà cung cấp** (Supplier):
 Bên bán hàng số cho shop.
 
 **Giá vốn** (Cost):
-Giá shop trả cho một đơn vị hàng, xác định theo **Lô nhập**, dùng để tính lãi/lỗ.
+Giá shop trả cho một **Đơn vị hàng**, ghi khi nhập theo **Lô nhập**, dùng để tính lãi/lỗ. Giá vốn của một **Slot** bằng giá vốn Đơn vị hàng chia đều cho số slot.
+
+**Sổ biến động kho** (Stock ledger):
+Nhật ký chỉ-ghi-thêm mọi lần chuyển trạng thái của **Slot** và **Đơn vị hàng**: ai, khi nào, từ trạng thái nào sang trạng thái nào, lý do. Tách biệt với nhật ký xem nội dung mã.
 
 ## Relationships
 
-- Một **Sản phẩm** là loại **Mã dùng một lần** hoặc loại **Tài khoản**
-- Một **Lô nhập** đến từ đúng một **Nhà cung cấp** và chứa nhiều đơn vị hàng của một hoặc nhiều **Sản phẩm**
-- Mỗi **Đơn vị hàng** thuộc đúng một **Lô nhập**
+- Một **Sản phẩm** là loại **Mã dùng một lần** hoặc loại **Tài khoản**, và khai báo một hoặc nhiều **Trường nội dung**
+- Một **Lô nhập** đến từ đúng một **Nhà cung cấp** và chứa nhiều **Đơn vị hàng** của một hoặc nhiều **Sản phẩm**
+- Mỗi **Đơn vị hàng** thuộc đúng một **Lô nhập** và đúng một **Sản phẩm**
 - Một **Tài khoản** có một hoặc nhiều **Slot**; một **Mã dùng một lần** có đúng một **Slot**
-- Mỗi lần **Giao hàng** trao đúng một **Slot** cho một đơn của một **Kênh bán**
+- Một **Phiếu xuất** thuộc đúng một **Kênh bán** và gồm một hoặc nhiều lần **Giao hàng**
+- Mỗi lần **Giao hàng** trao đúng một **Slot**
 - Một **Đổi hàng** nối lần **Giao hàng** mới với lần **Giao hàng** có **Báo lỗi**
+- Mỗi lần chuyển trạng thái sinh đúng một dòng trong **Sổ biến động kho**
 
 ## Flagged ambiguities
 
+- Báo lỗi của khách chưa chắc là hàng lỗi. Đã chốt: **Báo lỗi** phải được xác minh trước khi **Đơn vị hàng** chuyển sang Lỗi.
 - "key" và "code" được dùng lẫn cho nhau. Đã chốt: cả hai đều là **Mã dùng một lần**.
+- "thời hạn" từng dùng cho cả hạn của hàng lẫn hạn bảo hành. Đã chốt: tách thành **Hạn sử dụng** và **Hạn bảo hành**.
+- "thu hồi" có thể hiểu là đưa Slot đã giao về kho. Đã chốt: không có thao tác này, chỉ có **Huỷ hàng**.
