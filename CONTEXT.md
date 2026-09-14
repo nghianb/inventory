@@ -37,11 +37,33 @@ Việc trao nội dung **Slot** cho khách. Đây là thời điểm hàng rời
 _Avoid_: bán (kho không quản lý việc bán)
 
 **Phiếu xuất** (Dispatch):
-Một đơn cần giao từ một **Kênh bán**, gom một hoặc nhiều lần **Giao hàng**, định danh bằng mã đơn ngoài duy nhất trong kênh bán đó. Có trạng thái Đang giữ, Hoàn tất hoặc Đã huỷ; huỷ phiếu thì nhả mọi **Slot** đang giữ. Phiếu xuất giữ đủ số lượng hoặc thất bại toàn bộ, không giao thiếu.
-_Avoid_: đơn hàng (kho không quản lý đơn bán)
+Một đơn cần giao từ một **Kênh bán**, gồm một hoặc nhiều **Dòng xuất**, định danh bằng mã đơn ngoài duy nhất trong kênh bán đó. Ghi thông tin khách dạng văn bản tự do để tra cứu khi bảo hành. Có trạng thái Đang giữ, Hoàn tất hoặc Đã huỷ; huỷ phiếu thì nhả mọi **Slot** đang giữ. Phiếu xuất giữ đủ số lượng cho mọi Dòng xuất hoặc thất bại toàn bộ, không giao thiếu.
+_Avoid_: đơn hàng (kho không quản lý đơn bán), Khách hàng (kho không có thực thể khách)
+
+**Dòng xuất** (Dispatch line):
+Phần của một **Phiếu xuất** dành cho đúng một **Sản phẩm**: số lượng **Slot** cần giao và **Giá bán** tuỳ chọn. Các **Slot** được chọn tự động theo **Thứ tự xuất**, nhân viên không chọn đích danh.
+
+**Thứ tự xuất** (Pick order):
+Quy tắc chọn **Slot** Còn hàng cho một **Dòng xuất**: slot của **Tài khoản** đã giao dở trước, rồi **Hạn sử dụng** gần nhất trước (hàng không có hạn xếp sau), rồi hàng nhập trước. Bỏ qua Slot không đạt **Hạn còn lại tối thiểu**.
+
+**Hạn còn lại tối thiểu** (Minimum remaining shelf life):
+Số ngày **Hạn sử dụng** còn lại ít nhất mà một **Slot** phải có để được giao, do **Sản phẩm** khai báo, mặc định 0. Slot không đạt vẫn là tồn kho nhưng không bán được.
+
+**Giá bán** (Sale price):
+Số tiền (VND) khách trả cho một **Dòng xuất**, ghi tuỳ chọn khi xuất. Kho chỉ lưu để tính lãi/lỗ, không quản lý việc bán.
+
+**Giao thêm** (Additional delivery):
+Thêm **Dòng xuất** mới vào một **Phiếu xuất** đã Hoàn tất, khi khách của cùng đơn mua thêm. Phần thêm giữ đủ hoặc thất bại.
+
+**Giao thay** (Corrective delivery):
+Sửa một lần **Giao hàng** nhầm do nhân viên: **Huỷ hàng** Slot đã giao với lý do giao nhầm, rồi giao Slot khác (có thể của Sản phẩm khác) vào cùng **Phiếu xuất**, liên kết với lần giao bị huỷ. Không đi qua **Báo lỗi** và không tính là hàng lỗi.
+_Avoid_: Đổi hàng (Đổi hàng là do hàng lỗi)
+
+**Mẫu giao hàng** (Delivery template):
+Văn bản do **Sản phẩm** khai báo để ghép nội dung một **Slot** thành tin nhắn gửi khách, gồm các **Trường nội dung**, **Hạn sử dụng**, **Hạn bảo hành** và hướng dẫn cố định. Sản phẩm chưa có mẫu thì dùng mẫu mặc định liệt kê các trường.
 
 **Kênh bán** (Sales channel):
-Nơi phát sinh đơn cần giao: xuất thủ công bởi nhân viên (chat, sàn) hoặc website gọi vào kho.
+Nguồn phát sinh đơn cần giao, do quản trị khai báo, loại thủ công (Shopee, Facebook, Zalo...) hoặc API (website). Mỗi kênh quy định có bắt buộc mã đơn ngoài không; nếu không bắt buộc và nhân viên để trống thì mã được tự sinh.
 
 **Hạn sử dụng** (Expiry date):
 Ngày tuỳ chọn mà sau đó **Đơn vị hàng** không được bán nữa, do nhà cung cấp quyết định (tài khoản hết gói, gift card hết hạn).
@@ -92,7 +114,8 @@ Nhật ký chỉ-ghi-thêm mọi lần chuyển trạng thái của **Slot** và
 - Một **Dòng nhập** thuộc đúng một **Sản phẩm** và chứa nhiều **Đơn vị hàng**
 - Mỗi **Đơn vị hàng** thuộc đúng một **Dòng nhập** (do đó đúng một **Lô nhập** và đúng một **Sản phẩm**)
 - Một **Tài khoản** có một hoặc nhiều **Slot**; một **Mã dùng một lần** có đúng một **Slot**
-- Một **Phiếu xuất** thuộc đúng một **Kênh bán** và gồm một hoặc nhiều lần **Giao hàng**
+- Một **Phiếu xuất** thuộc đúng một **Kênh bán** và gồm một hoặc nhiều **Dòng xuất**
+- Một **Dòng xuất** thuộc đúng một **Sản phẩm** và gồm một hoặc nhiều lần **Giao hàng**
 - Mỗi lần **Giao hàng** trao đúng một **Slot**
 - Một **Đổi hàng** nối lần **Giao hàng** mới với lần **Giao hàng** có **Báo lỗi**
 - Mỗi lần chuyển trạng thái sinh đúng một dòng trong **Sổ biến động kho**
