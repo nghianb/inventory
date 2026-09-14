@@ -56,7 +56,7 @@ Tổng số tiền (VND) khách trả cho cả một **Dòng xuất**, không ph
 Thêm **Dòng xuất** mới vào một **Phiếu xuất** đã Hoàn tất, khi khách của cùng đơn mua thêm. Phần thêm giữ đủ hoặc thất bại.
 
 **Giao thay** (Corrective delivery):
-Sửa một lần **Giao hàng** nhầm do nhân viên: **Huỷ hàng** Slot đã giao với lý do giao nhầm, rồi giao Slot khác (có thể của Sản phẩm khác) vào cùng **Phiếu xuất**, liên kết với lần giao bị huỷ. Không đi qua **Báo lỗi** và không tính là hàng lỗi.
+Sửa một lần **Giao hàng** nhầm do nhân viên: **Huỷ hàng** Slot đã giao với lý do giao nhầm, rồi giao Slot khác (có thể của Sản phẩm khác) vào cùng **Phiếu xuất**, liên kết với lần giao bị huỷ. Giao sang Sản phẩm khác thì thêm một **Dòng xuất** loại Giao thay, dòng cũ giữ nguyên số lượng. Nếu nhân viên chọn Huỷ hàng cả **Đơn vị hàng** thì các lần giao khác của nó là **Lần giao bị ảnh hưởng**. Không đi qua **Báo lỗi** và không tính là hàng lỗi.
 _Avoid_: Đổi hàng (Đổi hàng là do hàng lỗi)
 
 **Mẫu giao hàng** (Delivery template):
@@ -110,7 +110,7 @@ _Avoid_: bảo hành (khi nói về một lần khách báo)
 Mức mà một **Báo lỗi** đã Xác nhận ảnh hưởng: **cả Đơn vị hàng** (Đơn vị hàng chuyển sang Lỗi, tính vào tỉ lệ lỗi **Nhà cung cấp**) hoặc **chỉ Slot** (Đơn vị hàng vẫn Hoạt động, ví dụ một profile bị khách khác phá).
 
 **Lần giao bị ảnh hưởng** (Affected delivery):
-Lần **Giao hàng** khác của một **Đơn vị hàng** vừa chuyển sang Lỗi. Hệ thống liệt kê để nhân viên chủ động liên hệ khách và tạo **Báo lỗi** hàng loạt, tự Xác nhận; không tự **Đổi hàng**.
+Lần **Giao hàng** khác của một **Đơn vị hàng** vừa chuyển sang Lỗi, hoặc vừa bị **Huỷ hàng** cả đơn vị trong một **Giao thay**. Hệ thống liệt kê để nhân viên chủ động liên hệ khách; với Đơn vị hàng Lỗi thì tạo được **Báo lỗi** hàng loạt, tự Xác nhận. Không tự Báo lỗi hay **Đổi hàng**.
 
 **Đổi hàng** (Replacement):
 Giao một **Slot** khác thay cho **Slot** có **Báo lỗi** đã Xác nhận, có liên kết với lần **Giao hàng** gốc và kế thừa **Hạn bảo hành** của nó. Mặc định cùng **Sản phẩm**; Slot thay thế phải có **Hạn sử dụng** phủ hết Hạn bảo hành kế thừa. Kho không xử lý hoàn tiền; khách nhận hoàn tiền ngoài kho thì Báo lỗi có kết quả Không đổi.
@@ -147,7 +147,7 @@ Nhóm quyền gán cho một nhân viên. Có ba vai trò: **Quản trị** (ch�
 Bản ghi mà qua đó nội dung đầy đủ của một **Slot** được hiển thị hoặc tải về: một lần **Giao hàng**, **Đổi hàng**, **Báo lỗi**, **Khiếu nại nhà cung cấp** hoặc **Lô nhập**. Lý do xem suy ra từ ngữ cảnh. Nội dung chỉ xem được qua một ngữ cảnh, trừ **Quản trị** xem hàng Còn hàng kèm lý do tự do.
 
 **Nhật ký xem mã** (Reveal log):
-Nhật ký chỉ-ghi-thêm mỗi lần nội dung đầy đủ bị hiển thị hoặc tải về: ai (nhân viên hoặc **Khoá API**), khi nào, Slot nào, **Ngữ cảnh xem mã**, lý do. Không chứa nội dung mã, không ghi thao tác Copy, lưu vĩnh viễn, chỉ **Quản trị** xem được.
+Nhật ký chỉ-ghi-thêm mỗi lần nội dung đầy đủ bị hiển thị hoặc tải về: ai (nhân viên hoặc **Khoá API**), khi nào, Slot nào, **Ngữ cảnh xem mã**, lý do. Không chứa nội dung mã, không ghi thao tác Copy, trừ Copy tất cả khi màn kết quả chỉ hiện dạng che (từ 50 **Slot** trở lên); lưu vĩnh viễn, chỉ **Quản trị** xem được.
 
 **Nhật ký bảo mật** (Security log):
 Nhật ký chỉ-ghi-thêm các sự kiện về quyền truy cập: đăng nhập, sai 2FA, reset 2FA, tạo hoặc **Khoá nhân viên**, đổi **Vai trò**, tạo, thu hồi hoặc xoay **Khoá API**. Lưu vĩnh viễn, chỉ **Quản trị** xem được.
