@@ -67,7 +67,14 @@ Việc đòi **Nhà cung cấp** bồi hoàn cho **Đơn vị hàng** lỗi.
 Đánh dấu một **Sản phẩm** không còn được giữ hàng hay giao mới, nhưng vẫn dùng được cho **Đổi hàng** của các lần giao cũ.
 
 **Lô nhập** (Batch):
-Một lần nhập hàng vào kho từ một **Nhà cung cấp**.
+Một lần nhập hàng vào kho từ một **Nhà cung cấp**, gồm một hoặc nhiều **Dòng nhập**. Chỉ vào kho khi nhân viên xác nhận sau bước xem trước; ghi lại số dòng bị bỏ vì lỗi hoặc trùng.
+
+**Dòng nhập** (Batch line):
+Phần của một **Lô nhập** dành cho đúng một **Sản phẩm**: một file hoặc một danh sách dán, kèm đơn giá **Giá vốn** và các giá trị mặc định (số slot, **Hạn sử dụng**) cho các **Đơn vị hàng** trong đó.
+
+**Huỷ nhập** (Import reversal):
+Rút lại hàng đã nhập nhầm, coi như chưa từng vào kho: giải phóng **Khoá chống trùng** để nhập lại được, nhưng vẫn giữ bản ghi. Chỉ làm được khi mọi **Slot** liên quan vẫn Còn hàng.
+_Avoid_: xoá lô, Huỷ hàng (Huỷ hàng không giải phóng Khoá chống trùng)
 
 **Nhà cung cấp** (Supplier):
 Bên bán hàng số cho shop.
@@ -81,8 +88,9 @@ Nhật ký chỉ-ghi-thêm mọi lần chuyển trạng thái của **Slot** và
 ## Relationships
 
 - Một **Sản phẩm** là loại **Mã dùng một lần** hoặc loại **Tài khoản**, và khai báo một hoặc nhiều **Trường nội dung**
-- Một **Lô nhập** đến từ đúng một **Nhà cung cấp** và chứa nhiều **Đơn vị hàng** của một hoặc nhiều **Sản phẩm**
-- Mỗi **Đơn vị hàng** thuộc đúng một **Lô nhập** và đúng một **Sản phẩm**
+- Một **Lô nhập** đến từ đúng một **Nhà cung cấp** và gồm một hoặc nhiều **Dòng nhập**
+- Một **Dòng nhập** thuộc đúng một **Sản phẩm** và chứa nhiều **Đơn vị hàng**
+- Mỗi **Đơn vị hàng** thuộc đúng một **Dòng nhập** (do đó đúng một **Lô nhập** và đúng một **Sản phẩm**)
 - Một **Tài khoản** có một hoặc nhiều **Slot**; một **Mã dùng một lần** có đúng một **Slot**
 - Một **Phiếu xuất** thuộc đúng một **Kênh bán** và gồm một hoặc nhiều lần **Giao hàng**
 - Mỗi lần **Giao hàng** trao đúng một **Slot**
@@ -95,3 +103,5 @@ Nhật ký chỉ-ghi-thêm mọi lần chuyển trạng thái của **Slot** và
 - "key" và "code" được dùng lẫn cho nhau. Đã chốt: cả hai đều là **Mã dùng một lần**.
 - "thời hạn" từng dùng cho cả hạn của hàng lẫn hạn bảo hành. Đã chốt: tách thành **Hạn sử dụng** và **Hạn bảo hành**.
 - "thu hồi" có thể hiểu là đưa Slot đã giao về kho. Đã chốt: không có thao tác này, chỉ có **Huỷ hàng**.
+- "gia hạn tài khoản" có thể hiểu là sửa **Hạn sử dụng** của Đơn vị hàng cũ. Đã chốt: gia hạn là nhập lại thành **Đơn vị hàng** mới, liên kết với cái cũ, có **Giá vốn** riêng.
+- Hàng nhập nhầm từng chỉ có cách Huỷ hàng, khiến Mã dùng một lần không nhập lại được. Đã chốt: tách riêng **Huỷ nhập**, giải phóng Khoá chống trùng.
