@@ -5,7 +5,7 @@ Hệ thống quản lý kho nội bộ cho một shop bán hàng số (CD key, c
 ## Language
 
 **Sản phẩm** (Product):
-Một mặt hàng mà shop bán, ví dụ "Windows 11 Pro key" hay "Netflix Premium 1 tháng". Sản phẩm là loại hàng, không phải từng đơn vị hàng trong kho. Mỗi thời hạn bán khác nhau là một Sản phẩm riêng, có kho riêng. Sản phẩm khai báo các **Trường nội dung** của hàng thuộc nó. Sản phẩm đã có hàng thì không bị xoá, chỉ có thể **Ngừng bán**.
+Một mặt hàng mà shop bán, ví dụ "Windows 11 Pro key" hay "Netflix Premium 1 tháng". Sản phẩm là loại hàng, không phải từng đơn vị hàng trong kho. Mỗi thời hạn bán khác nhau là một Sản phẩm riêng, có kho riêng. Có **Mã sản phẩm** duy nhất do quản trị đặt (ví dụ `NETFLIX-1M`), là cách **Kênh bán** loại API tham chiếu tới Sản phẩm; không đổi được sau khi đã có **Phiếu xuất**. Sản phẩm khai báo các **Trường nội dung** của hàng thuộc nó. Sản phẩm đã có hàng thì không bị xoá, chỉ có thể **Ngừng bán**.
 _Avoid_: mặt hàng, SKU (khi nói về đơn vị trong kho), gói bán
 
 **Mã dùng một lần** (One-time code):
@@ -30,14 +30,14 @@ Một phần nội dung của **Đơn vị hàng** do **Sản phẩm** khai báo
 Một phần của **Tài khoản** được bán cho một khách. Shop tự khai báo số slot tối đa khi nhập; mã dùng một lần coi như có đúng một slot. Có trạng thái Còn hàng, Đã giữ, Đã giao hoặc Đã huỷ. Slot đã giao không bao giờ quay về Còn hàng.
 
 **Giữ hàng** (Reserve):
-Tạm khoá một **Slot** cho một **Phiếu xuất** để không giao trùng cho đơn khác, trước khi **Giao hàng**. Giữ hàng luôn có hạn; quá hạn thì Slot tự trở về Còn hàng. Xuất kho thủ công giữ và giao trong một bước.
+Tạm khoá một **Slot** cho một **Phiếu xuất** để không giao trùng cho đơn khác, trước khi **Giao hàng**. Giữ hàng luôn có hạn, do **Kênh bán** quy định; quá hạn thì Slot tự trở về Còn hàng và Phiếu xuất sang Hết hạn giữ. Xuất kho thủ công giữ và giao trong một bước.
 
 **Giao hàng** (Deliver):
 Việc trao nội dung **Slot** cho khách. Đây là thời điểm hàng rời kho và là mốc tính **Hạn bảo hành**.
 _Avoid_: bán (kho không quản lý việc bán)
 
 **Phiếu xuất** (Dispatch):
-Một đơn cần giao từ một **Kênh bán**, gồm một hoặc nhiều **Dòng xuất**, định danh bằng mã đơn ngoài duy nhất trong kênh bán đó. Ghi thông tin khách dạng văn bản tự do để tra cứu khi bảo hành. Có trạng thái Đang giữ, Hoàn tất hoặc Đã huỷ; huỷ phiếu thì nhả mọi **Slot** đang giữ. Phiếu xuất giữ đủ số lượng cho mọi Dòng xuất hoặc thất bại toàn bộ, không giao thiếu.
+Một đơn cần giao từ một **Kênh bán**, gồm một hoặc nhiều **Dòng xuất**, định danh bằng mã đơn ngoài duy nhất trong kênh bán đó. Ghi thông tin khách dạng văn bản tự do để tra cứu khi bảo hành. Có trạng thái Đang giữ, Hết hạn giữ, Hoàn tất hoặc Đã huỷ; huỷ phiếu thì nhả mọi **Slot** đang giữ. Phiếu Hết hạn giữ đã nhả Slot nhưng vẫn giao được nếu giữ lại đủ hàng; Đã huỷ là trạng thái cuối. Mã đơn ngoài bị chiếm vĩnh viễn khi phiếu được tạo, kể cả khi phiếu bị huỷ. Phiếu xuất giữ đủ số lượng cho mọi Dòng xuất hoặc thất bại toàn bộ, không giao thiếu.
 _Avoid_: đơn hàng (kho không quản lý đơn bán), Khách hàng (kho không có thực thể khách)
 
 **Dòng xuất** (Dispatch line):
@@ -50,7 +50,7 @@ Quy tắc chọn **Slot** Còn hàng cho một **Dòng xuất**: slot của **T�
 Số ngày **Hạn sử dụng** còn lại ít nhất mà một **Slot** phải có để được giao, do **Sản phẩm** khai báo, mặc định 0. Slot không đạt vẫn là tồn kho nhưng không bán được.
 
 **Giá bán** (Sale price):
-Số tiền (VND) khách trả cho một **Dòng xuất**, ghi tuỳ chọn khi xuất. Kho chỉ lưu để tính lãi/lỗ, không quản lý việc bán.
+Tổng số tiền (VND) khách trả cho cả một **Dòng xuất**, không phải đơn giá; ghi tuỳ chọn khi xuất, trừ khi **Kênh bán** bắt buộc. Kho chỉ lưu để tính lãi/lỗ, không quản lý việc bán.
 
 **Giao thêm** (Additional delivery):
 Thêm **Dòng xuất** mới vào một **Phiếu xuất** đã Hoàn tất, khi khách của cùng đơn mua thêm. Phần thêm giữ đủ hoặc thất bại.
@@ -63,7 +63,11 @@ _Avoid_: Đổi hàng (Đổi hàng là do hàng lỗi)
 Văn bản do **Sản phẩm** khai báo để ghép nội dung một **Slot** thành tin nhắn gửi khách, gồm các **Trường nội dung**, **Hạn sử dụng**, **Hạn bảo hành** và hướng dẫn cố định. Sản phẩm chưa có mẫu thì dùng mẫu mặc định liệt kê các trường.
 
 **Kênh bán** (Sales channel):
-Nguồn phát sinh đơn cần giao, do quản trị khai báo, loại thủ công (Shopee, Facebook, Zalo...) hoặc API (website). Mỗi kênh quy định có bắt buộc mã đơn ngoài không; nếu không bắt buộc và nhân viên để trống thì mã được tự sinh.
+Nguồn phát sinh đơn cần giao, do quản trị khai báo, loại thủ công (Shopee, Facebook, Zalo...) hoặc API (website). Mỗi kênh quy định có bắt buộc mã đơn ngoài không; nếu không bắt buộc và nhân viên để trống thì mã được tự sinh. Kênh loại API gọi vào kho bằng **Khoá API**, quy định hạn **Giữ hàng** (mặc định 15 phút) và có bắt buộc **Giá bán** không (mặc định có).
+
+**Khoá API** (API key):
+Bí mật mà một **Kênh bán** loại API dùng để gọi vào kho. Chỉ hiển thị một lần khi tạo; chỉ **Quản trị** tạo, thu hồi hoặc xoay khoá, và mỗi thao tác đó ghi vào **Nhật ký bảo mật**. Một kênh có thể có hai khoá cùng hoạt động trong lúc xoay. Là "ai" trong **Nhật ký xem mã** khi nội dung được trả qua API.
+_Avoid_: token (khi nói về nghiệp vụ)
 
 **Hạn sử dụng** (Expiry date):
 Ngày tuỳ chọn mà sau đó **Đơn vị hàng** không được bán nữa, do nhà cung cấp quyết định (tài khoản hết gói, gift card hết hạn).
@@ -127,7 +131,23 @@ Bên bán hàng số cho shop.
 Giá shop trả cho một **Đơn vị hàng**, ghi khi nhập theo **Lô nhập**, dùng để tính lãi/lỗ. Giá vốn của một **Slot** bằng giá vốn Đơn vị hàng chia đều cho số slot. Không bao giờ sửa sau khi nhập, kể cả khi được bồi hoàn. Hàng thay thế từ **Khiếu nại nhà cung cấp** có Giá vốn bằng 0.
 
 **Sổ biến động kho** (Stock ledger):
-Nhật ký chỉ-ghi-thêm mọi lần chuyển trạng thái của **Slot** và **Đơn vị hàng**: ai, khi nào, từ trạng thái nào sang trạng thái nào, lý do. Tách biệt với nhật ký xem nội dung mã.
+Nhật ký chỉ-ghi-thêm mọi lần chuyển trạng thái của **Slot** và **Đơn vị hàng**: ai, khi nào, từ trạng thái nào sang trạng thái nào, lý do. Tách biệt với **Nhật ký xem mã**.
+
+**Vai trò** (Role):
+Nhóm quyền gán cho một nhân viên. Có ba vai trò: **Quản trị** (chủ shop, mọi quyền), **Nhập kho** (nhập hàng, làm việc với **Nhà cung cấp**) và **Bán hàng** (xuất kho và xử lý sau giao). Một nhân viên có thể mang nhiều vai trò; không gán quyền lẻ cho từng người. Luôn còn ít nhất một Quản trị đang hoạt động.
+
+**Ngữ cảnh xem mã** (Reveal context):
+Bản ghi mà qua đó nội dung đầy đủ của một **Slot** được hiển thị hoặc tải về: một lần **Giao hàng**, **Đổi hàng**, **Báo lỗi**, **Khiếu nại nhà cung cấp** hoặc **Lô nhập**. Lý do xem suy ra từ ngữ cảnh. Nội dung chỉ xem được qua một ngữ cảnh, trừ **Quản trị** xem hàng Còn hàng kèm lý do tự do.
+
+**Nhật ký xem mã** (Reveal log):
+Nhật ký chỉ-ghi-thêm mỗi lần nội dung đầy đủ bị hiển thị hoặc tải về: ai (nhân viên hoặc **Khoá API**), khi nào, Slot nào, **Ngữ cảnh xem mã**, lý do. Không chứa nội dung mã, không ghi thao tác Copy, lưu vĩnh viễn, chỉ **Quản trị** xem được.
+
+**Nhật ký bảo mật** (Security log):
+Nhật ký chỉ-ghi-thêm các sự kiện về quyền truy cập: đăng nhập, sai 2FA, reset 2FA, tạo hoặc **Khoá nhân viên**, đổi **Vai trò**, tạo, thu hồi hoặc xoay **Khoá API**. Lưu vĩnh viễn, chỉ **Quản trị** xem được.
+
+**Khoá nhân viên** (Deactivate staff):
+Chặn một nhân viên đăng nhập, có hiệu lực ngay kể cả phiên đang mở. Nhân viên không bao giờ bị xoá vì các nhật ký tham chiếu tới họ.
+_Avoid_: xoá nhân viên
 
 ## Relationships
 
@@ -152,4 +172,5 @@ Nhật ký chỉ-ghi-thêm mọi lần chuyển trạng thái của **Slot** và
 - "thu hồi" có thể hiểu là đưa Slot đã giao về kho. Đã chốt: không có thao tác này, chỉ có **Huỷ hàng**.
 - "gia hạn tài khoản" có thể hiểu là sửa **Hạn sử dụng** của Đơn vị hàng cũ. Đã chốt: gia hạn là nhập lại thành **Đơn vị hàng** mới, liên kết với cái cũ, có **Giá vốn** riêng.
 - "nhà cung cấp thu hồi" và "hỏng trong kho" từng là lý do **Huỷ hàng**, khiến hàng lỗi không vào tỉ lệ lỗi. Đã chốt: đó là **Đánh dấu Lỗi**; Huỷ hàng chỉ dành cho lý do không phải lỗi hàng.
+- "audit log" từng dùng chung cho mọi thứ được ghi lại. Đã chốt: tách thành **Nhật ký xem mã** (ai thấy mã nào), **Nhật ký bảo mật** (ai vào hệ thống, ai đổi quyền của ai), **Sổ biến động kho** (chuyển trạng thái) và lịch sử sửa **Phiếu xuất**.
 - Hàng nhập nhầm từng chỉ có cách Huỷ hàng, khiến Mã dùng một lần không nhập lại được. Đã chốt: tách riêng **Huỷ nhập**, giải phóng Khoá chống trùng.
