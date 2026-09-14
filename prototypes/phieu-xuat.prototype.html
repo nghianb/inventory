@@ -1,0 +1,819 @@
+<!--
+  PROTOTYPE — VỨT ĐI ĐƯỢC. Không phải code production.
+
+  Câu hỏi: Màn tạo Phiếu xuất và màn kết quả giao hàng nên trông và hoạt động thế nào
+  để nhân viên xuất nhanh, ít nhầm, vẫn tuân thủ quy tắc che mã?
+  (ticket "Prototype màn Phiếu xuất trong Filament", luồng đã chốt ở "Luồng xuất kho thủ công và giao hàng")
+
+  Kế hoạch: 3 phương án (A, B, C) trên cùng một trang, đổi bằng ?variant= hoặc thanh nổi dưới đáy (phím ← →).
+  Giả định: repo chưa có app Laravel/Filament nên đây là trang độc lập (sub-shape B),
+  mô phỏng giao diện Filament bằng Tailwind CDN. Dữ liệu, tồn kho, nhật ký đều giả trong bộ nhớ.
+  Chạy: mở file bằng trình duyệt (xdg-open prototypes/phieu-xuat.prototype.html).
+-->
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PROTOTYPE · Phiếu xuất</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+  kbd { font-family: ui-monospace, monospace; font-size: .7rem; padding: 0 .3rem; border-radius: .25rem; border: 1px solid rgb(0 0 0 / .15); background: rgb(255 255 255 / .6); }
+  details > summary::-webkit-details-marker { display: none; }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-950">
+<div id="app"></div>
+<div id="modal"></div>
+<div id="toast"></div>
+<div id="state"></div>
+<div id="switcher"></div>
+
+<script>
+// ───────────────────────── tiện ích ─────────────────────────
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const parseMoney = s => { s = String(s ?? '').trim().toLowerCase(); if (!s) return null; const k = s.endsWith('k'); const n = Number(s.replace(/[^\d]/g, '')); return k ? n * 1000 : n; };
+const vnd = n => (n == null || n === '' || isNaN(n)) ? '—' : Number(n).toLocaleString('vi-VN') + ' ₫';
+const addDays = (d, n) => new Date(d.getTime() + n * 864e5);
+const fmtDate = d => d ? d.toLocaleDateString('vi-VN') : 'Không có';
+const fmtDT = d => d.toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+const fmtHrs = h => `${Math.floor(h)} giờ ${Math.round((h % 1) * 60)} phút`;
+const NOW = () => new Date(Date.now() + S.clockShiftH * 3600e3);
+function rnd(seed, len, abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789') {
+  let h = 2166136261; for (const c of String(seed)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+  let s = ''; for (let i = 0; i < len; i++) { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; s += abc[Math.abs(h) % abc.length]; } return s;
+}
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); }
+  catch { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+}
+function toast(m) {
+  $('#toast').innerHTML = `<div class="fixed top-4 left-1/2 -translate-x-1/2 z-[60] rounded-lg bg-gray-900 text-white text-sm px-4 py-2 shadow-lg">${esc(m)}</div>`;
+  clearTimeout(toast.t); toast.t = setTimeout(() => $('#toast').innerHTML = '', 2500);
+}
+
+// Lớp CSS kiểu Filament
+const card = 'bg-white rounded-xl shadow-sm ring-1 ring-gray-950/5';
+const inp = 'block w-full rounded-lg border-0 bg-white ring-1 ring-gray-950/10 focus:ring-2 focus:ring-amber-500 px-3 py-1.5 text-sm shadow-sm';
+const btn = {
+  p: 'inline-flex items-center gap-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-white font-semibold px-3 py-2 text-sm shadow-sm disabled:opacity-50',
+  g: 'inline-flex items-center gap-1 rounded-lg bg-white ring-1 ring-gray-950/10 hover:bg-gray-50 font-semibold px-3 py-2 text-sm shadow-sm disabled:opacity-50',
+  d: 'inline-flex items-center gap-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold px-3 py-2 text-sm shadow-sm disabled:opacity-40',
+  link: 'text-sm font-semibold text-amber-600 hover:underline',
+  linkD: 'text-sm font-semibold text-red-600 hover:underline',
+};
+const badge = (t, c = 'gray') => {
+  const m = { gray: 'bg-gray-50 text-gray-600 ring-gray-500/20', green: 'bg-green-50 text-green-700 ring-green-600/20', amber: 'bg-amber-50 text-amber-700 ring-amber-600/20', red: 'bg-red-50 text-red-700 ring-red-600/20' };
+  return `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${m[c]}">${t}</span>`;
+};
+
+// ───────────────────────── dữ liệu giả ─────────────────────────
+const CHANNELS = [
+  { id: 1, name: 'Shopee', icon: '🛒', type: 'thủ công', requireOrder: true },
+  { id: 2, name: 'Facebook', icon: '💬', type: 'thủ công', requireOrder: false },
+  { id: 3, name: 'Zalo', icon: '📱', type: 'thủ công', requireOrder: false },
+  { id: 4, name: 'Website', icon: '🌐', type: 'API', requireOrder: true },
+];
+const MANUAL = CHANNELS.filter(c => c.type === 'thủ công');
+const PRODUCTS = [
+  { code: 'NETFLIX-1M', name: 'Netflix Premium 1 tháng', type: 'Tài khoản', unit: 'TK', stock: 37, low: 10, warrantyDays: 30, expiryDays: 32,
+    fields: [{ k: 'email', label: 'Email', s: true }, { k: 'password', label: 'Mật khẩu', s: true }, { k: 'profile', label: 'Profile', s: false }],
+    template: '🎬 {ten_san_pham} (đơn {ma_don})\nEmail: {email}\nMật khẩu: {password}\nProfile của bạn: {profile}\nHạn sử dụng: {han_su_dung} · Bảo hành đến: {han_bao_hanh}\n⚠️ Chỉ dùng đúng profile, không đổi mật khẩu.' },
+  { code: 'WIN11-PRO', name: 'Windows 11 Pro key', type: 'Mã dùng một lần', unit: 'MA', stock: 210, low: 20, warrantyDays: 7, expiryDays: null,
+    fields: [{ k: 'key', label: 'Key', s: true }], template: null },
+  { code: 'STEAM-50', name: 'Steam Wallet 50 USD', type: 'Mã dùng một lần', unit: 'MA', stock: 4, low: 5, warrantyDays: 3, expiryDays: 365,
+    fields: [{ k: 'serial', label: 'Serial', s: false }, { k: 'code', label: 'Mã thẻ', s: true }],
+    template: 'Thẻ {ten_san_pham}\nSerial: {serial}\nMã thẻ: {code}\nNạp tại store.steampowered.com/account/redeemwalletcode' },
+  { code: 'CANVA-1Y', name: 'Canva Pro 1 năm', type: 'Tài khoản', unit: 'TK', stock: 0, low: 3, warrantyDays: 180, expiryDays: 365,
+    fields: [{ k: 'email', label: 'Email', s: true }, { k: 'password', label: 'Mật khẩu', s: true }], template: null },
+];
+const P = code => PRODUCTS.find(p => p.code === code);
+const CH = id => CHANNELS.find(c => c.id == id);
+
+const newDraft = () => ({ channelId: null, orderNo: '', customer: '', note: '', lines: [{ code: '', qty: 1, price: '' }] });
+let S = {
+  variant: new URLSearchParams(location.search).get('variant') || 'A',
+  user: 'Lan', role: 'Bán hàng', clockShiftH: 0,
+  screen: 'create', step: 1, draft: newDraft(), cmd: '', q: '',
+  addTo: false, dispatch: null, result: null, revealed: new Set(),
+  modal: null, rep: null, edit: null, errors: null, shortage: null, confirmBar: false,
+  audit: [], ledger: [], seq: 12, delSeq: 0, panelOpen: true,
+  orders: [{ channel: 1, orderNo: 'SP240901ABC', code: 'PX-20260901-0007' }],
+};
+
+// ───────────────────────── nghiệp vụ giả (dùng chung) ─────────────────────────
+function makeSlot(p) {
+  p.picked = (p.picked || 0) + 1; const i = p.picked; let unitId, slotNo, content, note = '';
+  if (p.type === 'Tài khoản') {
+    // Thứ tự xuất: 2 slot còn lại của Tài khoản đã giao dở trước, sau đó mỗi Tài khoản mới 5 slot
+    const u = i <= 2 ? 0 : Math.ceil((i - 2) / 5); slotNo = i <= 2 ? 3 + i : ((i - 3) % 5) + 1; const n = 412 + u;
+    unitId = `${p.unit}-${n}`; if (u === 0) note = 'Tài khoản đã giao dở';
+    content = Object.fromEntries(p.fields.map(f => [f.k,
+      f.k === 'email' ? `${p.code.split('-')[0].toLowerCase()}${n}@kho-mail.vn` : f.k === 'password' ? rnd(p.code + n, 12, 'abcdefghjkmnpqrstuvwxyz23456789@#') : `P${slotNo}`]));
+  } else {
+    const n = 8800 + i; unitId = `${p.unit}-${n}`; slotNo = 1;
+    content = Object.fromEntries(p.fields.map(f => [f.k,
+      f.k === 'key' ? [0, 1, 2, 3, 4].map(j => rnd(p.code + n + j, 5)).join('-') : f.k === 'serial' ? 'SW' + rnd(p.code + n, 10, '0123456789') : rnd(p.code + n + 'c', 16)]));
+  }
+  const expiry = p.expiryDays ? addDays(NOW(), p.expiryDays - (i % 3)) : null;
+  return { unitId, slotNo, content, expiry, note };
+}
+function deliverOne(disp, p, lineIdx, extra = {}) {
+  const s = makeSlot(p); p.stock--;
+  const at = NOW(); let w = addDays(at, p.warrantyDays); if (s.expiry && s.expiry < w) w = s.expiry;
+  const d = { id: ++S.delSeq, code: p.code, lineIdx, ...s, at, warrantyEnd: w, status: 'Đã giao', ...extra };
+  disp.deliveries.push(d);
+  S.ledger.push({ at, who: S.user, what: `Slot ${s.unitId}#${s.slotNo}: Còn hàng → Đã giữ → Đã giao`, ref: disp.code });
+  return d.id;
+}
+function msg(disp, d, masked) {
+  const p = P(d.code);
+  const vars = { ten_san_pham: p.name, ma_don: disp.orderNo, han_su_dung: fmtDate(d.expiry), han_bao_hanh: fmtDate(d.warrantyEnd) };
+  p.fields.forEach(f => vars[f.k] = masked && f.s ? '••••••••' : d.content[f.k]);
+  const tpl = p.template ?? ['{ten_san_pham}', ...p.fields.map(f => `${f.label}: {${f.k}}`), 'Hạn sử dụng: {han_su_dung}', 'Hạn bảo hành: {han_bao_hanh}'].join('\n');
+  return tpl.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
+}
+const SEP = '\n\n────────────\n\n';
+function inlineContent(d) {
+  const p = P(d.code);
+  return p.fields.map(f => `${f.label}: ${f.s && !S.revealed.has(d.id) ? '••••••' : d.content[f.k]}`).join(' · ');
+}
+function logReveal(ids, reason) {
+  ids.forEach(id => {
+    const d = S.dispatch.deliveries.find(x => x.id === id);
+    S.audit.push({ at: NOW(), who: S.user, slot: `${d.unitId}#${d.slotNo}`, ctx: `Giao hàng ${S.dispatch.code}`, reason });
+  });
+}
+const draftLines = () => S.draft.lines.filter(l => l.code);
+function totalsText() {
+  const ls = draftLines(); const slots = ls.reduce((s, l) => s + (+l.qty || 0), 0);
+  const prices = ls.map(l => parseMoney(l.price)).filter(x => x != null);
+  return `<b>${ls.length}</b> dòng · <b>${slots}</b> Slot · Tổng Giá bán <b>${prices.length ? vnd(prices.reduce((a, b) => a + b, 0)) : '—'}</b>`;
+}
+const liveTotals = () => document.querySelectorAll('[data-live=totals]').forEach(el => el.innerHTML = totalsText());
+function stockBadge(p) {
+  if (p.stock === 0) return badge('Tồn bán được: 0 · hết hàng', 'red');
+  if (p.stock <= p.low) return badge(`Tồn bán được: ${p.stock} · sắp hết`, 'amber');
+  return badge(`Tồn bán được: ${p.stock}`, 'green');
+}
+function statusBadge(d) {
+  if (d.status !== 'Đã giao') return badge(d.status, 'gray');
+  return badge('Đã giao', 'green') + (d.replaces ? ' ' + badge('Giao thay', 'amber') : '');
+}
+function setDraft(k, v) { S.draft[k] = v; }
+function setLine(i, k, v) { S.draft.lines[i][k] = v; liveTotals(); }
+function addLine() { S.draft.lines.push({ code: '', qty: 1, price: '' }); render(); }
+function rmLine(i) { S.draft.lines.splice(i, 1); render(); }
+
+function validate(onlyOrder = false) {
+  const d = S.draft, e = []; const ch = CH(d.channelId);
+  if (!S.addTo) {
+    if (!ch) e.push('Chọn Kênh bán.');
+    if (ch?.requireOrder && !d.orderNo.trim()) e.push(`Kênh ${ch.name} bắt buộc mã đơn ngoài.`);
+    const dup = ch && d.orderNo.trim() && S.orders.find(o => o.channel == ch.id && o.orderNo === d.orderNo.trim());
+    if (dup) e.push(`Mã đơn ${esc(d.orderNo)} đã dùng trong ${ch.name} ở phiếu <a href="#" onclick="return false" class="underline font-semibold">${dup.code}</a>.`);
+  }
+  if (onlyOrder) return e;
+  if (S.variant === 'C') parseCmd(S.cmd).filter(x => x.err).forEach(x => e.push(`Dòng ${x.n}: ${esc(x.err)}`));
+  const ls = draftLines(); if (!ls.length) e.push('Thêm ít nhất một Dòng xuất.');
+  const seen = new Set();
+  ls.forEach(l => {
+    if (seen.has(l.code)) e.push(`${l.code} có ở hai dòng: gộp vào một dòng.`); seen.add(l.code);
+    if (!(+l.qty >= 1)) e.push(`${l.code}: số lượng phải từ 1.`);
+  });
+  const total = ls.reduce((s, l) => s + (+l.qty || 0), 0); if (total > 1000) e.push(`Tối đa 1.000 Slot mỗi phiếu (đang ${total}).`);
+  return e;
+}
+function errorsBox() {
+  if (!S.errors?.length) return '';
+  return `<div class="rounded-xl bg-red-50 ring-1 ring-red-600/20 p-4 mb-4 text-sm text-red-700"><p class="font-semibold mb-1">Chưa xuất được</p><ul class="list-disc pl-5">${S.errors.map(x => `<li>${x}</li>`).join('')}</ul></div>`;
+}
+function shortageBox() {
+  if (!S.shortage) return '';
+  return `<div class="rounded-lg bg-red-50 ring-1 ring-red-600/20 p-3 text-sm text-red-700 mt-3"><p class="font-semibold">Không đủ Tồn bán được. Chưa giao Slot nào.</p>
+    <ul class="list-disc pl-5 mt-1">${S.shortage.map(x => `<li>${x.code} (${esc(x.name)}): cần ${x.want}, còn ${x.have}</li>`).join('')}</ul></div>`;
+}
+function confirmSummary() {
+  const d = S.draft, ch = CH(d.channelId), ls = draftLines();
+  return `<dl class="grid grid-cols-3 gap-y-1 text-sm mb-3">
+      <dt class="text-gray-500">Kênh bán</dt><dd class="col-span-2 font-medium">${esc(ch?.name)}</dd>
+      <dt class="text-gray-500">Mã đơn ngoài</dt><dd class="col-span-2 font-medium">${d.orderNo.trim() ? esc(d.orderNo) : '<i class="text-gray-500">tự sinh khi xác nhận</i>'}</dd>
+      <dt class="text-gray-500">Khách</dt><dd class="col-span-2">${esc(d.customer) || '—'}</dd>
+    </dl>
+    <table class="w-full text-sm"><thead class="text-gray-500 text-left"><tr><th class="py-1">Sản phẩm</th><th class="text-right">SL</th><th class="text-right">Giá bán</th></tr></thead>
+    <tbody>${ls.map(l => `<tr class="border-t"><td class="py-1.5">${esc(P(l.code).name)} <span class="text-xs text-gray-500">${l.code}</span></td><td class="text-right">${l.qty}</td><td class="text-right">${vnd(parseMoney(l.price))}</td></tr>`).join('')}</tbody>
+    <tfoot><tr class="border-t font-semibold"><td class="py-1.5">Tổng</td><td class="text-right">${ls.reduce((s, l) => s + (+l.qty || 0), 0)}</td><td class="text-right">${vnd(ls.reduce((s, l) => s + (parseMoney(l.price) || 0), 0) || null)}</td></tr></tfoot></table>
+    <p class="text-xs text-gray-500 mt-2">Nội dung mã chỉ hiện sau khi xác nhận.</p>`;
+}
+
+function askConfirm() {
+  const e = validate(); S.shortage = null;
+  if (e.length) { S.errors = e; render(); return; }
+  S.errors = null;
+  if (S.variant === 'A') S.modal = 'confirm';
+  if (S.variant === 'B') S.step = 3;
+  if (S.variant === 'C') S.confirmBar = true;
+  render();
+}
+function submitDraft() {
+  const d = S.draft, ls = draftLines();
+  const short = ls.map(l => ({ l, p: P(l.code) })).filter(x => +x.l.qty > x.p.stock);
+  if (short.length) { S.shortage = short.map(x => ({ code: x.p.code, name: x.p.name, want: +x.l.qty, have: x.p.stock })); render(); return; }
+  let disp = S.dispatch;
+  if (!S.addTo) {
+    const code = `PX-20260914-${String(++S.seq).padStart(4, '0')}`;
+    disp = { code, channel: +d.channelId, orderNo: d.orderNo.trim() || code, customer: d.customer, note: d.note, lines: [], deliveries: [], history: [], createdAt: NOW(), createdBy: S.user };
+    S.orders.push({ channel: disp.channel, orderNo: disp.orderNo, code });
+    S.dispatch = disp;
+  }
+  const kind = S.addTo ? 'Giao thêm' : 'Giao bán'; const ids = [];
+  ls.forEach(l => {
+    const p = P(l.code); const li = disp.lines.push({ code: l.code, qty: +l.qty, price: l.price, kind, at: NOW() }) - 1;
+    for (let i = 0; i < +l.qty; i++) ids.push(deliverOne(disp, p, li));
+  });
+  showResult(ids, S.addTo ? 'Giao thêm' : 'Xuất kho');
+}
+function showResult(ids, title) {
+  const masked = ids.length >= 50;
+  S.result = { ids, title, sel: 0, copied: new Set(), masked };
+  if (!masked) logReveal(ids, 'hiển thị lần đầu');
+  S.draft = newDraft(); S.addTo = false; S.step = 1; S.cmd = ''; S.confirmBar = false;
+  S.modal = null; S.rep = null; S.errors = null; S.shortage = null; S.screen = 'result';
+  render();
+}
+function resultData() {
+  const disp = S.dispatch; const ds = S.result.ids.map(id => disp.deliveries.find(x => x.id === id));
+  return { disp, ds, masked: S.result.masked };
+}
+function copyOne(id) {
+  const disp = S.dispatch, d = disp.deliveries.find(x => x.id === id);
+  copyText(msg(disp, d, false)); S.result.copied.add(id);
+  const i = S.result.ids.indexOf(id); if (S.variant === 'C' && i < S.result.ids.length - 1) S.result.sel = i + 1;
+  toast(`Đã copy ${d.unitId} · Slot ${d.slotNo} (Copy không ghi nhật ký)`); render();
+}
+function copyAll() {
+  const { disp, ds } = resultData();
+  copyText(ds.map(d => msg(disp, d, false)).join(SEP)); ds.forEach(d => S.result.copied.add(d.id));
+  toast(`Đã copy ${ds.length} Slot`); render();
+}
+function download(kind) {
+  const { disp, ds } = resultData(); let text, type;
+  if (kind === 'txt') { text = ds.map(d => msg(disp, d, false)).join(SEP); type = 'text/plain'; }
+  else {
+    const fields = [...new Map(ds.flatMap(d => P(d.code).fields).map(f => [f.k, f])).values()];
+    const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    text = [['San pham', 'Don vi hang', 'Slot', ...fields.map(f => f.label), 'Han su dung', 'Han bao hanh'].map(q).join(','),
+      ...ds.map(d => [d.code, d.unitId, d.slotNo, ...fields.map(f => d.content[f.k]), fmtDate(d.expiry), fmtDate(d.warrantyEnd)].map(q).join(','))].join('\n');
+    type = 'text/csv';
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = `${disp.code}.${kind}`; a.click(); URL.revokeObjectURL(a.href);
+  logReveal(S.result.ids, `tải file ${kind.toUpperCase()}`); toast(`Đã tải ${disp.code}.${kind} (ghi Nhật ký xem mã)`); render();
+}
+function leaveResult() {
+  const left = S.result.ids.length - S.result.copied.size;
+  if (S.variant === 'C' && !S.result.masked && left > 0 && !confirm(`Còn ${left} Slot chưa copy. Rời màn kết quả? Xem lại sau sẽ ghi Nhật ký xem mã.`)) return;
+  S.result = null; S.revealed = new Set(); S.screen = 'detail'; render();
+}
+function reveal(id) {
+  const d = S.dispatch.deliveries.find(x => x.id === id);
+  if (S.revealed.has(id)) { S.revealed.delete(id); render(); return; }
+  if (S.role !== 'Quản trị' && NOW() > d.warrantyEnd) return toast('Hết Hạn bảo hành: chỉ Quản trị xem lại được.');
+  if (!confirm(`Xem nội dung đầy đủ ${d.unitId} · Slot ${d.slotNo}?\nLần xem được ghi vào Nhật ký xem mã (ngữ cảnh: Giao hàng ${S.dispatch.code}).`)) return;
+  S.revealed.add(id); logReveal([id], 'xem lại'); render();
+}
+function startAdd() {
+  const disp = S.dispatch;
+  S.addTo = true; S.draft = { channelId: disp.channel, orderNo: disp.orderNo, customer: disp.customer, note: '', lines: S.variant === 'B' ? [] : [{ code: '', qty: 1, price: '' }] };
+  S.step = 2; S.cmd = ''; S.errors = null; S.shortage = null; S.screen = 'create'; render();
+}
+function cancelCreate() {
+  S.errors = null; S.shortage = null; S.confirmBar = false; S.modal = null;
+  if (S.addTo) { S.addTo = false; S.draft = newDraft(); S.screen = 'detail'; } else { S.draft = newDraft(); S.step = 1; S.cmd = ''; }
+  render();
+}
+function closeModal() { S.modal = null; S.rep = null; S.edit = null; S.shortage = null; render(); }
+
+// Giao thay
+function openReplace(id) {
+  const d = S.dispatch.deliveries.find(x => x.id === id);
+  S.rep = { id, code: d.code, sent: 'chua', voidUnit: false, reason: '', err: null };
+  S.modal = S.variant === 'C' ? null : 'replace'; render();
+}
+const replaceWindow = d => { const hrs = (NOW() - d.at) / 3600e3; return { hrs, ok: hrs <= 24 }; };
+function replaceForm() {
+  const r = S.rep, d = S.dispatch.deliveries.find(x => x.id === r.id), w = replaceWindow(d), p = P(r.code);
+  const blocked = !w.ok && S.role !== 'Quản trị';
+  return `<div class="space-y-4 text-sm">
+    <div class="rounded-lg bg-gray-50 p-3">
+      <p class="text-xs text-gray-500">Lần giao sẽ bị Huỷ hàng (lý do: giao nhầm)</p>
+      <p class="font-medium">${esc(P(d.code).name)} · ${d.unitId} · Slot ${d.slotNo}</p>
+      <p class="text-xs ${w.ok ? 'text-gray-500' : 'text-red-600'}">Giao lúc ${fmtDT(d.at)} · ${w.ok ? `còn ${fmtHrs(24 - w.hrs)} để nhân viên tự Giao thay` : 'đã quá 24 giờ'}</p>
+    </div>
+    ${blocked ? `<div class="rounded-lg bg-red-50 ring-1 ring-red-600/20 p-3 text-red-700">Đã quá 24 giờ kể từ lần giao gốc. Chỉ Quản trị được Giao thay.</div>` : `
+    ${!w.ok ? `<label class="block"><span class="font-medium">Lý do <sup class="text-red-600">*</sup></span><span class="block text-xs text-gray-500 mb-1">Quản trị bắt buộc ghi lý do khi quá 24 giờ</span><textarea class="${inp}" rows="2" oninput="S.rep.reason=this.value">${esc(r.reason)}</textarea></label>` : ''}
+    <label class="block"><span class="font-medium">Giao Slot của Sản phẩm</span>
+      <select class="${inp} mt-1" onchange="S.rep.code=this.value;render()">${PRODUCTS.map(x => `<option value="${x.code}" ${x.code === r.code ? 'selected' : ''}>${x.code} · ${esc(x.name)}${x.code === d.code ? ' (cùng Sản phẩm)' : ''}</option>`).join('')}</select>
+      <span class="block mt-1">${stockBadge(p)}</span></label>
+    <fieldset><legend class="font-medium mb-1">Nội dung Slot giao nhầm đã gửi cho khách chưa?</legend>
+      <label class="flex gap-2 items-center"><input type="radio" name="sent" ${r.sent === 'chua' ? 'checked' : ''} onchange="S.rep.sent='chua';render()"> Chưa gửi</label>
+      <label class="flex gap-2 items-center"><input type="radio" name="sent" ${r.sent === 'roi' ? 'checked' : ''} onchange="S.rep.sent='roi';render()"> Đã gửi cho khách</label>
+    </fieldset>
+    ${r.sent === 'roi' ? `<fieldset class="rounded-lg ring-1 ring-amber-600/20 bg-amber-50 p-3"><legend class="font-medium px-1">Nội dung đã lộ. Xử lý Đơn vị hàng ${d.unitId}?</legend>
+      <label class="flex gap-2 items-start mt-1"><input type="radio" name="vu" ${!r.voidUnit ? 'checked' : ''} onchange="S.rep.voidUnit=false;render()"> <span>Giữ nguyên <span class="text-gray-500">(mặc định)</span></span></label>
+      <label class="flex gap-2 items-start mt-1"><input type="radio" name="vu" ${r.voidUnit ? 'checked' : ''} onchange="S.rep.voidUnit=true;render()"> <span>Huỷ hàng cả Đơn vị hàng<span class="block text-xs text-gray-500">Các Slot còn trong kho của nó không bán được nữa</span></span></label>
+      <p class="text-xs text-gray-500 mt-2">Hệ thống không tự khoá Tài khoản.</p></fieldset>` : ''}
+    ${r.err ? `<p class="text-red-600">${esc(r.err)}</p>` : ''}
+    <p class="text-xs text-gray-500">Giao thay không tạo Báo lỗi và không tính vào Tỉ lệ lỗi nhà cung cấp.</p>`}
+  </div>`;
+}
+function replaceFooter() {
+  const d = S.dispatch.deliveries.find(x => x.id === S.rep.id); const blocked = !replaceWindow(d).ok && S.role !== 'Quản trị';
+  return `<button class="${btn.g}" onclick="closeModal()">Đóng</button><button class="${btn.d}" onclick="doReplace()" ${blocked ? 'disabled' : ''}>Huỷ Slot cũ và giao Slot mới</button>`;
+}
+function doReplace() {
+  const disp = S.dispatch, r = S.rep, d = disp.deliveries.find(x => x.id === r.id), w = replaceWindow(d), p = P(r.code);
+  if (!w.ok && S.role !== 'Quản trị') return;
+  if (!w.ok && !r.reason.trim()) { r.err = 'Quá 24 giờ: Quản trị phải ghi lý do.'; render(); return; }
+  if (p.stock < 1) { r.err = `${p.name} hết Tồn bán được.`; render(); return; }
+  d.status = 'Đã huỷ (giao nhầm)';
+  S.ledger.push({ at: NOW(), who: S.user, what: `Slot ${d.unitId}#${d.slotNo}: Đã giao → Đã huỷ (giao nhầm)`, ref: disp.code });
+  if (r.sent === 'roi' && r.voidUnit) S.ledger.push({ at: NOW(), who: S.user, what: `Đơn vị hàng ${d.unitId}: Hoạt động → Đã huỷ (lộ nội dung)`, ref: disp.code });
+  let li = d.lineIdx;
+  if (p.code !== d.code) li = disp.lines.push({ code: p.code, qty: 1, price: '', kind: 'Giao thay', at: NOW() }) - 1;
+  const nid = deliverOne(disp, p, li, { replaces: d.id }); d.replacedBy = nid;
+  showResult([nid], 'Giao thay');
+}
+
+// Sửa phiếu
+function openEdit() {
+  const d = S.dispatch;
+  S.edit = { orderNo: d.orderNo, customer: d.customer, note: d.note, prices: d.lines.map(l => l.price ?? ''), err: null };
+  S.modal = 'edit'; render();
+}
+function saveEdit() {
+  const disp = S.dispatch, e = S.edit;
+  const dup = S.orders.find(o => o.channel === disp.channel && o.orderNo === e.orderNo.trim() && o.code !== disp.code);
+  if (dup) { e.err = `Mã đơn đã dùng ở phiếu ${dup.code}.`; render(); return; }
+  const ch = (field, from, to) => { if (String(from ?? '') !== String(to ?? '')) disp.history.push({ at: NOW(), who: S.user, field, from, to }); };
+  ch('Mã đơn ngoài', disp.orderNo, e.orderNo.trim()); ch('Khách', disp.customer, e.customer); ch('Ghi chú', disp.note, e.note);
+  disp.lines.forEach((l, i) => ch(`Giá bán dòng ${l.code}`, l.price, e.prices[i]));
+  disp.orderNo = e.orderNo.trim(); disp.customer = e.customer; disp.note = e.note; disp.lines.forEach((l, i) => l.price = e.prices[i]);
+  S.orders.find(o => o.code === disp.code).orderNo = disp.orderNo;
+  closeModal(); toast('Đã lưu, ghi vào lịch sử phiếu');
+}
+function historyList(disp) {
+  if (!disp.history.length) return '<p class="text-sm text-gray-500">Chưa sửa lần nào.</p>';
+  return `<ul class="text-sm space-y-1">${disp.history.slice().reverse().map(h => `<li><span class="text-gray-500">${fmtDT(h.at)} · ${h.who}</span> · ${esc(h.field)}: <s class="text-gray-500">${esc(h.from) || '∅'}</s> → ${esc(h.to) || '∅'}</li>`).join('')}</ul>`;
+}
+
+// Khung modal và slide-over
+function modalWrap(title, body, footer) {
+  return `<div class="fixed inset-0 z-40 bg-gray-950/50 grid place-items-center p-4" onclick="if(event.target===this)closeModal()">
+    <div class="w-full max-w-lg rounded-xl bg-white shadow-xl"><div class="px-6 pt-5 pb-3 font-semibold text-lg">${title}</div>
+    <div class="px-6 pb-4 max-h-[70vh] overflow-auto">${body}</div><div class="px-6 py-4 border-t flex justify-end gap-2">${footer}</div></div></div>`;
+}
+function slideOver(title, body, footer) {
+  return `<div class="fixed inset-0 z-40 bg-gray-950/30" onclick="if(event.target===this)closeModal()">
+    <div class="absolute right-0 inset-y-0 w-full max-w-md bg-white shadow-2xl flex flex-col"><div class="px-6 py-4 border-b font-semibold text-lg flex justify-between">${title}<button onclick="closeModal()">✕</button></div>
+    <div class="px-6 py-4 grow overflow-auto">${body}</div><div class="px-6 py-4 border-t flex justify-end gap-2">${footer}</div></div></div>`;
+}
+const MODALS = {
+  confirm: () => modalWrap('Xác nhận xuất kho', confirmSummary() + shortageBox(),
+    `<button class="${btn.g}" onclick="closeModal()">Quay lại sửa</button><button class="${btn.p}" onclick="submitDraft()">Xác nhận xuất kho</button>`),
+  replace: () => (S.variant === 'B' ? slideOver : modalWrap)('Giao thay', replaceForm(), replaceFooter()),
+  edit: () => {
+    const e = S.edit, disp = S.dispatch;
+    return (S.variant === 'B' ? slideOver : modalWrap)('Sửa Phiếu xuất', `<div class="space-y-3 text-sm">
+      <label class="block">Mã đơn ngoài<input class="${inp} mt-1" value="${esc(e.orderNo)}" oninput="S.edit.orderNo=this.value"></label>
+      <label class="block">Khách<textarea class="${inp} mt-1" rows="2" oninput="S.edit.customer=this.value">${esc(e.customer)}</textarea></label>
+      <label class="block">Ghi chú<input class="${inp} mt-1" value="${esc(e.note)}" oninput="S.edit.note=this.value"></label>
+      ${disp.lines.map((l, i) => `<label class="block">Giá bán dòng ${l.code} <span class="text-gray-500">(${l.kind})</span><input class="${inp} mt-1" value="${esc(e.prices[i])}" oninput="S.edit.prices[${i}]=this.value"></label>`).join('')}
+      <p class="text-xs text-gray-500">Không sửa được Kênh bán, Dòng xuất, Slot. Dùng Giao thêm hoặc Giao thay.</p>
+      ${e.err ? `<p class="text-red-600">${esc(e.err)}</p>` : ''}</div>`,
+      `<button class="${btn.g}" onclick="closeModal()">Huỷ</button><button class="${btn.p}" onclick="saveEdit()">Lưu</button>`);
+  },
+};
+
+// ───────────────────────── Phương án A: Form Filament chuẩn ─────────────────────────
+const VA = {
+  name: 'Form Filament chuẩn',
+  create() {
+    const d = S.draft, add = S.addTo, disp = S.dispatch, ch = CH(d.channelId);
+    return `
+    <nav class="text-sm text-gray-500 mb-1">Phiếu xuất › ${add ? esc(disp.code) + ' › Giao thêm' : 'Tạo'}</nav>
+    <h1 class="text-2xl font-bold mb-6">${add ? 'Giao thêm vào ' + esc(disp.code) : 'Tạo Phiếu xuất'}</h1>
+    ${errorsBox()}
+    <section class="${card} p-6 mb-6">
+      <h2 class="font-semibold mb-4">Thông tin đơn</h2>
+      ${add ? `<dl class="grid md:grid-cols-3 gap-4 text-sm"><div><dt class="text-gray-500">Kênh bán</dt><dd class="font-medium">${CH(disp.channel).name}</dd></div><div><dt class="text-gray-500">Mã đơn ngoài</dt><dd class="font-medium">${esc(disp.orderNo)}</dd></div><div><dt class="text-gray-500">Khách</dt><dd>${esc(disp.customer) || '—'}</dd></div></dl>` : `
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <label class="block"><span class="font-medium">Kênh bán <sup class="text-red-600">*</sup></span>
+          <select class="${inp} mt-1" onchange="setDraft('channelId',this.value);render()"><option value="">Chọn kênh…</option>${MANUAL.map(c => `<option value="${c.id}" ${c.id == d.channelId ? 'selected' : ''}>${c.name}</option>`).join('')}</select></label>
+        <label class="block"><span class="font-medium">Mã đơn ngoài ${ch?.requireOrder ? '<sup class="text-red-600">*</sup>' : ''}</span>
+          <input class="${inp} mt-1" value="${esc(d.orderNo)}" oninput="setDraft('orderNo',this.value)" placeholder="${ch && !ch.requireOrder ? 'Để trống để tự sinh' : ''}">
+          <span class="block text-xs text-gray-500 mt-1">${ch ? (ch.requireOrder ? `${ch.name} bắt buộc mã đơn` : 'Không bắt buộc, trống thì tự sinh') : 'Thử mã trùng: SP240901ABC (Shopee)'}</span></label>
+        <label class="block md:col-span-2"><span class="font-medium">Khách</span>
+          <textarea class="${inp} mt-1" rows="2" oninput="setDraft('customer',this.value)" placeholder="Tên, SĐT, link chat…">${esc(d.customer)}</textarea>
+          <span class="block text-xs text-gray-500 mt-1">Tìm kiếm được khi bảo hành</span></label>
+        <label class="block md:col-span-2"><span class="font-medium">Ghi chú</span><input class="${inp} mt-1" value="${esc(d.note)}" oninput="setDraft('note',this.value)"></label>
+      </div>`}
+    </section>
+    <section class="${card} p-6 mb-6">
+      <div class="flex flex-wrap justify-between gap-2 mb-4"><h2 class="font-semibold">Dòng xuất</h2><span class="text-xs text-gray-500">Slot được chọn tự động theo Thứ tự xuất</span></div>
+      <div class="space-y-3">${d.lines.length ? d.lines.map((l, i) => this.line(l, i)).join('') : '<p class="text-sm text-gray-500">Chưa có dòng nào.</p>'}</div>
+      <button class="${btn.link} mt-3" onclick="addLine()">+ Thêm dòng</button>
+    </section>
+    <div class="${card} p-4 flex flex-wrap gap-3 items-center justify-between sticky bottom-16">
+      <div class="text-sm" data-live="totals">${totalsText()}</div>
+      <div class="flex gap-2"><button class="${btn.g}" onclick="cancelCreate()">Huỷ</button><button class="${btn.p}" onclick="askConfirm()">Xuất kho</button></div>
+    </div>`;
+  },
+  line(l, i) {
+    const p = P(l.code);
+    return `<div class="grid grid-cols-12 gap-3 items-start rounded-lg ring-1 ring-gray-950/5 p-3 text-sm">
+      <label class="col-span-12 md:col-span-6"><span class="text-xs text-gray-500">Sản phẩm</span>
+        <select class="${inp}" onchange="setLine(${i},'code',this.value);render()"><option value="">Chọn Sản phẩm…</option>${PRODUCTS.map(x => `<option value="${x.code}" ${x.code === l.code ? 'selected' : ''}>${x.code} · ${esc(x.name)}</option>`).join('')}</select>
+        ${p ? `<span class="block mt-1.5">${stockBadge(p)}</span>` : ''}</label>
+      <label class="col-span-4 md:col-span-2"><span class="text-xs text-gray-500">Số lượng</span><input type="number" min="1" class="${inp}" value="${esc(l.qty)}" oninput="setLine(${i},'qty',this.value)"></label>
+      <label class="col-span-6 md:col-span-3"><span class="text-xs text-gray-500">Giá bán (tổng dòng)</span><input class="${inp}" value="${esc(l.price)}" oninput="setLine(${i},'price',this.value)" placeholder="Tuỳ chọn"></label>
+      <div class="col-span-2 md:col-span-1 pt-5 text-right"><button class="text-gray-400 hover:text-red-600" title="Xoá dòng" onclick="rmLine(${i})">✕</button></div>
+    </div>`;
+  },
+  result() {
+    const { disp, ds, masked } = resultData();
+    return `
+    <div class="rounded-xl bg-green-50 ring-1 ring-green-600/20 p-4 mb-6">
+      <p class="font-semibold text-green-800">${esc(S.result.title)} thành công · ${ds.length} Slot</p>
+      <p class="text-sm text-green-700">${disp.code} · ${CH(disp.channel).name} · mã đơn ${esc(disp.orderNo)}</p>
+    </div>
+    <div class="flex flex-wrap gap-2 mb-4">
+      <button class="${btn.p}" onclick="copyAll()">Copy tất cả</button>
+      <button class="${btn.g}" onclick="download('txt')">Tải TXT</button><button class="${btn.g}" onclick="download('csv')">Tải CSV</button>
+      <span class="grow"></span><button class="${btn.g}" onclick="leaveResult()">Xong, về phiếu →</button>
+    </div>
+    ${masked ? maskedNotice(ds.length) + `<div class="${card} overflow-x-auto"><table class="w-full text-sm"><thead class="text-left text-gray-500"><tr><th class="px-4 py-2">#</th><th>Sản phẩm</th><th>Đơn vị hàng · Slot</th><th>Nội dung</th></tr></thead>
+      <tbody>${ds.map((d, i) => `<tr class="border-t"><td class="px-4 py-1.5">${i + 1}</td><td>${d.code}</td><td>${d.unitId} · ${d.slotNo}</td><td class="font-mono text-xs">${esc(inlineContent(d))}</td></tr>`).join('')}</tbody></table></div>`
+    : `<div class="grid md:grid-cols-2 gap-4">${ds.map((d, i) => `<div class="${card}">
+        <div class="flex items-center justify-between gap-2 px-4 py-2 border-b"><div class="text-sm min-w-0"><b>#${i + 1}</b> ${esc(P(d.code).name)} <span class="text-gray-500">· ${d.unitId} · Slot ${d.slotNo}</span>${S.result.copied.has(d.id) ? ' <span class="text-green-600">✓</span>' : ''}</div>
+          <button class="${btn.g} !py-1" onclick="copyOne(${d.id})">Copy</button></div>
+        <pre class="p-4 text-sm whitespace-pre-wrap font-mono">${esc(msg(disp, d, false))}</pre></div>`).join('')}</div>`}
+    <p class="text-xs text-gray-500 mt-4">Rời màn này thì xem lại là một lần xem mã bình thường (cần quyền, ghi Nhật ký xem mã).</p>`;
+  },
+  detail() {
+    const disp = S.dispatch, ch = CH(disp.channel);
+    const total = disp.lines.reduce((s, l) => s + (parseMoney(l.price) || 0), 0);
+    return `
+    <nav class="text-sm text-gray-500 mb-1">Phiếu xuất › ${disp.code}</nav>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+      <h1 class="text-2xl font-bold">${disp.code} ${badge('Hoàn tất', 'green')}</h1>
+      <div class="flex gap-2"><button class="${btn.g}" onclick="openEdit()">Sửa</button><button class="${btn.p}" onclick="startAdd()">Giao thêm</button></div>
+    </div>
+    <section class="${card} p-6 mb-6"><dl class="grid md:grid-cols-3 gap-4 text-sm">
+      <div><dt class="text-gray-500">Kênh bán</dt><dd class="font-medium">${ch.name}</dd></div>
+      <div><dt class="text-gray-500">Mã đơn ngoài</dt><dd class="font-medium">${esc(disp.orderNo)}</dd></div>
+      <div><dt class="text-gray-500">Tổng Giá bán</dt><dd class="font-medium">${vnd(total || null)}</dd></div>
+      <div class="md:col-span-2"><dt class="text-gray-500">Khách</dt><dd>${esc(disp.customer) || '—'}</dd></div>
+      <div><dt class="text-gray-500">Người tạo</dt><dd>${disp.createdBy} · ${fmtDT(disp.createdAt)}</dd></div>
+    </dl></section>
+    <section class="${card} mb-6"><h2 class="font-semibold px-6 py-4 border-b">Dòng xuất</h2><div class="overflow-x-auto"><table class="w-full text-sm">
+      <thead class="text-left text-gray-500"><tr><th class="px-6 py-2">Sản phẩm</th><th>Loại</th><th class="text-right">SL</th><th class="text-right px-6">Giá bán</th></tr></thead>
+      <tbody>${disp.lines.map(l => `<tr class="border-t"><td class="px-6 py-2">${esc(P(l.code).name)}</td><td>${badge(l.kind)}</td><td class="text-right">${l.qty}</td><td class="text-right px-6">${vnd(parseMoney(l.price))}</td></tr>`).join('')}</tbody></table></div></section>
+    <section class="${card} mb-6"><h2 class="font-semibold px-6 py-4 border-b">Lần giao</h2><div class="overflow-x-auto"><table class="w-full text-sm">
+      <thead class="text-left text-gray-500"><tr><th class="px-6 py-2">Sản phẩm</th><th>Đơn vị hàng · Slot</th><th>Nội dung</th><th>Giao lúc</th><th>Hạn bảo hành</th><th>Trạng thái</th><th></th></tr></thead>
+      <tbody>${disp.deliveries.map(d => `<tr class="border-t ${d.status !== 'Đã giao' ? 'opacity-60' : ''}">
+        <td class="px-6 py-2 whitespace-nowrap">${d.code}</td><td class="whitespace-nowrap">${d.unitId} · ${d.slotNo}</td>
+        <td class="font-mono text-xs">${esc(inlineContent(d))}</td><td class="whitespace-nowrap">${fmtDT(d.at)}</td><td>${fmtDate(d.warrantyEnd)}</td><td class="whitespace-nowrap">${statusBadge(d)}</td>
+        <td class="px-6 text-right whitespace-nowrap">${d.status === 'Đã giao' ? `<button class="${btn.link}" onclick="reveal(${d.id})">${S.revealed.has(d.id) ? 'Che' : 'Xem mã'}</button> · <button class="${btn.linkD}" onclick="openReplace(${d.id})">Giao thay</button>` : ''}</td></tr>`).join('')}</tbody></table></div></section>
+    <section class="${card} p-6"><h2 class="font-semibold mb-3">Lịch sử sửa phiếu</h2>${historyList(disp)}</section>`;
+  },
+};
+function maskedNotice(n) {
+  return `<div class="rounded-lg bg-amber-50 ring-1 ring-amber-600/20 p-3 text-sm text-amber-800 mb-4">Kết quả có ${n} Slot (từ 50 trở lên) nên chỉ hiện dạng che. Dùng Copy tất cả hoặc Tải file.</div>`;
+}
+
+// ───────────────────────── Phương án B: Wizard + giỏ hàng ─────────────────────────
+const VB = {
+  name: 'Wizard + giỏ hàng',
+  stepper(cur) {
+    const steps = S.addTo || (S.screen !== 'create' && S.result?.title !== 'Xuất kho') ? ['Chọn hàng', 'Kiểm tra', 'Giao'] : ['Đơn', 'Chọn hàng', 'Kiểm tra', 'Giao'];
+    const idx = steps.indexOf(cur);
+    return `<ol class="flex flex-wrap items-center gap-2 mb-6 text-sm">${steps.map((s, i) => `<li class="flex items-center gap-2">
+      <span class="grid place-items-center w-7 h-7 rounded-full text-xs font-bold ${i < idx ? 'bg-amber-500 text-white' : i === idx ? 'ring-2 ring-amber-500 text-amber-600 bg-white' : 'bg-gray-200 text-gray-500'}">${i < idx ? '✓' : i + 1}</span>
+      <span class="${i === idx ? 'font-semibold' : 'text-gray-500'}">${s}</span>${i < steps.length - 1 ? '<span class="w-8 h-px bg-gray-300"></span>' : ''}</li>`).join('')}</ol>`;
+  },
+  create() {
+    const d = S.draft, add = S.addTo, ch = CH(d.channelId);
+    const head = `<div class="flex items-center justify-between mb-2"><h1 class="text-2xl font-bold">${add ? 'Giao thêm vào ' + esc(S.dispatch.code) : 'Xuất kho'}</h1><button class="${btn.g}" onclick="cancelCreate()">Huỷ</button></div>`;
+    if (S.step === 1) return head + this.stepper('Đơn') + errorsBox() + `
+      <div class="${card} p-8 max-w-3xl">
+        <h2 class="text-lg font-semibold mb-4">Đơn này từ kênh nào?</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">${MANUAL.map(c => `<button onclick="setDraft('channelId',${c.id});render()" class="rounded-xl p-4 text-left ring-2 ${d.channelId == c.id ? 'ring-amber-500 bg-amber-50' : 'ring-gray-950/5 hover:ring-gray-300'}">
+          <div class="text-2xl">${c.icon}</div><div class="font-semibold">${c.name}</div><div class="text-xs text-gray-500">${c.requireOrder ? 'Bắt buộc mã đơn' : 'Mã đơn tự sinh nếu trống'}</div></button>`).join('')}</div>
+        ${ch ? `<div class="grid md:grid-cols-2 gap-4 mt-6 text-sm">
+          <label class="block"><span class="font-medium">Mã đơn ${ch.name} ${ch.requireOrder ? '<sup class="text-red-600">*</sup>' : ''}</span><input class="${inp} mt-1 !text-base" value="${esc(d.orderNo)}" oninput="setDraft('orderNo',this.value)" placeholder="${ch.requireOrder ? 'VD: SP240914ABC' : 'Để trống để tự sinh'}"></label>
+          <label class="block"><span class="font-medium">Khách</span><input class="${inp} mt-1 !text-base" value="${esc(d.customer)}" oninput="setDraft('customer',this.value)" placeholder="Tên, SĐT, link chat…"></label>
+          <label class="block md:col-span-2"><span class="font-medium">Ghi chú</span><input class="${inp} mt-1" value="${esc(d.note)}" oninput="setDraft('note',this.value)"></label></div>` : ''}
+        <div class="flex justify-end mt-6"><button class="${btn.p}" onclick="VB.next()">Tiếp: chọn hàng →</button></div>
+      </div>`;
+    if (S.step === 2) return head + this.stepper('Chọn hàng') + errorsBox() + `
+      <div class="grid lg:grid-cols-5 gap-6 items-start">
+        <div class="lg:col-span-3 ${card}">
+          <div class="p-3 border-b"><input class="${inp}" placeholder="Tìm Sản phẩm theo tên hoặc mã…" value="${esc(S.q)}" oninput="S.q=this.value;$('#plist').innerHTML=VB.plist()"></div>
+          <div id="plist">${this.plist()}</div>
+        </div>
+        <div class="lg:col-span-2 ${card} lg:sticky lg:top-4">
+          <div class="px-4 py-3 border-b flex justify-between items-center"><div><p class="font-semibold">Phiếu</p><p class="text-xs text-gray-500">${CH(d.channelId)?.icon ?? ''} ${esc(CH(d.channelId)?.name)} · ${esc(d.orderNo) || 'mã tự sinh'}</p></div>${add ? '' : `<button class="${btn.link}" onclick="S.step=1;render()">Sửa đơn</button>`}</div>
+          <div class="divide-y">${draftLines().length ? d.lines.map((l, i) => !l.code ? '' : `<div class="p-4 text-sm">
+            <div class="flex justify-between gap-2"><span class="font-medium">${esc(P(l.code).name)}</span><button class="text-gray-400 hover:text-red-600" onclick="rmLine(${i})">✕</button></div>
+            <div class="flex items-center gap-2 mt-2">
+              <button class="${btn.g} !px-2 !py-1" onclick="S.draft.lines[${i}].qty=Math.max(1,(+S.draft.lines[${i}].qty||1)-1);render()">−</button>
+              <input class="${inp} !w-16 text-center" value="${esc(l.qty)}" oninput="setLine(${i},'qty',this.value)">
+              <button class="${btn.g} !px-2 !py-1" onclick="S.draft.lines[${i}].qty=(+S.draft.lines[${i}].qty||0)+1;render()">+</button>
+              <input class="${inp}" value="${esc(l.price)}" oninput="setLine(${i},'price',this.value)" placeholder="Giá bán cả dòng">
+            </div>
+            ${+l.qty > P(l.code).stock ? `<p class="text-xs text-red-600 mt-1">Vượt Tồn bán được (${P(l.code).stock})</p>` : ''}</div>`).join('') : '<p class="p-4 text-sm text-gray-500">Bấm “+ Thêm” ở danh sách bên trái.</p>'}</div>
+          <div class="p-4 border-t space-y-3"><p class="text-sm" data-live="totals">${totalsText()}</p>
+            <button class="${btn.p} w-full justify-center" onclick="askConfirm()">Tiếp: kiểm tra →</button></div>
+        </div>
+      </div>`;
+    return head + this.stepper('Kiểm tra') + `
+      <div class="${card} p-8 max-w-2xl">
+        <h2 class="text-lg font-semibold mb-4">Kiểm tra trước khi xuất</h2>
+        ${confirmSummary()}${shortageBox()}
+        <div class="flex justify-between mt-6"><button class="${btn.g}" onclick="S.step=2;S.shortage=null;render()">← Sửa hàng</button>
+          <button class="${btn.p} !text-base !px-6" onclick="submitDraft()">Xuất kho ngay</button></div>
+      </div>`;
+  },
+  next() { const e = validate(true); S.errors = e.length ? e : null; if (!e.length) S.step = 2; render(); },
+  plist() {
+    const q = S.q.trim().toLowerCase();
+    return PRODUCTS.filter(p => !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)).map(p => `
+      <div class="flex items-center gap-3 px-4 py-3 border-b last:border-0">
+        <div class="grow min-w-0"><div class="font-medium text-sm">${esc(p.name)}</div><div class="text-xs text-gray-500">${p.code} · ${p.type}</div>
+          <div class="mt-1.5 h-1.5 bg-gray-100 rounded"><div class="h-1.5 rounded ${p.stock === 0 ? '' : p.stock <= p.low ? 'bg-amber-500' : 'bg-green-500'}" style="width:${Math.min(100, p.stock / (p.low * 4) * 100)}%"></div></div></div>
+        <div class="text-right shrink-0"><div class="text-lg font-bold ${p.stock === 0 ? 'text-red-600' : p.stock <= p.low ? 'text-amber-600' : ''}">${p.stock}</div><div class="text-xs text-gray-500">tồn bán được</div></div>
+        <button class="${btn.g}" onclick="VB.add('${p.code}')" ${p.stock === 0 ? 'disabled' : ''}>+ Thêm</button>
+      </div>`).join('');
+  },
+  add(code) { const l = S.draft.lines.find(x => x.code === code); if (l) l.qty = (+l.qty || 0) + 1; else S.draft.lines.push({ code, qty: 1, price: '' }); render(); },
+  result() {
+    const { disp, ds, masked } = resultData(); const all = ds.map(d => msg(disp, d, masked)).join(SEP);
+    return this.stepper('Giao') + `
+    <div class="grid lg:grid-cols-3 gap-6 items-start">
+      <div class="lg:col-span-2 ${card}">
+        <div class="flex flex-wrap gap-2 items-center justify-between px-5 py-3 border-b">
+          <div><p class="font-semibold">Tin nhắn gửi khách</p><p class="text-xs text-gray-500">${esc(S.result.title)} · ${ds.length} Slot · ${disp.code} · mã đơn ${esc(disp.orderNo)}</p></div>
+          <button class="${btn.p} !text-base !px-5" onclick="copyAll()">📋 Copy tất cả${S.result.copied.size === ds.length ? ' ✓' : ''}</button>
+        </div>
+        ${masked ? `<div class="p-4">${maskedNotice(ds.length)}</div>` : ''}
+        <pre class="p-5 font-mono text-sm whitespace-pre-wrap max-h-[60vh] overflow-auto">${esc(all)}</pre>
+      </div>
+      <aside class="space-y-4">
+        <div class="${card} p-5"><p class="font-semibold mb-2">Tải về</p><div class="flex gap-2"><button class="${btn.g}" onclick="download('txt')">TXT</button><button class="${btn.g}" onclick="download('csv')">CSV</button></div>
+          <p class="text-xs text-gray-500 mt-2">File sinh lúc tải, không lưu trên server. Mỗi lần tải ghi Nhật ký xem mã.</p></div>
+        ${masked ? '' : `<div class="${card} p-5"><p class="font-semibold mb-2">Copy từng Slot</p>${ds.map((d, i) => `<div class="flex justify-between gap-2 py-1.5 border-b last:border-0 text-sm"><span>#${i + 1} ${d.code} <span class="text-gray-500">${d.unitId} · ${d.slotNo}</span></span><button class="${btn.link}" onclick="copyOne(${d.id})">${S.result.copied.has(d.id) ? 'Đã copy ✓' : 'Copy'}</button></div>`).join('')}</div>`}
+        <button class="${btn.g} w-full justify-center" onclick="leaveResult()">Xong, về phiếu →</button>
+      </aside>
+    </div>`;
+  },
+  detail() {
+    const disp = S.dispatch, ch = CH(disp.channel); const total = disp.lines.reduce((s, l) => s + (parseMoney(l.price) || 0), 0);
+    return `<div class="max-w-4xl">
+    <div class="${card} p-6 mb-4 flex flex-wrap justify-between gap-4">
+      <div><p class="text-xs text-gray-500">Phiếu xuất</p><h1 class="text-2xl font-bold">${disp.code}</h1>
+        <p class="text-sm mt-1">${ch.icon} ${ch.name} · #${esc(disp.orderNo)}</p><p class="text-sm text-gray-600">${esc(disp.customer) || '—'}</p></div>
+      <div class="text-right">${badge('Hoàn tất', 'green')}<p class="text-2xl font-bold mt-2">${vnd(total || null)}</p>
+        <div class="flex gap-2 mt-2 justify-end"><button class="${btn.g}" onclick="openEdit()">Sửa</button><button class="${btn.p}" onclick="startAdd()">+ Giao thêm</button></div></div>
+    </div>
+    ${disp.lines.map((l, li) => { const ds = disp.deliveries.filter(d => d.lineIdx === li); return `<div class="${card} mb-4">
+      <div class="flex flex-wrap justify-between gap-2 px-5 py-3 border-b bg-gray-50 rounded-t-xl"><div><span class="font-semibold">${esc(P(l.code).name)}</span> ${badge(l.kind)}</div><div class="text-sm">${l.qty} Slot · ${vnd(parseMoney(l.price))}</div></div>
+      ${ds.map(d => `<div class="flex items-center gap-3 px-5 py-3 border-b last:border-0 ${d.status !== 'Đã giao' ? 'opacity-60' : ''}">
+        <div class="grow min-w-0"><p class="text-sm font-mono truncate">${esc(inlineContent(d))}</p><p class="text-xs text-gray-500">${d.unitId} · Slot ${d.slotNo} · giao ${fmtDT(d.at)} · BH đến ${fmtDate(d.warrantyEnd)}</p></div>
+        <div class="shrink-0">${statusBadge(d)}</div>
+        ${d.status === 'Đã giao' ? `<details class="relative shrink-0"><summary class="list-none cursor-pointer px-2 text-lg leading-none">⋮</summary>
+          <div class="absolute right-0 z-10 mt-1 w-40 ${card} py-1 text-sm"><button class="block w-full text-left px-3 py-1.5 hover:bg-gray-50" onclick="reveal(${d.id})">${S.revealed.has(d.id) ? 'Che' : 'Xem mã'}</button>
+          <button class="block w-full text-left px-3 py-1.5 hover:bg-gray-50 text-red-600" onclick="openReplace(${d.id})">Giao thay…</button></div></details>` : '<span class="w-6"></span>'}
+      </div>`).join('')}</div>`; }).join('')}
+    <div class="${card} p-5"><p class="font-semibold mb-2">Lịch sử sửa phiếu</p>${historyList(disp)}</div></div>`;
+  },
+};
+
+// ───────────────────────── Phương án C: Nhập nhanh bằng bàn phím ─────────────────────────
+function parseCmd(t) {
+  const seen = {};
+  return t.split('\n').map((raw, i) => ({ raw, n: i + 1 })).filter(x => x.raw.trim()).map(x => {
+    const tk = x.raw.trim().split(/\s+/); const code = tk[0].toUpperCase(); const p = P(code);
+    const qty = tk[1] ? parseInt(tk[1].replace(/^x/i, '')) : 1; const price = tk.slice(2).join('');
+    let err = null, warn = null;
+    if (!p) err = 'Không có Mã sản phẩm này';
+    else if (!(qty >= 1)) err = 'Số lượng không hợp lệ';
+    else if (seen[code]) err = `Trùng Sản phẩm với dòng ${seen[code]}`;
+    else if (qty > p.stock) warn = `Thiếu: còn ${p.stock}`;
+    if (p && !seen[code]) seen[code] = x.n;
+    return { ...x, code, p, qty, price, err, warn };
+  });
+}
+function syncCmd() { S.draft.lines = parseCmd(S.cmd).filter(x => x.p && !x.err).map(x => ({ code: x.code, qty: x.qty, price: x.price })); }
+const draftToCmd = () => draftLines().map(l => `${l.code} ${l.qty}${l.price ? ' ' + l.price : ''}`).join('\n');
+const VC = {
+  name: 'Nhập nhanh bằng bàn phím',
+  create() {
+    const d = S.draft, add = S.addTo, disp = S.dispatch, ch = CH(d.channelId);
+    return `
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-4"><h1 class="text-xl font-bold">${add ? `Giao thêm · ${disp.code}` : 'Xuất kho nhanh'}</h1>
+      <p class="text-xs text-gray-500"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> xuất · <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>3</kbd> chọn kênh · <button class="${btn.link} !text-xs" onclick="cancelCreate()">Huỷ</button></p></div>
+    ${errorsBox()}
+    <div class="grid lg:grid-cols-3 gap-4 items-start">
+      <div class="lg:col-span-2 space-y-3">
+        <div class="${card} p-3 flex flex-wrap items-center gap-2">
+          ${add ? `<span class="text-sm">${CH(disp.channel).icon} ${CH(disp.channel).name} · #${esc(disp.orderNo)} · ${esc(disp.customer)}</span>` : `
+          ${MANUAL.map((c, i) => `<button onclick="setDraft('channelId',${c.id});render()" class="rounded-full px-3 py-1 text-sm ring-1 ${d.channelId == c.id ? 'bg-gray-900 text-white ring-gray-900' : 'ring-gray-950/10 hover:bg-gray-50'}"><kbd>${i + 1}</kbd> ${c.name}</button>`).join('')}
+          <input class="${inp} !w-48" value="${esc(d.orderNo)}" oninput="setDraft('orderNo',this.value)" placeholder="${ch?.requireOrder ? 'Mã đơn (bắt buộc)' : 'Mã đơn (trống = tự sinh)'}">
+          <input class="${inp} !w-auto grow" value="${esc(d.customer)}" oninput="setDraft('customer',this.value)" placeholder="Khách: tên, SĐT, link…">`}
+        </div>
+        <div class="${card}">
+          <textarea id="cmd" rows="6" spellcheck="false" class="w-full font-mono text-sm p-4 rounded-t-xl border-0 focus:ring-0 resize-y"
+            placeholder="Mỗi dòng: MÃ-SẢN-PHẨM  số_lượng  [giá bán cả dòng]&#10;NETFLIX-1M 2 180k&#10;WIN11-PRO 1 250000"
+            oninput="S.cmd=this.value;syncCmd();$('#parsed').innerHTML=VC.parsed()" onkeydown="if((event.ctrlKey||event.metaKey)&&event.key==='Enter'){event.preventDefault();askConfirm()}">${esc(S.cmd)}</textarea>
+          <div id="parsed" class="border-t">${this.parsed()}</div>
+        </div>
+      </div>
+      <aside class="${card} text-sm">
+        <p class="px-4 py-2 border-b font-semibold">Tồn bán được <span class="font-normal text-xs text-gray-500">(bấm để chèn dòng)</span></p>
+        ${PRODUCTS.map(p => `<button onclick="VC.append('${p.code}')" class="w-full flex justify-between gap-2 px-4 py-2 hover:bg-gray-50 border-b last:border-0 text-left">
+          <span><span class="font-mono text-xs">${p.code}</span><span class="block text-xs text-gray-500">${esc(p.name)}</span></span>
+          <span class="font-bold ${p.stock === 0 ? 'text-red-600' : p.stock <= p.low ? 'text-amber-600' : ''}">${p.stock}</span></button>`).join('')}
+      </aside>
+    </div>
+    ${S.confirmBar ? this.bar() : ''}`;
+  },
+  parsed() {
+    const rows = parseCmd(S.cmd);
+    if (!rows.length) return '<p class="px-4 py-3 text-sm text-gray-500">Chưa có dòng nào.</p>';
+    return `<div class="overflow-x-auto"><table class="w-full text-sm"><thead class="text-left text-xs text-gray-500"><tr><th class="px-4 py-1.5">Dòng</th><th>Sản phẩm</th><th class="text-right">SL</th><th class="text-right">Giá bán</th><th class="px-4">Kiểm tra</th></tr></thead>
+      <tbody>${rows.map(r => `<tr class="border-t ${r.err ? 'bg-red-50/50' : r.warn ? 'bg-amber-50/50' : ''}"><td class="px-4 py-1.5 text-gray-400">${r.n}</td><td>${r.p ? esc(r.p.name) : `<span class="font-mono">${esc(r.code)}</span>`}</td><td class="text-right">${isNaN(r.qty) ? '?' : r.qty}</td><td class="text-right">${vnd(parseMoney(r.price))}</td>
+        <td class="px-4 whitespace-nowrap">${r.err ? `<span class="text-red-600">✕ ${esc(r.err)}</span>` : r.warn ? `<span class="text-amber-700">⚠ ${esc(r.warn)}</span>` : '<span class="text-green-700">✓ đủ hàng</span>'}</td></tr>`).join('')}</tbody></table></div>
+      <p class="px-4 py-2 border-t text-sm" data-live="totals">${totalsText()}</p>`;
+  },
+  append(code) { S.cmd = (S.cmd.trim() ? S.cmd.replace(/\s*$/, '\n') : '') + code + ' 1'; syncCmd(); render(); const t = $('#cmd'); t.focus(); t.setSelectionRange(t.value.length - 1, t.value.length); },
+  bar() {
+    const d = S.draft, ch = S.addTo ? CH(S.dispatch.channel) : CH(d.channelId), ls = draftLines();
+    const total = ls.reduce((s, l) => s + (parseMoney(l.price) || 0), 0);
+    return `<div class="fixed inset-x-4 bottom-16 z-40 mx-auto max-w-3xl rounded-xl bg-gray-900 text-white shadow-2xl p-4">
+      <p class="text-sm">Xuất <b>${ls.length}</b> dòng · <b>${ls.reduce((s, l) => s + +l.qty, 0)}</b> Slot · <b>${vnd(total || null)}</b> → ${ch.name} · ${d.orderNo.trim() ? '#' + esc(d.orderNo) : 'mã tự sinh'}${d.customer ? ' · ' + esc(d.customer) : ''}</p>
+      <p class="text-xs text-gray-400 mt-1">${ls.map(l => `${l.code} × ${l.qty}`).join(' · ')}</p>
+      ${S.shortage ? `<div class="mt-2 text-sm text-red-300">Không đủ Tồn bán được, chưa giao gì: ${S.shortage.map(x => `${x.code} cần ${x.want}, còn ${x.have}`).join('; ')}</div>` : ''}
+      <div class="flex justify-end gap-2 mt-3"><button class="rounded-lg px-3 py-1.5 text-sm ring-1 ring-white/20" onclick="S.confirmBar=false;S.shortage=null;render()"><kbd class="!bg-transparent !text-white">Esc</kbd> Huỷ</button>
+        <button id="c-confirm" class="${btn.p}" onclick="submitDraft()"><kbd class="!bg-transparent">Enter</kbd> Xác nhận xuất kho</button></div></div>`;
+  },
+  result() {
+    const { disp, ds, masked } = resultData(); const r = S.result; const sel = Math.min(r.sel, ds.length - 1); const cur = ds[sel]; const done = r.copied.size === ds.length;
+    return `
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <h1 class="text-xl font-bold grow">${esc(r.title)} · ${disp.code} <span class="text-sm font-normal text-gray-500">${CH(disp.channel).name} #${esc(disp.orderNo)}</span></h1>
+      <span class="text-sm font-semibold ${done ? 'text-green-700' : 'text-amber-700'}">Đã copy ${r.copied.size}/${ds.length}</span>
+      <button class="${btn.p}" onclick="copyAll()">Copy tất cả <kbd>A</kbd></button>
+      <button class="${btn.g}" onclick="download('txt')">TXT</button><button class="${btn.g}" onclick="download('csv')">CSV</button>
+      <button class="${btn.g}" onclick="leaveResult()">Xong <kbd>Esc</kbd></button>
+    </div>
+    ${masked ? maskedNotice(ds.length) : ''}
+    <div class="grid md:grid-cols-5 ${card} overflow-hidden">
+      <ol class="md:col-span-2 md:border-r max-h-[65vh] overflow-auto">${ds.map((d, i) => `<li><button onclick="S.result.sel=${i};render()" class="w-full text-left px-4 py-2 border-b flex gap-3 items-center ${i === sel && !masked ? 'bg-amber-50 shadow-[inset_4px_0_0_rgb(245,158,11)]' : 'hover:bg-gray-50'}">
+        <span class="w-6 text-gray-400 text-xs">${i + 1}</span>
+        <span class="grow min-w-0"><span class="block text-sm truncate">${esc(P(d.code).name)}</span><span class="block text-xs text-gray-500 font-mono truncate">${masked ? esc(inlineContent(d)) : `${d.unitId} · Slot ${d.slotNo}`}</span></span>
+        ${r.copied.has(d.id) ? '<span class="text-green-600">✓</span>' : ''}</button></li>`).join('')}</ol>
+      <div class="md:col-span-3 p-5">${masked ? `<div class="h-full min-h-40 grid place-items-center text-center text-gray-500 text-sm">Từ 50 Slot trở lên: không hiển thị nội dung từng Slot.<br>Dùng Copy tất cả hoặc tải file.</div>` : `
+        <div class="flex flex-wrap justify-between gap-2 mb-3"><div><p class="font-semibold">${esc(P(cur.code).name)}</p><p class="text-xs text-gray-500">${cur.unitId} · Slot ${cur.slotNo}${cur.note ? ' · ' + cur.note : ''} · BH đến ${fmtDate(cur.warrantyEnd)}</p></div>
+          <span class="text-xs text-gray-500">Slot ${sel + 1}/${ds.length}</span></div>
+        <pre class="rounded-lg bg-gray-50 ring-1 ring-gray-950/5 p-4 font-mono text-sm whitespace-pre-wrap">${esc(msg(disp, cur, false))}</pre>
+        <button class="${btn.p} w-full justify-center mt-3 !text-base" onclick="copyOne(${cur.id})">${r.copied.has(cur.id) ? 'Copy lại' : 'Copy Slot này'} <kbd>C</kbd></button>`}
+      </div>
+    </div>
+    <p class="text-xs text-gray-500 mt-2"><kbd>↑</kbd> <kbd>↓</kbd> chọn Slot · <kbd>C</kbd> copy Slot đang chọn rồi nhảy sang Slot kế · <kbd>A</kbd> copy tất cả</p>`;
+  },
+  detail() {
+    const disp = S.dispatch, ch = CH(disp.channel); const total = disp.lines.reduce((s, l) => s + (parseMoney(l.price) || 0), 0);
+    const groups = {};
+    disp.deliveries.forEach(d => { const l = disp.lines[d.lineIdx]; const kind = d.replaces ? 'Giao thay' : l.kind; const key = kind + '|' + d.at.getTime(); (groups[key] ??= { kind, at: d.at, ds: [] }).ds.push(d); });
+    const events = [...Object.values(groups), ...disp.history.map(h => ({ kind: 'Sửa', at: h.at, h }))].sort((a, b) => b.at - a.at);
+    const dot = { 'Giao bán': 'bg-green-500', 'Giao thêm': 'bg-sky-500', 'Giao thay': 'bg-amber-500', 'Sửa': 'bg-gray-400' };
+    return `
+    <div class="${card} px-4 py-3 mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+      <span class="text-lg font-bold">${disp.code}</span>${badge('Hoàn tất', 'green')}
+      <span>${ch.icon} ${ch.name} #${esc(disp.orderNo)}</span><span class="text-gray-600 truncate max-w-xs">${esc(disp.customer)}</span>
+      <span class="font-semibold">${vnd(total || null)}</span><span class="grow"></span>
+      <button class="${btn.g}" onclick="openEdit()">Sửa</button><button class="${btn.p}" onclick="startAdd()">+ Giao thêm</button>
+    </div>
+    <ol class="${card} p-5">${events.map(ev => `<li class="relative pl-7 pb-5 last:pb-0 border-l border-gray-200 ml-2">
+      <span class="absolute -left-[7px] top-1 w-3.5 h-3.5 rounded-full ring-4 ring-white ${dot[ev.kind]}"></span>
+      <p class="text-sm"><b>${ev.kind}</b> <span class="text-gray-500">· ${fmtDT(ev.at)} · ${disp.createdBy}</span></p>
+      ${ev.h ? `<p class="text-sm text-gray-600">${esc(ev.h.field)}: <s>${esc(ev.h.from) || '∅'}</s> → ${esc(ev.h.to) || '∅'}</p>` :
+      ev.ds.map(d => `<div class="mt-1.5 ${d.status !== 'Đã giao' ? 'opacity-60' : ''}">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <span class="font-mono text-xs">${d.code} · ${d.unitId}#${d.slotNo}</span><span class="font-mono text-xs text-gray-600">${esc(inlineContent(d))}</span>${statusBadge(d)}
+          <span class="text-xs text-gray-500">BH đến ${fmtDate(d.warrantyEnd)}</span>
+          ${d.status === 'Đã giao' ? `<button class="${btn.link} !text-xs" onclick="reveal(${d.id})">${S.revealed.has(d.id) ? 'che' : 'xem mã'}</button><button class="${btn.linkD} !text-xs" onclick="${S.rep?.id === d.id ? 'closeModal()' : `openReplace(${d.id})`}">${S.rep?.id === d.id ? 'đóng giao thay' : 'giao thay'}</button>` : ''}
+        </div>
+        ${S.rep?.id === d.id ? `<div class="mt-2 rounded-lg ring-1 ring-red-600/20 bg-red-50/30 p-4 max-w-xl">${replaceForm()}<div class="flex justify-end gap-2 mt-3">${replaceFooter()}</div></div>` : ''}
+      </div>`).join('')}
+    </li>`).join('')}</ol>`;
+  },
+};
+
+const VARIANTS = { A: VA, B: VB, C: VC };
+if (!VARIANTS[S.variant]) S.variant = 'A';
+
+// ───────────────────────── khung app, bảng trạng thái, thanh đổi phương án ─────────────────────────
+function shell(inner) {
+  const nav = ['Bảng điều khiển', 'Sản phẩm', 'Lô nhập', 'Phiếu xuất', 'Báo lỗi', 'Khiếu nại NCC', 'Báo cáo'];
+  return `<div class="min-h-screen flex">
+    <aside class="w-56 bg-white border-r hidden lg:block"><div class="h-14 flex items-center px-5 font-bold">📦 Kho hàng số</div>
+      <nav class="px-3 space-y-0.5 text-sm">${nav.map(n => `<a class="block rounded-lg px-3 py-2 ${n === 'Phiếu xuất' ? 'bg-gray-100 text-amber-600 font-semibold' : 'text-gray-700'}">${n}</a>`).join('')}</nav></aside>
+    <div class="flex-1 min-w-0">
+      <header class="h-14 bg-white border-b flex items-center justify-end px-4 sm:px-6 gap-3 text-sm">
+        ${badge('PROTOTYPE', 'amber')}<span class="grow"></span><span>${S.user} · <b>${S.role}</b></span><span class="w-8 h-8 rounded-full bg-amber-500 text-white grid place-items-center font-bold">L</span>
+      </header>
+      <main class="px-4 sm:px-6 py-6 max-w-6xl mx-auto pb-44">${inner}</main>
+    </div></div>`;
+}
+function statePanel() {
+  const a = S.audit.slice(-8).reverse(), l = S.ledger.slice(-6).reverse();
+  return `<details ${S.panelOpen ? 'open' : ''} ontoggle="S.panelOpen=this.open" class="fixed right-3 bottom-16 z-30 w-80 max-w-[calc(100vw-1.5rem)] rounded-xl bg-gray-900/95 text-gray-100 text-xs shadow-2xl">
+    <summary class="cursor-pointer px-3 py-2 font-semibold">🧪 Trạng thái giả lập</summary>
+    <div class="px-3 pb-3 space-y-2 max-h-[55vh] overflow-auto">
+      <div class="flex flex-wrap gap-2 items-center">Vai trò <select class="text-gray-900 rounded px-1" onchange="S.role=this.value;render()">${['Bán hàng', 'Quản trị'].map(r => `<option ${r === S.role ? 'selected' : ''}>${r}</option>`).join('')}</select>
+        · Giờ: ${fmtDT(NOW())} <button class="underline" onclick="S.clockShiftH+=25;render()">+25 giờ</button>${S.clockShiftH ? ` <button class="underline" onclick="S.clockShiftH=0;render()">về giờ thật</button>` : ''}</div>
+      <div class="flex flex-wrap gap-1.5">
+        <button class="rounded bg-gray-700 hover:bg-gray-600 px-2 py-1" onclick="seedDispatch()">Mở phiếu mẫu đã Hoàn tất</button>
+        <button class="rounded bg-gray-700 hover:bg-gray-600 px-2 py-1" onclick="S.addTo=false;S.draft=newDraft();S.step=1;S.cmd='';S.result=null;S.screen='create';closeModal()">Tạo phiếu mới</button>
+        <button class="rounded bg-gray-700 hover:bg-gray-600 px-2 py-1" onclick="location.reload()">Reset</button></div>
+      <div>Màn: <b>${S.screen}</b>${S.dispatch ? ` · ${S.dispatch.code}: ${S.dispatch.deliveries.length} lần giao` : ''}</div>
+      <div><p class="font-semibold text-amber-300">Tồn bán được</p>${PRODUCTS.map(p => `${p.code}: <b>${p.stock}</b>`).join(' · ')}</div>
+      <div><p class="font-semibold text-amber-300">Nhật ký xem mã (${S.audit.length})</p>${a.map(x => `<div class="text-gray-300">${fmtDT(x.at)} · ${x.who} · ${x.slot} · ${x.reason}</div>`).join('') || '<div class="text-gray-500">trống</div>'}<div class="text-gray-500">Copy không ghi nhật ký.</div></div>
+      <div><p class="font-semibold text-amber-300">Sổ biến động kho (${S.ledger.length})</p>${l.map(x => `<div class="text-gray-300">${fmtDT(x.at)} · ${esc(x.what)}</div>`).join('') || '<div class="text-gray-500">trống</div>'}</div>
+    </div></details>`;
+}
+function switcher() {
+  return `<div class="fixed bottom-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 rounded-full bg-black text-white shadow-2xl px-2 py-1.5 text-sm ring-2 ring-fuchsia-500 whitespace-nowrap">
+    <button class="px-2 hover:text-fuchsia-300" onclick="cycle(-1)" title="Phương án trước (←)">←</button>
+    <span class="px-2 font-medium">${S.variant} (${VARIANTS[S.variant].name})</span>
+    <button class="px-2 hover:text-fuchsia-300" onclick="cycle(1)" title="Phương án sau (→)">→</button></div>`;
+}
+function cycle(n) {
+  const k = Object.keys(VARIANTS); const from = S.variant; S.variant = k[(k.indexOf(S.variant) + n + k.length) % k.length];
+  try { const u = new URL(location); u.searchParams.set('variant', S.variant); history.replaceState(null, '', u); } catch { /* file:// ở vài trình duyệt không cho đổi URL */ }
+  if (S.variant === 'C' && from !== 'C') S.cmd = draftToCmd();
+  if (S.variant === 'B' && S.screen === 'create') S.step = S.addTo ? 2 : 1;
+  if (S.variant === 'A' && S.screen === 'create' && !S.draft.lines.length) S.draft.lines.push({ code: '', qty: 1, price: '' });
+  S.confirmBar = false; S.shortage = null; S.errors = null;
+  if (S.modal === 'confirm') S.modal = null;
+  if (S.rep) S.modal = S.variant === 'C' ? null : 'replace';
+  render();
+}
+function seedDispatch() {
+  const save = S.clockShiftH;
+  const disp = { code: 'PX-20260913-0041', channel: 1, orderNo: 'SP240912XYZ', customer: 'Minh Anh · 0901 234 567 · shopee.vn/chat/minhanh', note: 'Khách quen', lines: [], deliveries: [], history: [], createdBy: S.user };
+  S.dispatch = disp;
+  S.clockShiftH = save - 26; disp.createdAt = NOW();
+  let li = disp.lines.push({ code: 'STEAM-50', qty: 1, price: '1250000', kind: 'Giao bán', at: NOW() }) - 1; deliverOne(disp, P('STEAM-50'), li);
+  S.clockShiftH = save - 3;
+  li = disp.lines.push({ code: 'NETFLIX-1M', qty: 2, price: '170000', kind: 'Giao thêm', at: NOW() }) - 1; deliverOne(disp, P('NETFLIX-1M'), li); deliverOne(disp, P('NETFLIX-1M'), li);
+  S.clockShiftH = save;
+  if (!S.orders.find(o => o.code === disp.code)) S.orders.push({ channel: 1, orderNo: disp.orderNo, code: disp.code });
+  S.addTo = false; S.result = null; S.revealed = new Set(); S.screen = 'detail'; S.modal = null; S.rep = null; S.confirmBar = false;
+  render();
+}
+function render() {
+  const v = VARIANTS[S.variant];
+  if (S.screen === 'result' && !S.result) S.screen = S.dispatch ? 'detail' : 'create';
+  if (S.screen === 'detail' && !S.dispatch) S.screen = 'create';
+  $('#app').innerHTML = shell(v[S.screen]());
+  $('#modal').innerHTML = S.modal ? MODALS[S.modal]() : '';
+  $('#state').innerHTML = statePanel();
+  $('#switcher').innerHTML = switcher();
+  if (S.confirmBar) $('#c-confirm')?.focus();
+}
+document.addEventListener('keydown', e => {
+  const typing = e.target.matches('input,textarea,select,[contenteditable]');
+  if (e.key === 'Escape' && S.confirmBar) { S.confirmBar = false; S.shortage = null; render(); return; }
+  if (e.key === 'Escape' && (S.modal || S.rep)) { closeModal(); return; }
+  if (S.variant === 'C' && S.screen === 'create' && !S.addTo && e.altKey && /^[1-3]$/.test(e.key)) { e.preventDefault(); S.draft.channelId = MANUAL[+e.key - 1].id; render(); return; }
+  if (typing) return;
+  if (e.key === 'ArrowLeft') return cycle(-1);
+  if (e.key === 'ArrowRight') return cycle(1);
+  if (S.variant === 'C' && S.screen === 'result' && S.result) {
+    const r = S.result, n = r.ids.length;
+    if (['ArrowDown', 'j'].includes(e.key)) { e.preventDefault(); r.sel = Math.min(n - 1, r.sel + 1); render(); }
+    else if (['ArrowUp', 'k'].includes(e.key)) { e.preventDefault(); r.sel = Math.max(0, r.sel - 1); render(); }
+    else if (e.key === 'c' && !r.masked) copyOne(r.ids[r.sel]);
+    else if (e.key === 'a') copyAll();
+    else if (e.key === 'Escape') leaveResult();
+  }
+});
+render();
+</script>
+</body>
+</html>
