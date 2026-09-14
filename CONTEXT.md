@@ -41,7 +41,7 @@ Một đơn cần giao từ một **Kênh bán**, gồm một hoặc nhiều **D
 _Avoid_: đơn hàng (kho không quản lý đơn bán), Khách hàng (kho không có thực thể khách)
 
 **Dòng xuất** (Dispatch line):
-Phần của một **Phiếu xuất** dành cho đúng một **Sản phẩm**: số lượng **Slot** cần giao và **Giá bán** tuỳ chọn. Các **Slot** được chọn tự động theo **Thứ tự xuất**, nhân viên không chọn đích danh.
+Phần của một **Phiếu xuất** dành cho đúng một **Sản phẩm**: số lượng **Slot** cần giao và **Giá bán** tuỳ chọn. Các **Slot** được chọn tự động theo **Thứ tự xuất**, nhân viên không chọn đích danh, trừ **Ghi nhận giao bù**.
 
 **Thứ tự xuất** (Pick order):
 Quy tắc chọn **Slot** Còn hàng cho một **Dòng xuất**: slot của **Tài khoản** đã giao dở trước, rồi **Hạn sử dụng** gần nhất trước (hàng không có hạn xếp sau), rồi hàng nhập trước. Bỏ qua Slot không đạt **Hạn còn lại tối thiểu**.
@@ -120,7 +120,7 @@ _Avoid_: bảo hành (khi nói về một lần khách báo)
 Mức mà một **Báo lỗi** đã Xác nhận ảnh hưởng: **cả Đơn vị hàng** (Đơn vị hàng chuyển sang Lỗi, tính vào tỉ lệ lỗi **Nhà cung cấp**) hoặc **chỉ Slot** (Đơn vị hàng vẫn Hoạt động, ví dụ một profile bị khách khác phá).
 
 **Lần giao bị ảnh hưởng** (Affected delivery):
-Lần **Giao hàng** khác của một **Đơn vị hàng** vừa chuyển sang Lỗi, hoặc vừa bị **Huỷ hàng** cả đơn vị trong một **Giao thay**. Hệ thống liệt kê để nhân viên chủ động liên hệ khách; với Đơn vị hàng Lỗi thì tạo được **Báo lỗi** hàng loạt, tự Xác nhận. Không tự Báo lỗi hay **Đổi hàng**.
+Lần **Giao hàng** khác của một **Đơn vị hàng** vừa chuyển sang Lỗi, hoặc vừa bị **Huỷ hàng** cả đơn vị trong một **Giao thay**; hoặc lần giao **Tài khoản** còn trong **Hạn bảo hành** khi nội dung kho bị coi là đã lộ. Hệ thống liệt kê để nhân viên chủ động liên hệ khách; với Đơn vị hàng Lỗi thì tạo được **Báo lỗi** hàng loạt, tự Xác nhận. Không tự Báo lỗi hay **Đổi hàng**.
 
 **Đổi hàng** (Replacement):
 Giao một **Slot** khác thay cho **Slot** có **Báo lỗi** đã Xác nhận, có liên kết với lần **Giao hàng** gốc và kế thừa **Hạn bảo hành** của nó. Mặc định cùng **Sản phẩm**; Slot thay thế phải có **Hạn sử dụng** phủ hết Hạn bảo hành kế thừa. Kho không xử lý hoàn tiền; khách nhận hoàn tiền ngoài kho thì Báo lỗi có kết quả Không đổi.
@@ -160,11 +160,22 @@ Bản ghi mà qua đó nội dung đầy đủ của một **Slot** được hi�
 Nhật ký chỉ-ghi-thêm mỗi lần nội dung đầy đủ bị hiển thị hoặc tải về: ai (nhân viên hoặc **Khoá API**), khi nào, Slot nào, **Ngữ cảnh xem mã**, lý do. Không chứa nội dung mã, không ghi thao tác Copy, trừ Copy tất cả khi màn kết quả chỉ hiện dạng che (từ 50 **Slot** trở lên); lưu vĩnh viễn, chỉ **Quản trị** xem được.
 
 **Nhật ký bảo mật** (Security log):
-Nhật ký chỉ-ghi-thêm các sự kiện về quyền truy cập: đăng nhập, sai 2FA, reset 2FA, tạo hoặc **Khoá nhân viên**, đổi **Vai trò**, tạo, thu hồi hoặc xoay **Khoá API**. Lưu vĩnh viễn, chỉ **Quản trị** xem được.
+Nhật ký chỉ-ghi-thêm các sự kiện về quyền truy cập: đăng nhập, sai 2FA, reset 2FA, tạo hoặc **Khoá nhân viên**, đổi **Vai trò**, tạo, thu hồi hoặc xoay **Khoá API**, xoay khoá mã hoá của kho, bật hoặc tắt **Tạm dừng xuất kho**. Không bao giờ chứa giá trị khoá. Lưu vĩnh viễn, chỉ **Quản trị** xem được.
 
 **Khoá nhân viên** (Deactivate staff):
 Chặn một nhân viên đăng nhập, có hiệu lực ngay kể cả phiên đang mở. Nhân viên không bao giờ bị xoá vì các nhật ký tham chiếu tới họ.
 _Avoid_: xoá nhân viên
+
+**Người vận hành server** (Server operator):
+Người có quyền quản trị máy chủ chạy kho, đọc được mọi nội dung mà không đi qua **Nhật ký xem mã**. Không phải một **Vai trò** trong app. Chỉ chủ shop giữ lâu dài; người khác chỉ được cấp theo từng đợt và bị thu hồi khi xong việc.
+_Avoid_: admin (dễ nhầm với **Quản trị**)
+
+**Tạm dừng xuất kho** (Dispatch freeze):
+Trạng thái toàn kho trong đó không **Kênh bán** nào, kể cả kênh API, được **Giữ hàng** hay **Giao hàng**. Chỉ **Quản trị** bật hoặc tắt, kèm lý do. Kho luôn ở trạng thái này sau khi khôi phục từ backup, cho tới khi Quản trị đối chiếu xong các đơn phát sinh sau mốc khôi phục; cũng được bật khi nghi nội dung kho bị lộ.
+_Avoid_: bảo trì, khoá kho
+
+**Ghi nhận giao bù** (Recorded lost delivery):
+Quản trị ghi lại một lần **Giao hàng** đã thực sự xảy ra nhưng bị mất khỏi kho do khôi phục từ backup, bằng cách chọn đích danh **Slot** qua **Khoá chống trùng**, kèm lý do. Là ngoại lệ duy nhất cho việc Slot được chọn theo **Thứ tự xuất**.
 
 ## Relationships
 
@@ -193,4 +204,5 @@ _Avoid_: xoá nhân viên
 - "tỉ lệ lỗi tháng X" có thể hiểu là số hàng chuyển Lỗi trong tháng chia số hàng giao trong tháng. Đã chốt: **Tỉ lệ lỗi** tính theo lứa nhập, tử số và mẫu số trên cùng một tập Đơn vị hàng.
 - "tồn kho" từng gộp cả Slot đang giữ và hàng không bán được. Đã chốt: cảnh báo và con số chính dùng **Tồn bán được**; Slot Đã giữ, tạm ngừng, không đạt hạn tối thiểu và **Tồn lỗi** hiện tách riêng.
 - "lãi/lỗ" có thể hiểu là chỉ Giá bán trừ Giá vốn hàng đã giao. Đã chốt: tách **Lãi gộp** và **Lãi ròng kho**; hàng lỗi, huỷ, hết hạn và Chi phí đổi hàng chỉ trừ vào Lãi ròng kho.
+- "khoá" dùng cho nhiều thứ khác nhau. Đã chốt: **Khoá API** (bí mật của kênh), **Khoá chống trùng** (trường nội dung), **Khoá nhân viên** (chặn đăng nhập); còn khoá mã hoá của kho chỉ **Người vận hành server** đụng tới và luôn nói rõ là "khoá mã hoá".
 - Hàng nhập nhầm từng chỉ có cách Huỷ hàng, khiến Mã dùng một lần không nhập lại được. Đã chốt: tách riêng **Huỷ nhập**, giải phóng Khoá chống trùng.
