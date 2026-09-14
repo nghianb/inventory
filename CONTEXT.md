@@ -90,10 +90,17 @@ Quản trị đưa một **Đơn vị hàng** Lỗi về Hoạt động, kèm l�
 **Giá vốn** của **Slot** giao ra trong một **Đổi hàng**. Gắn với **Nhà cung cấp** của **Đơn vị hàng** lỗi, không cộng vào lãi/lỗ của **Phiếu xuất** gốc.
 
 **Tồn lỗi** (Defective stock):
-Các **Slot** Còn hàng của **Đơn vị hàng** Lỗi: vẫn nằm trong kho nhưng không bán được, tách khỏi tồn bán được trong báo cáo và cảnh báo sắp hết.
+Các **Slot** Còn hàng của **Đơn vị hàng** Lỗi: vẫn nằm trong kho nhưng không bán được, tách khỏi **Tồn bán được** trong báo cáo và cảnh báo sắp hết.
+
+**Tồn bán được** (Sellable stock):
+Các **Slot** Còn hàng giao được ngay: thuộc **Đơn vị hàng** Hoạt động, không bị tạm ngừng vì **Báo lỗi** Chờ xác minh, chưa quá **Hạn sử dụng** và đạt **Hạn còn lại tối thiểu**. Slot Đã giữ không thuộc Tồn bán được. Đơn vị đếm tồn kho là Slot.
+_Avoid_: tồn kho (khi nói chung chung, vì còn gồm Slot đang giữ, tạm ngừng, **Tồn lỗi**)
+
+**Ngưỡng sắp hết** (Low-stock threshold):
+Số **Slot** do **Sản phẩm** khai báo tuỳ chọn; khi **Tồn bán được** không vượt quá ngưỡng thì Sản phẩm bị cảnh báo sắp hết. Để trống thì không cảnh báo; Sản phẩm **Ngừng bán** không bị cảnh báo.
 
 **Tỉ lệ lỗi** (Defect rate):
-Của một **Nhà cung cấp**: số **Đơn vị hàng** Lỗi chia cho số Đơn vị hàng đã giao ít nhất một **Slot**. Tử số gồm Lỗi từ **Báo lỗi** có **Phạm vi lỗi** cả Đơn vị hàng và Lỗi do **Đánh dấu Lỗi**, không gồm hàng đã **Khôi phục**. Không gồm **Giao thay** hay Báo lỗi chỉ Slot.
+Của một **Nhà cung cấp**: số **Đơn vị hàng** Lỗi chia cho số Đơn vị hàng đã giao ít nhất một **Slot**. Tử số gồm Lỗi từ **Báo lỗi** có **Phạm vi lỗi** cả Đơn vị hàng và Lỗi do **Đánh dấu Lỗi**, không gồm hàng đã **Khôi phục**. Không gồm **Giao thay** hay Báo lỗi chỉ Slot. Tính theo lứa nhập: tỉ lệ lỗi của một khoảng thời gian xét các Đơn vị hàng có **Lô nhập** xác nhận trong khoảng đó, nên con số của một kỳ cũ còn tăng dần. Dòng bị bỏ vì lỗi định dạng hoặc trùng khi nhập không tính vào Tỉ lệ lỗi.
 
 **Báo lỗi** (Defect report):
 Ghi nhận một **Slot** đã giao (của **Tài khoản** hoặc **Mã dùng một lần**) nhưng không dùng được, do nhân viên tạo trong **Hạn bảo hành**. Có trạng thái Chờ xác minh, Xác nhận hoặc Bác bỏ. Trong lúc Chờ xác minh, các Slot còn trong kho của cùng **Đơn vị hàng** tạm ngừng bán. Khi Xác nhận, người xác minh chọn **Phạm vi lỗi**. Báo lỗi đã Xác nhận có **Kết quả xử lý**: Chờ đổi, Đã đổi hoặc Không đổi.
@@ -173,4 +180,6 @@ _Avoid_: xoá nhân viên
 - "gia hạn tài khoản" có thể hiểu là sửa **Hạn sử dụng** của Đơn vị hàng cũ. Đã chốt: gia hạn là nhập lại thành **Đơn vị hàng** mới, liên kết với cái cũ, có **Giá vốn** riêng.
 - "nhà cung cấp thu hồi" và "hỏng trong kho" từng là lý do **Huỷ hàng**, khiến hàng lỗi không vào tỉ lệ lỗi. Đã chốt: đó là **Đánh dấu Lỗi**; Huỷ hàng chỉ dành cho lý do không phải lỗi hàng.
 - "audit log" từng dùng chung cho mọi thứ được ghi lại. Đã chốt: tách thành **Nhật ký xem mã** (ai thấy mã nào), **Nhật ký bảo mật** (ai vào hệ thống, ai đổi quyền của ai), **Sổ biến động kho** (chuyển trạng thái) và lịch sử sửa **Phiếu xuất**.
+- "tỉ lệ lỗi tháng X" có thể hiểu là số hàng chuyển Lỗi trong tháng chia số hàng giao trong tháng. Đã chốt: **Tỉ lệ lỗi** tính theo lứa nhập, tử số và mẫu số trên cùng một tập Đơn vị hàng.
+- "tồn kho" từng gộp cả Slot đang giữ và hàng không bán được. Đã chốt: cảnh báo và con số chính dùng **Tồn bán được**; Slot Đã giữ, tạm ngừng, không đạt hạn tối thiểu và **Tồn lỗi** hiện tách riêng.
 - Hàng nhập nhầm từng chỉ có cách Huỷ hàng, khiến Mã dùng một lần không nhập lại được. Đã chốt: tách riêng **Huỷ nhập**, giải phóng Khoá chống trùng.
