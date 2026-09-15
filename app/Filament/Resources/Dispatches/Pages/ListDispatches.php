@@ -57,7 +57,7 @@ class ListDispatches extends ListRecords
                                     e($dispatch->external_ref),
                                 ),
                                 'product' => $delivery->dispatchLine->product->name,
-                                'unit' => "#{$delivery->stock_unit_id} · Slot #{$delivery->slot_id}",
+                                'unit' => $delivery->unitLabel(),
                                 'delivered_at' => $delivery->delivered_at->format('d/m/Y H:i'),
                                 'warranty' => $delivery->warrantyEndsOn()->format('d/m/Y'),
                                 'status' => $delivery->slot->status->label(),

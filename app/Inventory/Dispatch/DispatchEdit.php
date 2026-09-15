@@ -3,7 +3,7 @@
 namespace App\Inventory\Dispatch;
 
 /**
- * Nội dung modal sửa Phiếu xuất Hoàn tất: giá trị mới của mọi trường sửa được.
+ * Giá trị mới của mọi trường sửa được của một Phiếu xuất Hoàn tất.
  */
 final readonly class DispatchEdit
 {

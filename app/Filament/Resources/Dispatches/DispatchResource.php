@@ -9,7 +9,6 @@ use App\Filament\Resources\Dispatches\Pages\ViewDispatch;
 use App\Filament\Resources\Dispatches\Widgets\DispatchDeliveries;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
-use App\Inventory\Dispatch\DispatchRevisionField;
 use App\Inventory\Dispatch\DispatchStatus;
 use App\Inventory\Stock\SellableStock;
 use App\Models\Dispatch;
@@ -204,8 +203,8 @@ class DispatchResource extends Resource
                             'occurred_at' => $revision->occurred_at->format('d/m/Y H:i'),
                             'actor' => $revision->actor->name,
                             'field' => $revision->label(),
-                            'old' => self::revisionValue($revision, $revision->old_value),
-                            'new' => self::revisionValue($revision, $revision->new_value),
+                            'old' => $revision->oldValueLabel(),
+                            'new' => $revision->newValueLabel(),
                         ])->all())
                         ->placeholder('Chưa sửa lần nào.')
                         ->table([
@@ -225,14 +224,6 @@ class DispatchResource extends Resource
                 ])
                 ->columnSpanFull(),
         ]);
-    }
-
-    /**
-     * Giá trị lịch sử sửa phiếu để hiển thị: Giá bán định dạng tiền.
-     */
-    private static function revisionValue(DispatchRevision $revision, ?string $value): ?string
-    {
-        return $value !== null && $revision->field === DispatchRevisionField::SalePrice ? self::money((int) $value) : $value;
     }
 
     public static function table(Table $table): Table
@@ -296,6 +287,10 @@ class DispatchResource extends Resource
             ]);
     }
 
+    /**
+     * Đăng ký widget thành component Livewire; bảng Lần giao nhúng vào infolist bằng Livewire::make
+     * vẫn cần đăng ký để các request sau của nó (Xem mã) tìm được class.
+     */
     public static function getWidgets(): array
     {
         return [

@@ -40,24 +40,21 @@ class DeliveryLookup
         // Sai khoá HMAC thì mọi hash lệch và tra cứu âm thầm không thấy gì: báo lỗi thay vì trả rỗng.
         $this->fingerprints->verify();
 
-        // Mỗi cách chuẩn hoá một hash, áp cho các Sản phẩm dùng cách đó.
-        $groups = Product::query()
+        // Hash theo chuẩn hoá của từng Sản phẩm; các Sản phẩm cùng cách chuẩn hoá ra cùng hash.
+        $productIdsByHash = Product::query()
             ->get(['id', 'case_insensitive', 'strip_separators'])
-            ->groupBy(fn (Product $product): string => (int) $product->case_insensitive.(int) $product->strip_separators)
-            ->filter(fn (Collection $products): bool => $products->first()?->normalization()->apply($value) !== '')
-            ->map(fn (Collection $products): array => [
-                'products' => $products->modelKeys(),
-                'hash' => $this->crypto->dedupeHash($value, $products->firstOrFail()->normalization()),
-            ]);
+            ->reject(fn (Product $product): bool => $product->normalization()->apply($value) === '')
+            ->groupBy(fn (Product $product): string => $this->crypto->dedupeHash($value, $product->normalization()))
+            ->map(fn (Collection $products): array => $products->modelKeys());
 
-        if ($groups->isEmpty()) {
+        if ($productIdsByHash->isEmpty()) {
             return new Collection;
         }
 
         return Delivery::query()
-            ->whereHas('stockUnit', fn (Builder $units) => $units->where(function (Builder $units) use ($groups): void {
-                foreach ($groups as $group) {
-                    $units->orWhere(fn (Builder $units) => $units->whereIn('product_id', $group['products'])->where('dedupe_hash', $group['hash']));
+            ->whereHas('stockUnit', fn (Builder $units) => $units->where(function (Builder $units) use ($productIdsByHash): void {
+                foreach ($productIdsByHash as $hash => $productIds) {
+                    $units->orWhere(fn (Builder $units) => $units->whereIn('product_id', $productIds)->where('dedupe_hash', $hash));
                 }
             }))
             ->with(['dispatchLine.dispatch.salesChannel', 'dispatchLine.product', 'slot', 'stockUnit'])

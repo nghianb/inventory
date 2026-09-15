@@ -45,11 +45,11 @@ class DispatchEditor
 
             // Phiếu khác có thể vừa chiếm đúng mã này giữa lúc kiểm tra và lúc lưu.
             if (! ExternalRefs::claim($current->sales_channel_id, $ref, $current->id)) {
-                throw new InvalidDispatch([ManualDispatch::duplicateRef($current->salesChannel, $ref)]);
+                throw new InvalidDispatch([ExternalRefs::taken($current->salesChannel, $ref)]);
             }
 
             $revisions = [];
-            $record = function (DispatchRevisionField $field, int|string|null $old, int|string|null $new, ?DispatchLine $line = null) use (&$revisions): void {
+            $trackChange = function (DispatchRevisionField $field, int|string|null $old, int|string|null $new, ?DispatchLine $line = null) use (&$revisions): void {
                 if ($old !== $new) {
                     $revisions[] = [
                         'dispatch_line_id' => $line?->id,
@@ -63,14 +63,14 @@ class DispatchEditor
             $customer = self::blankToNull($edit->customer);
             $note = self::blankToNull($edit->note);
 
-            $record(DispatchRevisionField::ExternalRef, $current->external_ref, $ref);
-            $record(DispatchRevisionField::Customer, $current->customer, $customer);
-            $record(DispatchRevisionField::Note, $current->note, $note);
+            $trackChange(DispatchRevisionField::ExternalRef, $current->external_ref, $ref);
+            $trackChange(DispatchRevisionField::Customer, $current->customer, $customer);
+            $trackChange(DispatchRevisionField::Note, $current->note, $note);
             $current->forceFill(['external_ref' => $ref, 'customer' => $customer, 'note' => $note])->save();
 
             foreach ($edit->salePrices as $lineId => $price) {
                 $line = $current->lines->firstOrFail('id', $lineId);
-                $record(DispatchRevisionField::SalePrice, $line->sale_price, $price, $line);
+                $trackChange(DispatchRevisionField::SalePrice, $line->sale_price, $price, $line);
                 $line->forceFill(['sale_price' => $price])->save();
             }
 
@@ -88,6 +88,15 @@ class DispatchEditor
     }
 
     /**
+     * Nhân viên có sửa được phiếu này lúc này không: Bán hàng, phiếu Hoàn tất. Để panel ẩn nút sửa,
+     * không thay cho kiểm tra trong {@see edit()}.
+     */
+    public function canEdit(User $actor, Dispatch $dispatch): bool
+    {
+        return $dispatch->status === DispatchStatus::Completed && $this->roles->allows($actor, Role::BanHang);
+    }
+
+    /**
      * @return list<DispatchProblem>
      */
     private static function problems(Dispatch $dispatch, DispatchEdit $edit, string $ref): array
@@ -96,10 +105,8 @@ class DispatchEditor
 
         if ($ref === '') {
             $problems[] = new DispatchProblem('Mã đơn ngoài không được để trống.');
-        } elseif (mb_strlen($ref) > ManualDispatch::MAX_REF_LENGTH) {
-            $problems[] = new DispatchProblem(sprintf('Mã đơn ngoài dài quá %d ký tự.', ManualDispatch::MAX_REF_LENGTH));
-        } elseif (! in_array(ExternalRefs::holderId($dispatch->sales_channel_id, $ref), [null, $dispatch->id], true)) {
-            $problems[] = ManualDispatch::duplicateRef($dispatch->salesChannel, $ref);
+        } elseif (($problem = ExternalRefs::problem($dispatch->salesChannel, $ref, $dispatch->id)) !== null) {
+            $problems[] = $problem;
         }
 
         foreach ($edit->salePrices as $lineId => $price) {

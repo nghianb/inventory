@@ -2,6 +2,7 @@
 
 namespace App\Inventory\Dispatch;
 
+use App\Models\SalesChannel;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -10,6 +11,36 @@ use Illuminate\Support\Facades\DB;
  */
 final class ExternalRefs
 {
+    public const MAX_LENGTH = 100;
+
+    /**
+     * Lỗi của mã đơn ngoài khi gán cho phiếu: quá dài, hoặc đã bị phiếu khác chiếm trong kênh.
+     *
+     * @param  ?int  $dispatchId  phiếu được gán mã; null khi tạo phiếu mới
+     */
+    public static function problem(?SalesChannel $channel, string $ref, ?int $dispatchId = null): ?DispatchProblem
+    {
+        if (mb_strlen($ref) > self::MAX_LENGTH) {
+            return new DispatchProblem(sprintf('Mã đơn ngoài dài quá %d ký tự.', self::MAX_LENGTH));
+        }
+
+        if ($channel === null) {
+            return null;
+        }
+
+        $holderId = self::holderId($channel->id, $ref);
+
+        return in_array($holderId, [null, $dispatchId], true) ? null : self::taken($channel, $ref, $holderId);
+    }
+
+    /**
+     * Lỗi mã đơn ngoài đã bị chiếm, kèm phiếu đã chiếm để nhân viên mở ra xem.
+     */
+    public static function taken(SalesChannel $channel, string $ref, ?int $holderId = null): DispatchProblem
+    {
+        return new DispatchProblem("Mã đơn ngoài \"{$ref}\" đã có trong Kênh bán \"{$channel->name}\".", $holderId ?? self::holderId($channel->id, $ref));
+    }
+
     /**
      * Phiếu xuất đã chiếm mã này trong kênh; null khi mã còn trống.
      */

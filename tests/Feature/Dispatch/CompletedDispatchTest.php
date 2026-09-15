@@ -221,7 +221,10 @@ it('sửa phiếu vẫn kiểm tra mã đơn ngoài trùng trong Kênh bán, kh�
 
     DB::table('dispatches')->where('id', $first->id)->update(['status' => DispatchStatus::Cancelled->value]);
 
-    expect(fn () => $editor->edit($this->seller, $first, $edit(externalRef: 'ZL-001', customer: 'Khách')))
+    expect($editor->canEdit($this->seller, $dispatch))->toBeTrue()
+        ->and($editor->canEdit(staffMember(Role::NhapKho), $dispatch))->toBeFalse()
+        ->and($editor->canEdit($this->seller, $first->fresh()))->toBeFalse()
+        ->and(fn () => $editor->edit($this->seller, $first, $edit(externalRef: 'ZL-001', customer: 'Khách')))
         ->toThrow(InvalidDispatch::class, 'Chỉ sửa được Phiếu xuất Hoàn tất.')
         ->and(DispatchRevision::count())->toBe(1)
         ->and($first->fresh()->customer)->toBeNull();

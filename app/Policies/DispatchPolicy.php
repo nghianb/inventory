@@ -4,7 +4,6 @@ namespace App\Policies;
 
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
-use App\Inventory\Dispatch\DispatchStatus;
 use App\Models\Dispatch;
 use App\Models\User;
 
@@ -33,7 +32,7 @@ class DispatchPolicy
 
     public function update(User $user, Dispatch $dispatch): bool
     {
-        return $dispatch->status === DispatchStatus::Completed && $this->roles->allows($user, Role::BanHang);
+        return $this->roles->allows($user, Role::BanHang);
     }
 
     public function delete(User $user, Dispatch $dispatch): bool

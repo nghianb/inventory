@@ -28,8 +28,6 @@ use stdClass;
  */
 class ManualDispatch
 {
-    public const MAX_REF_LENGTH = 100;
-
     private const GENERATED_REF_ATTEMPTS = 50;
 
     public function __construct(
@@ -221,7 +219,7 @@ class ManualDispatch
 
             if (! ExternalRefs::claim($channel->id, $candidate, $id)) {
                 if ($ref !== null) {
-                    throw new InvalidDispatch([self::duplicateRef($channel, $ref)]);
+                    throw new InvalidDispatch([ExternalRefs::taken($channel, $ref)]);
                 }
 
                 continue;
@@ -284,10 +282,8 @@ class ManualDispatch
             $problems[] = new DispatchProblem("Kênh bán \"{$channel->name}\" bắt buộc mã đơn ngoài.");
         }
 
-        if ($ref !== null && mb_strlen($ref) > self::MAX_REF_LENGTH) {
-            $problems[] = new DispatchProblem(sprintf('Mã đơn ngoài dài quá %d ký tự.', self::MAX_REF_LENGTH));
-        } elseif ($channel !== null && $ref !== null && self::existingDispatchId($channel, $ref) !== null) {
-            $problems[] = self::duplicateRef($channel, $ref);
+        if ($ref !== null && ($problem = ExternalRefs::problem($channel, $ref)) !== null) {
+            $problems[] = $problem;
         }
 
         if ($draft->lines === []) {
@@ -342,16 +338,6 @@ class ManualDispatch
         }
 
         return $problems;
-    }
-
-    public static function duplicateRef(SalesChannel $channel, string $ref): DispatchProblem
-    {
-        return new DispatchProblem("Mã đơn ngoài \"{$ref}\" đã có trong Kênh bán \"{$channel->name}\".", self::existingDispatchId($channel, $ref));
-    }
-
-    private static function existingDispatchId(SalesChannel $channel, string $ref): ?int
-    {
-        return ExternalRefs::holderId($channel->id, $ref);
     }
 
     private static function discontinued(Product $product): DispatchProblem

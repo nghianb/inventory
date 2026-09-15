@@ -58,6 +58,26 @@ class DispatchRevision extends Model
             : "{$this->field->label()} · {$this->dispatchLine->product->name}";
     }
 
+    public function oldValueLabel(): ?string
+    {
+        return $this->valueLabel($this->old_value);
+    }
+
+    public function newValueLabel(): ?string
+    {
+        return $this->valueLabel($this->new_value);
+    }
+
+    /**
+     * Giá trị thô để hiển thị: Giá bán định dạng tiền; null là để trống.
+     */
+    private function valueLabel(?string $value): ?string
+    {
+        return $value !== null && $this->field === DispatchRevisionField::SalePrice
+            ? number_format((int) $value, 0, ',', '.').' ₫'
+            : $value;
+    }
+
     /**
      * @return BelongsTo<DispatchLine, $this>
      */

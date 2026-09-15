@@ -52,7 +52,7 @@ class DispatchDeliveries extends TableWidget
                     ->label('Sản phẩm'),
                 TextColumn::make('unit')
                     ->label('Đơn vị hàng')
-                    ->state(fn (Delivery $record): string => "#{$record->stock_unit_id} · Slot #{$record->slot_id}"),
+                    ->state(fn (Delivery $record): string => $record->unitLabel()),
                 TextColumn::make('content')
                     ->label('Nội dung (đã che)')
                     ->state(fn (Delivery $record): string => collect($record->stockUnit->maskedContent())

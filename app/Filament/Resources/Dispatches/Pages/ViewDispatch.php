@@ -6,6 +6,7 @@ use App\Filament\Resources\Dispatches\DispatchResource;
 use App\Filament\Support\InventoryAction;
 use App\Inventory\Dispatch\DispatchEdit;
 use App\Inventory\Dispatch\DispatchEditor;
+use App\Inventory\Dispatch\ExternalRefs;
 use App\Models\Dispatch;
 use App\Models\DispatchLine;
 use Filament\Actions\Action;
@@ -37,13 +38,13 @@ class ViewDispatch extends ViewRecord
                     'external_ref' => $this->dispatchRecord()->external_ref,
                     'customer' => $this->dispatchRecord()->customer,
                     'note' => $this->dispatchRecord()->note,
-                    'sale_prices' => $this->dispatchRecord()->lines->mapWithKeys(fn (DispatchLine $line): array => ["line_{$line->id}" => $line->sale_price])->all(),
+                    'sale_prices' => $this->dispatchRecord()->lines->mapWithKeys(fn (DispatchLine $line): array => [self::salePriceKey($line) => $line->sale_price])->all(),
                 ])
                 ->schema(fn (): array => [
                     TextInput::make('external_ref')
                         ->label('Mã đơn ngoài')
                         ->required()
-                        ->maxLength(100),
+                        ->maxLength(ExternalRefs::MAX_LENGTH),
                     Textarea::make('customer')
                         ->label('Khách')
                         ->rows(2),
@@ -52,14 +53,14 @@ class ViewDispatch extends ViewRecord
                         ->maxLength(1000),
                     Section::make('Giá bán (tổng dòng)')
                         ->compact()
-                        ->schema($this->dispatchRecord()->lines->map(fn (DispatchLine $line): TextInput => TextInput::make("sale_prices.line_{$line->id}")
+                        ->schema($this->dispatchRecord()->lines->map(fn (DispatchLine $line): TextInput => TextInput::make('sale_prices.'.self::salePriceKey($line))
                             ->label("{$line->product->name} · {$line->kind->label()} · {$line->quantity} Slot")
                             ->placeholder('Chưa có')
                             ->suffix('₫')
                             ->integer()
                             ->minValue(0))->all()),
                 ])
-                ->visible(fn (): bool => InventoryAction::actor()->can('update', $this->dispatchRecord()))
+                ->visible(fn (DispatchEditor $editor): bool => $editor->canEdit(InventoryAction::actor(), $this->dispatchRecord()))
                 ->action(function (Action $action, DispatchEditor $editor, array $data): void {
                     $prices = (array) ($data['sale_prices'] ?? []);
 
@@ -68,7 +69,7 @@ class ViewDispatch extends ViewRecord
                         customer: $data['customer'] ?? null,
                         note: $data['note'] ?? null,
                         salePrices: $this->dispatchRecord()->lines->mapWithKeys(fn (DispatchLine $line): array => [
-                            $line->id => filled($prices["line_{$line->id}"] ?? null) ? (int) $prices["line_{$line->id}"] : null,
+                            $line->id => filled($prices[self::salePriceKey($line)] ?? null) ? (int) $prices[self::salePriceKey($line)] : null,
                         ])->all(),
                     )));
                     $this->dispatchRecord()->refresh();
@@ -76,6 +77,14 @@ class ViewDispatch extends ViewRecord
                     Notification::make()->success()->title('Đã sửa Phiếu xuất.')->send();
                 }),
         ];
+    }
+
+    /**
+     * Khoá trường Giá bán của một Dòng xuất trong form sửa phiếu.
+     */
+    private static function salePriceKey(DispatchLine $line): string
+    {
+        return "line_{$line->id}";
     }
 
     private function dispatchRecord(): Dispatch
