@@ -25,24 +25,32 @@ class SellableStock
      */
     public function counts(array $productIds): array
     {
-        $rows = $productIds === [] ? collect() : self::slots(CarbonImmutable::today())
-            ->whereIn('stock_units.product_id', $productIds)
-            ->groupBy('stock_units.product_id')
-            ->selectRaw('stock_units.product_id, COUNT(*) AS sellable')
-            ->pluck('sellable', 'product_id');
-
-        $counts = [];
-
-        foreach ($productIds as $id) {
-            $counts[$id] = (int) ($rows[$id] ?? 0);
-        }
-
-        return $counts;
+        return self::countByProduct(self::slots(CarbonImmutable::today()), $productIds);
     }
 
     public function level(Product $product): StockLevel
     {
         return StockLevel::of($this->count($product), $product->low_stock_threshold);
+    }
+
+    public function defectiveCount(Product $product): int
+    {
+        return $this->defectiveCounts([(int) $product->getKey()])[(int) $product->getKey()];
+    }
+
+    /**
+     * Tồn lỗi: Slot Còn hàng của Đơn vị hàng Lỗi, vẫn trong kho nhưng không bán được. Tách khỏi
+     * Tồn bán được.
+     *
+     * @param  list<int>  $productIds
+     * @return array<int, int> số Slot Tồn lỗi theo id Sản phẩm, đúng thứ tự truyền vào
+     */
+    public function defectiveCounts(array $productIds): array
+    {
+        return self::countByProduct(DB::table('slots')
+            ->join('stock_units', 'stock_units.id', '=', 'slots.stock_unit_id')
+            ->where('slots.status', SlotStatus::InStock->value)
+            ->where('stock_units.status', StockUnitStatus::Defective->value), $productIds);
     }
 
     /**
@@ -79,6 +87,27 @@ class SellableStock
             ->where(fn (Builder $query) => $query
                 ->whereNull('stock_units.expires_on')
                 ->orWhere('stock_units.expires_on', '>=', $today->toDateString()));
+    }
+
+    /**
+     * @param  list<int>  $productIds
+     * @return array<int, int>
+     */
+    private static function countByProduct(Builder $slots, array $productIds): array
+    {
+        $rows = $productIds === [] ? collect() : $slots
+            ->whereIn('stock_units.product_id', $productIds)
+            ->groupBy('stock_units.product_id')
+            ->selectRaw('stock_units.product_id, COUNT(*) AS slot_count')
+            ->pluck('slot_count', 'product_id');
+
+        $counts = [];
+
+        foreach ($productIds as $id) {
+            $counts[$id] = (int) ($rows[$id] ?? 0);
+        }
+
+        return $counts;
     }
 
     /**

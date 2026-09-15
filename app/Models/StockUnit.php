@@ -32,6 +32,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property ?int $secret_key_version
  * @property ?VoidReason $void_reason lý do Huỷ hàng, khi Đơn vị hàng Đã huỷ
  * @property ?CarbonImmutable $voided_at
+ * @property ?CarbonImmutable $defective_at lúc chuyển Lỗi, khi Đơn vị hàng Lỗi
  * @property-read Product $product
  * @property-read BatchLine $batchLine
  * @property-read Collection<int, Slot> $slots
@@ -57,6 +58,7 @@ class StockUnit extends Model
             'secret_key_version' => 'integer',
             'void_reason' => VoidReason::class,
             'voided_at' => 'immutable_datetime',
+            'defective_at' => 'immutable_datetime',
         ];
     }
 

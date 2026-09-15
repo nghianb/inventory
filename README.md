@@ -55,6 +55,12 @@ Khoá nội dung, khoá HMAC và khoá backup nằm trong `.env`, tách khỏi `
 
 - Chỉ Quản trị, ở chi tiết Đơn vị hàng (cả đơn vị) và bảng Slot (`StockVoid`), lý do Giao nhầm, Lộ nội dung hoặc Ngừng kinh doanh lô kèm ghi chú. Slot Còn hàng hoặc Đã giao → Đã huỷ; Đơn vị hàng Hoạt động → Đã huỷ cùng các Slot Còn hàng, Slot Đã giao giữ nguyên. Lý do và thời điểm lưu ở `void_reason`, `voided_at` (để tính Tổn thất theo lý do); ai và ghi chú nằm trong Sổ biến động kho. Không giải phóng Khoá chống trùng.
 
+## Đánh dấu Lỗi và Khôi phục
+
+- Chỉ Quản trị, ở chi tiết Đơn vị hàng (`StockDefect`), lý do bắt buộc, ghi Sổ biến động kho. Đánh dấu Lỗi: Đơn vị hàng Hoạt động → Lỗi không cần Báo lỗi (nhà cung cấp thu hồi, hỏng trong kho), thông báo số Lần giao bị ảnh hưởng và chi tiết Đơn vị hàng liệt kê chúng; không tự Báo lỗi hay Đổi hàng. Khôi phục: Lỗi → Hoạt động, Slot Còn hàng bán lại được; Báo lỗi và Đổi hàng đã làm giữ nguyên.
+- Tồn lỗi (Slot Còn hàng của Đơn vị hàng Lỗi) không thuộc Tồn bán được; đếm riêng qua `Product::defectiveStockSlots` (cột Tồn lỗi của bảng Sản phẩm) và `SellableStock::defectiveCounts` (badge cạnh Tồn bán được khi xuất kho). Slot Tồn lỗi không Huỷ hàng được (đã tính Tổn thất hàng Lỗi); Khôi phục trước.
+- Dữ liệu Tổn thất hàng Lỗi: mỗi lần Đơn vị hàng chuyển Lỗi (Đánh dấu Lỗi hoặc Báo lỗi Xác nhận cả Đơn vị hàng, cùng qua `StockDefect::markDefectiveWithin`) ghi `stock_units.defective_at` và `slots.defective_loss_at` cho Slot Còn hàng lúc đó, trừ khi Đơn vị hàng đã quá Hạn sử dụng (đã là Tổn thất hết hạn); báo cáo lấy Giá vốn Slot (`slots.cost`) theo mốc này, và Tổn thất hết hạn bỏ qua Slot đã có mốc. Khôi phục xoá cả hai. Migration điền mốc cho hàng đã Lỗi từ trước theo Sổ biến động kho. CHECK `stock_units_defective_at`: có `defective_at` khi và chỉ khi Đơn vị hàng Lỗi.
+
 ## Báo lỗi
 
 - Tạo (Quản trị, Bán hàng) ở bảng Lần giao của Phiếu xuất: từng dòng hoặc chọn nhiều dòng, mỗi Slot một Báo lỗi Chờ xác minh (`DefectReporting::report`), mô tả bắt buộc, ảnh tuỳ chọn: form không lưu file, `DefectReporting` chỉ lưu vào disk `local` (thư mục `defect-reports`, private) sau khi kiểm tra xong và xoá lại nếu transaction lỗi; service `scheduler` chạy `inventory:defect-reports:purge` mỗi giờ để xoá ảnh cũ hơn một giờ không còn Báo lỗi nào trỏ tới. Cả phần tạo đủ hoặc thất bại. Bán hàng chỉ tạo trong Hạn bảo hành (tính cả ngày hết hạn) của lần giao có thời hạn bảo hành khác 0; Quản trị vượt được kèm lý do (`warranty_override_reason`, chỉ lưu cho lần giao ngoài bảo hành).

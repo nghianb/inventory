@@ -12,6 +12,7 @@ use App\Inventory\Dispatch\OutOfStock;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Intake\InvalidBatch;
 use App\Inventory\Reveal\InvalidReveal;
+use App\Inventory\Stock\InvalidDefectMarking;
 use App\Inventory\Stock\InvalidVoid;
 use App\Inventory\Warranty\InvalidDefectReport;
 use App\Inventory\Warranty\InvalidReplacement;
@@ -76,6 +77,7 @@ final class InventoryAction
             || $exception instanceof InvalidDispatch
             || $exception instanceof OutOfStock
             || $exception instanceof InvalidVoid
+            || $exception instanceof InvalidDefectMarking
             || $exception instanceof InvalidDefectReport
             || $exception instanceof InvalidReplacement
             || $exception instanceof KeyFingerprintMismatch;

@@ -57,7 +57,7 @@ class StockVoid
      */
     public function canVoidSlot(User $actor, Slot $slot): bool
     {
-        return $this->roles->allows($actor) && self::isVoidable($slot) && self::pendingDefectReportId($slot->id) === null;
+        return $this->roles->allows($actor) && self::isVoidable($slot) && ! self::isDefectiveStock($slot) && self::pendingDefectReportId($slot->id) === null;
     }
 
     /**
@@ -80,6 +80,11 @@ class StockVoid
 
         if (! self::isVoidable($slot)) {
             throw new InvalidVoid('Chỉ Huỷ hàng được Slot Còn hàng hoặc Đã giao.');
+        }
+
+        // Tồn lỗi đã tính Tổn thất hàng Lỗi; huỷ thêm thì một Slot tính tổn thất hai lần.
+        if (self::isDefectiveStock($slot)) {
+            throw new InvalidVoid('Slot Còn hàng của Đơn vị hàng Lỗi là Tồn lỗi; Khôi phục Đơn vị hàng trước khi Huỷ hàng.');
         }
 
         // Báo lỗi phải được xác minh trước: huỷ Slot khi còn chờ thì Báo lỗi treo, Đơn vị hàng ngừng bán mãi.
@@ -145,5 +150,10 @@ class StockVoid
     private static function isVoidable(Slot $slot): bool
     {
         return $slot->status === SlotStatus::InStock || $slot->status === SlotStatus::Delivered;
+    }
+
+    private static function isDefectiveStock(Slot $slot): bool
+    {
+        return $slot->status === SlotStatus::InStock && $slot->stockUnit->status === StockUnitStatus::Defective;
     }
 }

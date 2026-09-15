@@ -234,6 +234,11 @@ class ProductResource extends Resource
                     ->counts('inStockSlots')
                     ->suffix(' slot')
                     ->sortable(),
+                TextColumn::make('defective_stock_slots_count')
+                    ->label('Tồn lỗi')
+                    ->counts('defectiveStockSlots')
+                    ->suffix(' slot')
+                    ->sortable(),
                 IconColumn::make('has_stock')
                     ->label('Đã có hàng')
                     ->boolean()

@@ -100,7 +100,7 @@ _Avoid_: lãi (khi không rõ gộp hay ròng)
 **Lãi gộp** trừ **Chi phí đổi hàng** và **Tổn thất**, cộng bồi hoàn tiền từ **Khiếu nại nhà cung cấp** (tính theo ngày giải quyết). Chỉ là lãi của hàng hoá, không gồm chi phí vận hành của shop. Luôn tính lại theo dữ liệu hiện tại, nên con số của một kỳ cũ có thể đổi.
 
 **Tồn lỗi** (Defective stock):
-Các **Slot** Còn hàng của **Đơn vị hàng** Lỗi: vẫn nằm trong kho nhưng không bán được, tách khỏi **Tồn bán được** trong báo cáo và cảnh báo sắp hết.
+Các **Slot** Còn hàng của **Đơn vị hàng** Lỗi: vẫn nằm trong kho nhưng không bán được, tách khỏi **Tồn bán được** trong báo cáo và cảnh báo sắp hết. Đã tính Tổn thất hàng Lỗi nên không **Huỷ hàng** được; muốn huỷ thì **Khôi phục** trước.
 
 **Tồn bán được** (Sellable stock):
 Các **Slot** Còn hàng giao được ngay: thuộc **Đơn vị hàng** Hoạt động, không bị tạm ngừng vì **Báo lỗi** Chờ xác minh, chưa quá **Hạn sử dụng** và đạt **Hạn còn lại tối thiểu**. Slot Đã giữ không thuộc Tồn bán được. Đơn vị đếm tồn kho là Slot.

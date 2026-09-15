@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Inventory\Catalog\ProductType;
 use App\Inventory\Encryption\Normalization;
 use App\Inventory\Stock\SlotStatus;
+use App\Inventory\Stock\StockUnitStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -75,6 +76,16 @@ class Product extends Model
     public function inStockSlots(): HasManyThrough
     {
         return $this->hasManyThrough(Slot::class, StockUnit::class)->where('slots.status', SlotStatus::InStock);
+    }
+
+    /**
+     * Tồn lỗi: Slot Còn hàng của Đơn vị hàng Lỗi, không thuộc Tồn bán được.
+     *
+     * @return HasManyThrough<Slot, StockUnit, $this>
+     */
+    public function defectiveStockSlots(): HasManyThrough
+    {
+        return $this->inStockSlots()->where('stock_units.status', StockUnitStatus::Defective);
     }
 
     public function dedupeKeyField(): ContentField
