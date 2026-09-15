@@ -11,6 +11,11 @@ enum SecurityEvent: string
     case LoginFailed = 'login_failed';
     case TwoFactorFailed = 'two_factor_failed';
     case LoginThrottled = 'login_throttled';
+    case StaffCreated = 'staff_created';
+    case RolesChanged = 'roles_changed';
+    case StaffDeactivated = 'staff_deactivated';
+    case StaffReactivated = 'staff_reactivated';
+    case TwoFactorReset = 'two_factor_reset';
 
     public function label(): string
     {
@@ -19,6 +24,11 @@ enum SecurityEvent: string
             self::LoginFailed => 'Đăng nhập thất bại',
             self::TwoFactorFailed => 'Nhập sai 2FA',
             self::LoginThrottled => 'Bị chặn vì thử quá nhiều lần',
+            self::StaffCreated => 'Tạo nhân viên',
+            self::RolesChanged => 'Đổi Vai trò',
+            self::StaffDeactivated => 'Khoá nhân viên',
+            self::StaffReactivated => 'Mở khoá nhân viên',
+            self::TwoFactorReset => 'Reset 2FA',
         };
     }
 }

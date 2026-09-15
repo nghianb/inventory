@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthenticationRecovery;
@@ -20,6 +21,7 @@ use Spatie\Permission\Traits\HasRoles;
  *
  * @property ?string $app_authentication_secret
  * @property ?array<string> $app_authentication_recovery_codes
+ * @property ?CarbonImmutable $deactivated_at
  */
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'remember_token', 'app_authentication_secret', 'app_authentication_recovery_codes'])]
@@ -40,12 +42,21 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             'password' => 'hashed',
             'app_authentication_secret' => 'encrypted',
             'app_authentication_recovery_codes' => 'encrypted:array',
+            'deactivated_at' => 'immutable_datetime',
         ];
+    }
+
+    /**
+     * Nhân viên đã bị Khoá nhân viên: không đăng nhập được, không qua kiểm tra Vai trò nào.
+     */
+    public function isDeactivated(): bool
+    {
+        return $this->deactivated_at !== null;
     }
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return true;
+        return ! $this->isDeactivated();
     }
 
     public function getAppAuthenticationSecret(): ?string

@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Một dòng Nhật ký bảo mật. Chỉ-ghi-thêm: ứng dụng không bao giờ sửa hay xoá.
  * Ghi qua {@see SecurityLog}.
  */
-#[Fillable(['event', 'user_id', 'email', 'ip_address', 'user_agent', 'occurred_at'])]
+#[Fillable(['event', 'user_id', 'actor_id', 'email', 'details', 'ip_address', 'user_agent', 'occurred_at'])]
 class SecurityLogEntry extends Model
 {
     public $timestamps = false;
@@ -28,6 +28,7 @@ class SecurityLogEntry extends Model
     {
         return [
             'event' => SecurityEvent::class,
+            'details' => 'array',
             'occurred_at' => 'immutable_datetime',
         ];
     }
@@ -38,5 +39,15 @@ class SecurityLogEntry extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Quản trị thực hiện thao tác; null khi sự kiện không do ai khác gây ra hoặc làm từ server.
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function actor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'actor_id');
     }
 }
