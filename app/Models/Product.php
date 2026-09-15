@@ -6,6 +6,7 @@ use App\Inventory\Catalog\ProductType;
 use App\Inventory\Encryption\Normalization;
 use App\Inventory\Stock\SlotStatus;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -101,5 +102,23 @@ class Product extends Model
     public function isDiscontinued(): bool
     {
         return $this->discontinued_at !== null;
+    }
+
+    /**
+     * Sản phẩm chưa Ngừng bán: còn Giữ hàng và Giao hàng mới được.
+     *
+     * @param  Builder<Product>  $query
+     */
+    public function scopeOnSale(Builder $query): void
+    {
+        $query->whereNull('discontinued_at');
+    }
+
+    /**
+     * Sản phẩm đã có Phiếu xuất: Mã sản phẩm bị khoá vì Kênh bán loại API tham chiếu bằng mã này.
+     */
+    public function hasDispatch(): bool
+    {
+        return DispatchLine::query()->where('product_id', $this->getKey())->exists();
     }
 }

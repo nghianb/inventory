@@ -3,6 +3,7 @@
 namespace App\Inventory\Reveal;
 
 use App\Models\Batch;
+use App\Models\Delivery;
 
 /**
  * Ngữ cảnh xem mã: bản ghi mà qua đó nội dung đầy đủ được hiển thị hoặc tải về.
@@ -22,5 +23,10 @@ final readonly class RevealContext
     public static function batch(Batch $batch): self
     {
         return new self(RevealContextType::Batch, $batch->getKey());
+    }
+
+    public static function delivery(Delivery $delivery): self
+    {
+        return new self(RevealContextType::Delivery, $delivery->getKey());
     }
 }

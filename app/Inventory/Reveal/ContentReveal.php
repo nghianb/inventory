@@ -3,13 +3,17 @@
 namespace App\Inventory\Reveal;
 
 use App\Inventory\Access\MissingRole;
+use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
+use App\Inventory\Dispatch\DeliveredContent;
 use App\Inventory\Encryption\ContentCrypto;
 use App\Inventory\Encryption\EncryptedContent;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Stock\SlotStatus;
 use App\Models\ContentField;
+use App\Models\Delivery;
+use App\Models\Dispatch;
 use App\Models\Slot;
 use App\Models\StockUnit;
 use App\Models\User;
@@ -41,6 +45,7 @@ class ContentReveal
         $reason = match ($context->type) {
             RevealContextType::InStock => $this->inStockReason($actor, $reason),
             RevealContextType::Batch => throw new InvalidReveal('Ngữ cảnh Lô nhập chỉ dùng để tải dòng bị bỏ khi nhập.'),
+            RevealContextType::Delivery => throw new InvalidReveal('Nội dung lần Giao hàng chỉ xem qua màn kết quả xuất kho.'),
         };
 
         $this->fingerprints->verify();
@@ -56,6 +61,61 @@ class ContentReveal
             $this->log->record($actor, $context, $reason, $current);
 
             return new RevealedContent($this->decrypt($current->stockUnit()->with('product.contentFields')->firstOrFail()));
+        });
+    }
+
+    /**
+     * Màn kết quả ngay sau khi xuất kho: nội dung mọi Slot của Phiếu xuất, đã ghép Mẫu giao hàng
+     * mặc định. Người tạo phiếu không cần quyền xem mã riêng, nhưng chỉ được một lần: mỗi Slot
+     * ghi một dòng Nhật ký xem mã ngữ cảnh Giao hàng trong cùng transaction với việc đánh dấu
+     * màn kết quả đã hiện. Rời màn này thì xem lại là một lần xem mã riêng.
+     *
+     * @return list<DeliveredContent>
+     *
+     * @throws MissingRole
+     * @throws InvalidReveal
+     * @throws KeyFingerprintMismatch
+     */
+    public function revealDispatchResult(User $actor, Dispatch $dispatch): array
+    {
+        $this->roles->authorize($actor, Role::BanHang);
+        $this->fingerprints->verify();
+
+        return DB::transaction(function () use ($actor, $dispatch): array {
+            $current = Dispatch::query()->lockForUpdate()->findOrFail($dispatch->getKey());
+
+            if ($current->created_by !== (int) $actor->getKey()) {
+                throw new InvalidReveal('Chỉ người tạo Phiếu xuất xem được màn kết quả.');
+            }
+
+            if ($current->result_revealed_at !== null) {
+                throw new InvalidReveal('Màn kết quả chỉ hiện một lần ngay sau khi xuất kho.');
+            }
+
+            $current->forceFill(['result_revealed_at' => now()])->save();
+
+            $staff = RevealActor::staff($actor);
+            $reason = "Màn kết quả Phiếu xuất #{$current->id}";
+
+            return $current->deliveries()
+                ->orderBy('deliveries.id')
+                ->with(['slot', 'stockUnit.product.contentFields'])
+                ->get()
+                ->map(function (Delivery $delivery) use ($staff, $reason): DeliveredContent {
+                    $this->log->record($staff, RevealContext::delivery($delivery), $reason, $delivery->slot);
+                    $fields = $this->decrypt($delivery->stockUnit);
+
+                    return new DeliveredContent(
+                        deliveryId: $delivery->id,
+                        productName: $delivery->stockUnit->product->name,
+                        stockUnitId: $delivery->stock_unit_id,
+                        slotId: $delivery->slot_id,
+                        fields: $fields,
+                        message: DeliveredContent::defaultMessage($fields),
+                    );
+                })
+                ->values()
+                ->all();
         });
     }
 

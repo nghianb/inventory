@@ -60,6 +60,7 @@ class ProductResource extends Resource
 
         return $schema->components([
             Hidden::make('has_stock')->default(false),
+            Hidden::make('has_dispatch')->default(false),
             Section::make('Thông tin')
                 ->columns(2)
                 ->schema([
@@ -85,9 +86,13 @@ class ProductResource extends Resource
                         ->maxLength(255),
                     TextInput::make('code')
                         ->label('Mã sản phẩm')
-                        ->helperText('Chữ in hoa không dấu, chữ số, dấu chấm, gạch ngang, gạch dưới. Ví dụ NETFLIX-1M.')
+                        ->helperText(fn (Get $get): string => $get('has_dispatch')
+                            ? 'Sản phẩm đã có Phiếu xuất: không đổi được Mã sản phẩm.'
+                            : 'Chữ in hoa không dấu, chữ số, dấu chấm, gạch ngang, gạch dưới. Ví dụ NETFLIX-1M.')
                         ->required()
-                        ->maxLength(64),
+                        ->maxLength(64)
+                        ->disabled(fn (Get $get): bool => (bool) $get('has_dispatch'))
+                        ->dehydrated(),
                     TextInput::make('default_slots')
                         ->label('Số slot mặc định')
                         ->integer()
@@ -266,6 +271,7 @@ class ProductResource extends Resource
     {
         return [
             'has_stock' => $product->hasStock(),
+            'has_dispatch' => $product->hasDispatch(),
             'type' => $product->type->value,
             'name' => $product->name,
             'code' => $product->code,
