@@ -51,12 +51,20 @@ class SellableStock
      */
     public static function slots(CarbonImmutable $today): Builder
     {
+        return self::slotsIncludingDiscontinued($today)->whereNull('products.discontinued_at');
+    }
+
+    /**
+     * Như {@see slots()} nhưng tính cả Sản phẩm Ngừng bán: Slot giao bù được cho lần giao cũ của
+     * chính Sản phẩm đó (Đổi hàng, Giao thay). Không phải Tồn bán được.
+     */
+    public static function slotsIncludingDiscontinued(CarbonImmutable $today): Builder
+    {
         return DB::table('slots')
             ->join('stock_units', 'stock_units.id', '=', 'slots.stock_unit_id')
             ->join('products', 'products.id', '=', 'stock_units.product_id')
             ->where('slots.status', SlotStatus::InStock->value)
             ->where('stock_units.status', StockUnitStatus::Active->value)
-            ->whereNull('products.discontinued_at')
             ->where(fn (Builder $query) => $query
                 ->whereNull('stock_units.expires_on')
                 ->orWhereRaw('stock_units.expires_on >= CAST(? AS date) + products.min_remaining_days', [$today->toDateString()]));

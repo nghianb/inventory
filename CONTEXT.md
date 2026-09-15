@@ -56,7 +56,7 @@ Tổng số tiền (VND) khách trả cho cả một **Dòng xuất**, không ph
 Thêm **Dòng xuất** mới vào một **Phiếu xuất** đã Hoàn tất, khi khách của cùng đơn mua thêm. Phần thêm giữ đủ hoặc thất bại.
 
 **Giao thay** (Corrective delivery):
-Sửa một lần **Giao hàng** nhầm do nhân viên: **Huỷ hàng** Slot đã giao với lý do giao nhầm, rồi giao Slot khác (có thể của Sản phẩm khác) vào cùng **Phiếu xuất**, liên kết với lần giao bị huỷ. Giao sang Sản phẩm khác thì thêm một **Dòng xuất** loại Giao thay, dòng cũ giữ nguyên số lượng. Nếu nhân viên chọn Huỷ hàng cả **Đơn vị hàng** thì các lần giao khác của nó là **Lần giao bị ảnh hưởng**. Không đi qua **Báo lỗi** và không tính là hàng lỗi.
+Sửa một lần **Giao hàng** nhầm do nhân viên: **Huỷ hàng** Slot đã giao với lý do giao nhầm, rồi giao Slot của **Đơn vị hàng** khác (có thể của Sản phẩm khác) vào cùng **Phiếu xuất**, liên kết với lần giao bị huỷ. Giao sang Sản phẩm khác thì thêm một **Dòng xuất** loại Giao thay, dòng cũ giữ nguyên số lượng. Nếu nhân viên chọn Huỷ hàng cả **Đơn vị hàng** thì các lần giao khác của nó là **Lần giao bị ảnh hưởng**. Không đi qua **Báo lỗi** và không tính là hàng lỗi.
 _Avoid_: Đổi hàng (Đổi hàng là do hàng lỗi)
 
 **Mẫu giao hàng** (Delivery template):
@@ -129,7 +129,7 @@ Giao một **Slot** khác thay cho **Slot** có **Báo lỗi** đã Xác nhận,
 Việc đòi một **Nhà cung cấp** bồi hoàn cho một hoặc nhiều **Đơn vị hàng** Lỗi của họ. Có trạng thái Nháp, Đã gửi, Đã giải quyết hoặc Đã huỷ. Khi giải quyết, mỗi Đơn vị hàng có kết quả riêng: bồi hoàn tiền (kèm số tiền), hàng thay thế (vào kho bằng một **Lô nhập** liên kết với Khiếu nại) hoặc bị từ chối. Không bắt buộc khiếu nại mọi Đơn vị hàng Lỗi.
 
 **Ngừng bán** (Discontinue):
-Đánh dấu một **Sản phẩm** không còn được giữ hàng hay giao mới, nhưng vẫn dùng được cho **Đổi hàng** của các lần giao cũ.
+Đánh dấu một **Sản phẩm** không còn được giữ hàng hay giao mới, nhưng vẫn dùng được cho **Đổi hàng** và **Giao thay** của các lần giao cũ của chính nó.
 
 **Lô nhập** (Batch):
 Một lần nhập hàng vào kho từ một **Nhà cung cấp**, gồm một hoặc nhiều **Dòng nhập**. Chỉ vào kho khi nhân viên xác nhận sau bước xem trước; ghi lại số dòng bị bỏ vì lỗi hoặc trùng.

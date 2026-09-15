@@ -10,6 +10,7 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use stdClass;
@@ -26,12 +27,14 @@ final class SlotPicker
      * và khoá Slot cho mọi dòng. Thiếu hàng ở bất kỳ dòng nào thì không giao gì.
      *
      * @param  list<DispatchLineDraft>  $lines  đã qua kiểm tra
+     * @param  list<int>  $exceptUnitIds  Đơn vị hàng không được chọn (Giao thay: Đơn vị hàng vừa giao nhầm)
+     * @param  bool  $allowDiscontinued  cho giao Sản phẩm Ngừng bán, khi giao bù cho lần giao cũ của chính Sản phẩm đó
      * @return array{EloquentCollection<int, Product>, array<int, Collection<int, stdClass>>}
      *
      * @throws InvalidDispatch
      * @throws OutOfStock
      */
-    public static function lockAndPick(array $lines): array
+    public static function lockAndPick(array $lines, array $exceptUnitIds = [], bool $allowDiscontinued = false): array
     {
         $products = Product::query()
             ->whereIn('id', array_map(fn (DispatchLineDraft $line): int => (int) $line->product?->getKey(), $lines))
@@ -42,7 +45,7 @@ final class SlotPicker
 
         $discontinued = $products->filter(fn (Product $product): bool => $product->isDiscontinued());
 
-        if ($discontinued->isNotEmpty()) {
+        if (! $allowDiscontinued && $discontinued->isNotEmpty()) {
             throw new InvalidDispatch($discontinued->map(fn (Product $product): DispatchProblem => DispatchProblem::discontinued($product))->values()->all());
         }
 
@@ -52,7 +55,7 @@ final class SlotPicker
 
         foreach ($lines as $index => $line) {
             $product = $products[(int) $line->product?->getKey()];
-            $picks[$index] = self::pick($product, $line->quantity, $today);
+            $picks[$index] = self::pick($product, $line->quantity, $today, $exceptUnitIds, $allowDiscontinued);
 
             if ($picks[$index]->count() < $line->quantity) {
                 $shortages[] = new Shortage($product->id, $product->name, $line->quantity, $picks[$index]->count());
@@ -100,12 +103,14 @@ final class SlotPicker
      * (không có hạn xếp sau), rồi hàng nhập trước. Slot đang bị giao dịch khác khoá thì bỏ qua;
      * Đơn vị hàng bị khoá chia sẻ để không đổi trạng thái trước khi giao xong.
      *
+     * @param  list<int>  $exceptUnitIds
      * @return Collection<int, stdClass> các hàng `id`, `stock_unit_id` của Slot đã khoá
      */
-    private static function pick(Product $product, int $quantity, CarbonImmutable $today): Collection
+    private static function pick(Product $product, int $quantity, CarbonImmutable $today, array $exceptUnitIds, bool $allowDiscontinued): Collection
     {
-        return SellableStock::slots($today)
+        return ($allowDiscontinued ? SellableStock::slotsIncludingDiscontinued($today) : SellableStock::slots($today))
             ->where('stock_units.product_id', $product->id)
+            ->when($exceptUnitIds !== [], fn (Builder $query) => $query->whereNotIn('stock_units.id', $exceptUnitIds))
             ->select('slots.id', 'slots.stock_unit_id')
             ->orderByRaw(
                 'EXISTS (SELECT 1 FROM slots delivered WHERE delivered.stock_unit_id = stock_units.id AND delivered.status = ?) DESC',

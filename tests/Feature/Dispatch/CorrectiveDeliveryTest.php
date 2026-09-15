@@ -24,6 +24,7 @@ use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
+use App\Inventory\Stock\SellableStock;
 use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Stock\StockUnitStatus;
 use App\Inventory\Stock\VoidReason;
@@ -221,15 +222,36 @@ it('nội dung đã gửi và Huỷ hàng cả Đơn vị hàng: liệt kê Lầ
         ]);
 });
 
-it('nội dung đã gửi nhưng Giữ nguyên thì Đơn vị hàng vẫn Hoạt động và vẫn được chọn theo Thứ tự xuất', function () {
+it('Giao thay không chọn lại Đơn vị hàng vừa giao nhầm; Giữ nguyên thì Đơn vị hàng vẫn Hoạt động và vẫn bán cho đơn khác', function () {
     correctionStock($this->netflix, "a@shop.test\tpw-a\nb@shop.test\tpw-b");
     $wrong = soleDelivery(correctionOrder('SP-001', $this->netflix));
 
     $new = $this->corrective->correct($this->seller, $wrong, new CorrectionDraft(product: null, contentSent: true));
 
     expect($wrong->stockUnit->fresh()->status)->toBe(StockUnitStatus::Active)
-        ->and($new->stock_unit_id)->toBe($wrong->stock_unit_id)
-        ->and($new->slot_id)->not->toBe($wrong->slot_id);
+        ->and($new->stockUnit->content['username'])->toBe('b@shop.test')
+        // Hai Slot còn lại của Tài khoản a vẫn thuộc Tồn bán được, cùng hai Slot còn lại của b.
+        ->and(app(SellableStock::class)->count($this->netflix))->toBe(4);
+});
+
+it('kho chỉ còn Slot của Đơn vị hàng vừa giao nhầm thì Giao thay báo thiếu hàng', function () {
+    correctionStock($this->netflix, "a@shop.test\tpw-a");
+    $wrong = soleDelivery(correctionOrder('SP-001', $this->netflix));
+
+    expect(fn () => $this->corrective->correct($this->seller, $wrong, new CorrectionDraft(product: null, contentSent: false)))
+        ->toThrow(OutOfStock::class, 'Không đủ hàng, không giao gì: "Netflix 1 tháng" cần 1, còn 0.')
+        ->and($wrong->slot->fresh()->status)->toBe(SlotStatus::Delivered);
+});
+
+it('Sản phẩm gốc đã Ngừng bán vẫn Giao thay cùng Sản phẩm được', function () {
+    correctionStock($this->steam, "SR1\tA-1\nSR2\tA-2");
+    $wrong = soleDelivery(correctionOrder('SP-001', $this->steam));
+    app(ProductCatalog::class)->discontinue($this->admin, $this->steam);
+
+    $new = $this->corrective->correct($this->seller, $wrong, new CorrectionDraft(product: null, contentSent: false));
+
+    expect($new->stockUnit->content['serial'])->toBe('SR2')
+        ->and($new->dispatch_line_id)->toBe($wrong->dispatch_line_id);
 });
 
 it('Giao thay báo lỗi và không đổi gì', function (Closure $arrange, string $exception, string $message) {

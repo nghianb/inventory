@@ -22,8 +22,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Giao thay: sửa một lần Giao hàng nhầm do nhân viên. Huỷ hàng Slot đã giao với lý do giao nhầm (tuỳ
- * chọn cả Đơn vị hàng khi nội dung đã gửi cho khách), rồi giao một Slot khác theo Thứ tự xuất vào
- * cùng Phiếu xuất, liên kết với lần giao bị huỷ. Cùng Sản phẩm thì dùng Dòng xuất gốc; Sản phẩm khác
+ * chọn cả Đơn vị hàng khi nội dung đã gửi cho khách), rồi giao một Slot của Đơn vị hàng khác theo
+ * Thứ tự xuất vào cùng Phiếu xuất, liên kết với lần giao bị huỷ. Cùng Sản phẩm thì dùng Dòng xuất gốc; Sản phẩm khác
  * thì thêm Dòng xuất loại Giao thay, dòng gốc giữ nguyên số lượng. Bán hàng làm được trong hạn cấu
  * hình (mặc định 24 giờ từ lúc giao), quá hạn chỉ Quản trị kèm lý do. Không tạo Báo lỗi, không đổi
  * Đơn vị hàng sang Lỗi.
@@ -108,8 +108,11 @@ class CorrectiveDelivery
             }
 
             $product = $draft->product ?? $line->product;
-            [$products, $picks] = SlotPicker::lockAndPick([new DispatchLineDraft($product, 1)]);
-            $lineId = $product->getKey() === $line->product_id ? $line->id : $this->insertCorrectiveLine($dispatch, (int) $product->getKey());
+            $sameProduct = $product->getKey() === $line->product_id;
+            // Không chọn lại Đơn vị hàng vừa giao nhầm: các Slot của một Tài khoản chung nội dung. Sản
+            // phẩm gốc đã Ngừng bán vẫn giao thay được, như Đổi hàng cho lần giao cũ.
+            [$products, $picks] = SlotPicker::lockAndPick([new DispatchLineDraft($product, 1)], exceptUnitIds: [$current->stock_unit_id], allowDiscontinued: $sameProduct);
+            $lineId = $sameProduct ? $line->id : $this->insertCorrectiveLine($dispatch, (int) $product->getKey());
 
             $transitions = SlotPicker::deliver($lineId, $products[(int) $product->getKey()], $picks[0], $actor, now(), $current->id);
             $this->ledger->append($actor, $transitions, "Giao thay theo Phiếu xuất #{$dispatch->id}, thay lần giao #{$current->id}");
