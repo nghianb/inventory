@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property CarbonImmutable $received_on
  * @property ?string $document_number
  * @property ?string $note
+ * @property ?int $invoice_total
+ * @property ?int $supplements_batch_id
  * @property BatchStatus $status
  * @property ?string $validation_error
  * @property int $created_by
@@ -27,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read Supplier $supplier
  * @property-read User $creator
  * @property-read Collection<int, BatchLine> $lines
+ * @property-read ?Batch $supplements
  */
 class Batch extends Model
 {
@@ -37,6 +40,7 @@ class Batch extends Model
     {
         return [
             'received_on' => 'immutable_date',
+            'invoice_total' => 'integer',
             'status' => BatchStatus::class,
             'confirmed_at' => 'immutable_datetime',
         ];
@@ -56,6 +60,16 @@ class Batch extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Lô nhập đã xác nhận mà lô này bổ sung.
+     *
+     * @return BelongsTo<Batch, $this>
+     */
+    public function supplements(): BelongsTo
+    {
+        return $this->belongsTo(Batch::class, 'supplements_batch_id');
     }
 
     /**

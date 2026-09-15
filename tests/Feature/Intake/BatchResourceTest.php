@@ -19,11 +19,18 @@ use App\Inventory\Intake\BatchStatus;
 use App\Models\Batch;
 use App\Models\Product;
 use App\Models\StockUnit;
+use App\Models\Supplier;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RoleSeeder;
+use Filament\Actions\Testing\TestAction;
+use Filament\Forms\Components\Repeater;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
 beforeEach(function () {
+    Storage::fake('intake');
+    Repeater::fake();
     $this->seed(RoleSeeder::class);
     app(KeyFingerprints::class)->register();
 
@@ -57,10 +64,13 @@ it('Nhập kho dán hàng từ panel, xem trước rồi xác nhận', function 
             'supplier_id' => $this->supplier->id,
             'received_on' => '2026-09-15',
             'document_number' => 'HD-0915',
-            'product_id' => $this->product->id,
-            'unit_cost' => 95000,
-            'separator' => 'tab',
-            'content' => "AAAA-BBBB\nCCCC-DDDD\naaaabbbb",
+            'lines' => [[
+                'product_id' => $this->product->id,
+                'unit_cost' => 95000,
+                'source' => 'paste',
+                'separator' => 'tab',
+                'content' => "AAAA-BBBB\nCCCC-DDDD\naaaabbbb",
+            ]],
         ])
         ->call('create')
         ->assertHasNoFormErrors();
@@ -79,6 +89,83 @@ it('Nhập kho dán hàng từ panel, xem trước rồi xác nhận', function 
         ->and(StockUnit::count())->toBe(2);
 });
 
+it('Nhập kho tạo nhanh Nhà cung cấp, upload file Tài khoản kèm Dòng nhập dán; trùng trong kho phải tick khi xác nhận', function () {
+    $this->actingAs(staffMember(Role::NhapKho));
+    $intake = app(BatchIntake::class);
+    $intake->confirm($this->admin, $intake->submit($this->admin, new BatchDraft($this->supplier, CarbonImmutable::parse('2026-09-15'), [new BatchLineDraft($this->product, 1, 'AAAA-BBBB')])));
+    $netflix = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
+        type: ProductType::Account,
+        name: 'Netflix 1 tháng',
+        code: 'NETFLIX-1M',
+        fields: [new ContentFieldDraft('username', 'Tên đăng nhập', dedupeKey: true, sensitive: false), new ContentFieldDraft('password', 'Mật khẩu')],
+        defaultSlots: 4,
+    ));
+
+    Livewire::test(CreateBatch::class)
+        ->callAction(TestAction::make('createOption')->schemaComponent('supplier_id'), data: ['name' => 'G2A'])
+        ->assertHasNoActionErrors()
+        ->assertSchemaStateSet(['supplier_id' => Supplier::where('name', 'G2A')->sole()->id])
+        ->fillForm([
+            'received_on' => '2026-09-16',
+            'invoice_total' => 400000,
+            'lines' => [
+                [
+                    'product_id' => $netflix->id,
+                    'unit_cost' => 100000,
+                    'slots' => 2,
+                    'expiry_mode' => 'days',
+                    'expires_after_days' => 30,
+                    'source' => 'file',
+                    'file' => UploadedFile::fake()->createWithContent('netflix.csv', "Tên đăng nhập,password,Ghi chú\na@shop.test,pw1,x\nb@shop.test,pw2,y\n"),
+                ],
+                [
+                    'product_id' => $this->product->id,
+                    'unit_cost' => 95000,
+                    'expiry_mode' => 'none',
+                    'source' => 'paste',
+                    'separator' => 'tab',
+                    'content' => "aaaa-bbbb\nEEEE-FFFF",
+                ],
+            ],
+        ])
+        ->call('create')
+        ->assertHasNoFormErrors();
+
+    $batch = Batch::latest('id')->firstOrFail();
+
+    expect($batch->supplier->name)->toBe('G2A');
+
+    Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
+        ->assertSee('File CSV: netflix.csv')
+        ->assertSee('Ghi chú')
+        ->assertSee('a@shop.test')
+        ->assertDontSee('pw1')
+        ->callAction('confirm')
+        ->assertHasActionErrors(['skip_stock_duplicates'])
+        ->setActionData(['skip_stock_duplicates' => true])
+        ->callMountedAction()
+        ->assertHasNoActionErrors();
+
+    expect($batch->fresh()->status)->toBe(BatchStatus::Confirmed)
+        ->and(StockUnit::count())->toBe(4)
+        ->and(StockUnit::where('kind', ProductType::Account)->sum('slot_count'))->toBe(4)
+        ->and(Storage::disk('intake')->allFiles())->toBe([]);
+});
+
+it('Nhập kho bỏ Lô nhập chưa xác nhận từ panel', function () {
+    $this->actingAs(staffMember(Role::NhapKho));
+    $batch = app(BatchIntake::class)->submit($this->admin, new BatchDraft($this->supplier, CarbonImmutable::parse('2026-09-15'), [new BatchLineDraft($this->product, 1, 'AAAA-BBBB')]));
+
+    Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
+        ->callAction('discard')
+        ->assertHasNoActionErrors()
+        ->assertActionHidden('confirm')
+        ->assertActionHidden('discard');
+
+    expect($batch->fresh()->status)->toBe(BatchStatus::Discarded)
+        ->and(Storage::disk('intake')->allFiles())->toBe([]);
+});
+
 it('panel báo lỗi nghiệp vụ và không tạo Lô nhập khi khoá mã hoá không khớp', function () {
     $this->actingAs(staffMember(Role::NhapKho));
     config(['inventory.keys.hmac' => '1:base64:+aDuV69xpMmq8HrVKo6jtB43YKS+Sd8UDwlDy4k5kgk=']);
@@ -87,10 +174,13 @@ it('panel báo lỗi nghiệp vụ và không tạo Lô nhập khi khoá mã ho�
         ->fillForm([
             'supplier_id' => $this->supplier->id,
             'received_on' => '2026-09-15',
-            'product_id' => $this->product->id,
-            'unit_cost' => 50000,
-            'separator' => 'tab',
-            'content' => 'AAAA-BBBB',
+            'lines' => [[
+                'product_id' => $this->product->id,
+                'unit_cost' => 50000,
+                'source' => 'paste',
+                'separator' => 'tab',
+                'content' => 'AAAA-BBBB',
+            ]],
         ])
         ->call('create')
         ->assertNotified('Khoá mã hoá không khớp với DB, từ chối ghi: khoá mã hoá HMAC phiên bản 1: dấu vân tay không khớp với DB.');

@@ -7,7 +7,6 @@ use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
 use App\Inventory\Catalog\ProductType;
 use App\Inventory\Encryption\ContentCrypto;
-use App\Inventory\Encryption\EncryptedContent;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Stock\MaskedContent;
@@ -19,14 +18,19 @@ use App\Models\Batch;
 use App\Models\BatchLine;
 use App\Models\Product;
 use App\Models\User;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Number;
+use Livewire\Features\SupportFileUploads\FileUploadConfiguration;
 use Throwable;
 
 /**
- * Nhập hàng hai pha. Nhân viên gửi Lô nhập (văn bản dán được mã hoá ngay) → job phân loại
- * từng dòng để xem trước → nhân viên xác nhận thì chỉ phần hợp lệ vào kho. Lúc ghi thật
- * phân loại lại dưới khoá hàng Sản phẩm và chèn với ON CONFLICT, nên cấu hình Sản phẩm
- * đổi hay Lô nhập khác vừa ghi cùng mã cũng không làm hỏng kho.
+ * Nhập hàng hai pha. Nhân viên gửi Lô nhập (nội dung dán hoặc file gốc mã hoá ngay, lưu ổ
+ * local) → job phân loại từng dòng để xem trước → nhân viên xác nhận thì chỉ phần nhập được
+ * vào kho. Lúc ghi thật phân loại lại dưới khoá hàng Sản phẩm và chèn với ON CONFLICT, mỗi Lô
+ * nhập một transaction, nên cấu hình Sản phẩm đổi hay Lô nhập khác vừa ghi cùng mã cũng không
+ * làm hỏng kho. Nội dung tạm của bản kiểm tra bị xoá khi bỏ hoặc quá hạn xác nhận (24 giờ).
  */
 class BatchIntake
 {
@@ -34,11 +38,15 @@ class BatchIntake
 
     private const INSERT_CHUNK = 1_000;
 
+    private const SLOT_INSERT_CHUNK = 5_000;
+
     public function __construct(
         private RoleGate $roles,
         private KeyFingerprints $fingerprints,
         private ContentCrypto $crypto,
+        private SourceReader $reader,
         private LineClassifier $classifier,
+        private PendingContentStore $pending,
         private StockLedger $ledger,
     ) {}
 
@@ -55,32 +63,53 @@ class BatchIntake
         self::validateDraft($draft);
         $this->fingerprints->verify();
 
-        $batch = DB::transaction(function () use ($actor, $draft): Batch {
-            $batch = new Batch;
-            $batch->forceFill([
-                'supplier_id' => $draft->supplier->getKey(),
-                'received_on' => $draft->receivedOn->toDateString(),
-                'document_number' => self::blankToNull($draft->documentNumber),
-                'note' => self::blankToNull($draft->note),
-                'status' => BatchStatus::Validating,
-                'created_by' => $actor->getKey(),
-            ])->save();
+        foreach ($draft->lines as $line) {
+            $this->ensureReadable($line);
+        }
 
-            foreach ($draft->lines as $line) {
-                $pending = $this->crypto->encrypt($line->content);
+        $stored = [];
 
-                (new BatchLine)->forceFill([
-                    'batch_id' => $batch->id,
-                    'product_id' => $line->product->getKey(),
-                    'unit_cost' => $line->unitCost,
-                    'separator' => $line->separator,
-                    'pending_ciphertext' => $pending->ciphertext,
-                    'pending_key_version' => $pending->keyVersion,
+        try {
+            $batch = DB::transaction(function () use ($actor, $draft, &$stored): Batch {
+                $batch = new Batch;
+                $batch->forceFill([
+                    'supplier_id' => $draft->supplier->getKey(),
+                    'received_on' => $draft->receivedOn->toDateString(),
+                    'document_number' => self::blankToNull($draft->documentNumber),
+                    'note' => self::blankToNull($draft->note),
+                    'invoice_total' => $draft->invoiceTotal,
+                    'supplements_batch_id' => $draft->supplements?->getKey(),
+                    'status' => BatchStatus::Validating,
+                    'created_by' => $actor->getKey(),
                 ])->save();
+
+                foreach ($draft->lines as $draftLine) {
+                    $line = new BatchLine;
+                    $line->forceFill([
+                        'batch_id' => $batch->id,
+                        'product_id' => $draftLine->product->getKey(),
+                        'unit_cost' => $draftLine->unitCost,
+                        'separator' => $draftLine->separator,
+                        'source' => $draftLine->source,
+                        'file_name' => $draftLine->fileName,
+                        'slots' => $draftLine->product->type === ProductType::Account ? $draftLine->slots : null,
+                        'expires_on' => $draftLine->expiry?->date?->toDateString(),
+                        'expires_after_days' => $draftLine->expiry?->days,
+                    ])->save();
+
+                    $this->pending->put($line, $draftLine->content);
+                    $stored[] = $line;
+                }
+
+                return $batch;
+            });
+        } catch (Throwable $exception) {
+            foreach ($stored as $line) {
+                $this->pending->forget($line);
             }
 
-            return $batch;
-        });
+            throw $exception;
+        }
 
         // Người gọi có thể đang trong transaction (trang Filament): job chỉ chạy khi Lô nhập đã commit.
         ValidateBatch::dispatch($batch)->afterCommit();
@@ -102,8 +131,12 @@ class BatchIntake
                 return;
             }
 
-            foreach ($current->lines()->with('product.contentFields')->get() as $line) {
-                self::recordClassification($line, $line->product, $this->classifyPending($line, $line->product));
+            try {
+                $this->recordPreview($current);
+            } catch (InvalidBatch $exception) {
+                $current->forceFill(['status' => BatchStatus::ValidationFailed, 'validation_error' => $exception->getMessage()])->save();
+
+                return;
             }
 
             $current->forceFill(['status' => BatchStatus::Validated])->save();
@@ -120,7 +153,7 @@ class BatchIntake
             ->where('status', BatchStatus::Validating)
             ->update([
                 'status' => BatchStatus::ValidationFailed,
-                'validation_error' => $exception instanceof KeyFingerprintMismatch
+                'validation_error' => $exception instanceof KeyFingerprintMismatch || $exception instanceof InvalidBatch
                     ? $exception->getMessage()
                     : 'Lỗi hệ thống khi kiểm tra; hãy tạo lại Lô nhập.',
             ]);
@@ -140,7 +173,10 @@ class BatchIntake
             validationError: $batch->validation_error,
             lines: $batch->lines->map(fn (BatchLine $line): BatchLinePreview => new BatchLinePreview(
                 productName: $line->product->name,
+                source: $line->source,
+                fileName: $line->file_name,
                 validCount: $line->valid_count,
+                renewalCount: $line->renewal_count,
                 invalidCount: $line->invalid_count,
                 fileDuplicateCount: $line->file_duplicate_count,
                 stockDuplicateCount: $line->stock_duplicate_count,
@@ -149,44 +185,82 @@ class BatchIntake
                     $line->preview['rejected'] ?? [],
                 ),
                 sample: $line->preview['sample'] ?? [],
-                totalCost: $line->valid_count * $line->unit_cost,
+                ignoredColumns: $line->preview['ignored_columns'] ?? [],
+                totalCost: $line->total_cost,
             ))->values()->all(),
+            invoiceTotal: $batch->invoice_total,
+            supplementsBatchId: $batch->supplements_batch_id,
         );
     }
 
     /**
-     * Pha 2: ghi phần hợp lệ vào kho, mỗi Đơn vị hàng một Slot Còn hàng, rồi đóng Lô nhập.
+     * Pha 2: ghi phần nhập được vào kho, mỗi Đơn vị hàng đủ số Slot Còn hàng, rồi đóng Lô nhập.
+     * Dòng trùng trong kho chỉ được bỏ qua khi nhân viên tick xác nhận riêng, kể cả dòng mới
+     * thành trùng lúc ghi (Lô nhập khác vừa nhập cùng mã): khi đó không ghi gì, kết quả xem
+     * trước được cập nhật để nhân viên xem lại và tick.
      *
      * @throws MissingRole
      * @throws KeyFingerprintMismatch
      * @throws InvalidBatch
      */
-    public function confirm(User $actor, Batch $batch): Batch
+    public function confirm(User $actor, Batch $batch, bool $skipStockDuplicates = false): Batch
     {
         $this->roles->authorize($actor, Role::NhapKho);
         $this->fingerprints->verify();
 
-        return DB::transaction(function () use ($actor, $batch): Batch {
-            $current = Batch::query()->lockForUpdate()->findOrFail($batch->getKey());
+        try {
+            return $this->write($actor, $batch, $skipStockDuplicates);
+        } catch (StockDuplicatesAtWrite) {
+            $current = Batch::query()->findOrFail($batch->getKey());
+            $this->recordPreview($current);
 
-            match ($current->status) {
-                BatchStatus::Validated => null,
-                BatchStatus::Confirmed => throw new InvalidBatch('Lô nhập đã xác nhận và đã đóng.'),
-                default => throw new InvalidBatch('Lô nhập chưa kiểm tra xong, chưa xác nhận được.'),
-            };
+            throw self::stockDuplicatesNeedAcknowledgement((int) $current->lines()->sum('stock_duplicate_count'));
+        }
+    }
+
+    /**
+     * @throws InvalidBatch
+     * @throws StockDuplicatesAtWrite
+     */
+    private function write(User $actor, Batch $batch, bool $skipStockDuplicates): Batch
+    {
+        // Deadlock giữa hai Lô nhập khác Sản phẩm chèn cùng mã theo thứ tự khác nhau: chạy lại.
+        return DB::transaction(function () use ($actor, $batch, $skipStockDuplicates): Batch {
+            $current = Batch::query()->lockForUpdate()->findOrFail($batch->getKey());
+            self::ensureConfirmable($current);
+
+            $stockDuplicates = (int) $current->lines->sum('stock_duplicate_count');
+
+            if ($stockDuplicates > 0 && ! $skipStockDuplicates) {
+                throw self::stockDuplicatesNeedAcknowledgement($stockDuplicates);
+            }
+
+            // Cùng khoá hàng ProductCatalog dùng khi sửa: không nhập theo cấu hình đang bị đổi.
+            // Khoá theo thứ tự id để hai Lô nhập chung Sản phẩm không deadlock.
+            $products = Product::query()
+                ->whereIn('id', $current->lines->pluck('product_id'))
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->with('contentFields')
+                ->get()
+                ->keyBy('id')
+                ->all();
+
+            $results = $this->classifyBatch($current, $current->lines, $products);
 
             foreach ($current->lines as $line) {
-                // Cùng khoá hàng ProductCatalog dùng khi sửa: không nhập theo cấu hình đang bị đổi.
-                $product = Product::query()->lockForUpdate()->with('contentFields')->findOrFail($line->product_id);
+                $product = $products[$line->product_id];
+                [$classified, $ignoredColumns] = $results[$line->id];
 
-                $classified = $this->store($actor, $current, $line, $product, $this->classifyPending($line, $product));
-                self::recordClassification($line, $product, $classified);
+                self::recordClassification($line, $product, $this->store($actor, $current, $line, $product, $classified), $ignoredColumns);
 
-                $line->forceFill(['pending_ciphertext' => null, 'pending_key_version' => null])->save();
-
-                if ($line->valid_count > 0 && ! $product->hasStock()) {
+                if ($line->valid_count + $line->renewal_count > 0 && ! $product->hasStock()) {
                     $product->forceFill(['stocked_at' => now()])->save();
                 }
+            }
+
+            if (! $skipStockDuplicates && $current->lines->sum('stock_duplicate_count') > 0) {
+                throw new StockDuplicatesAtWrite;
             }
 
             $current->forceFill([
@@ -195,22 +269,158 @@ class BatchIntake
                 'confirmed_at' => now(),
             ])->save();
 
+            DB::afterCommit(fn () => $this->forgetPending($current));
+
+            return $current;
+        }, attempts: 3);
+    }
+
+    /**
+     * Bỏ bản kiểm tra chưa xác nhận: nội dung tạm bị xoá, Lô nhập giữ lại với trạng thái Đã bỏ.
+     *
+     * @throws MissingRole
+     * @throws InvalidBatch
+     */
+    public function discard(User $actor, Batch $batch): Batch
+    {
+        $this->roles->authorize($actor, Role::NhapKho);
+
+        return DB::transaction(function () use ($batch): Batch {
+            $current = Batch::query()->lockForUpdate()->findOrFail($batch->getKey());
+
+            if ($current->status === BatchStatus::Confirmed) {
+                throw new InvalidBatch('Lô nhập đã xác nhận, không bỏ được.');
+            }
+
+            if (in_array($current->status, BatchStatus::pending(), true)) {
+                $current->forceFill(['status' => BatchStatus::Discarded])->save();
+            }
+
+            DB::afterCommit(fn () => $this->forgetPending($current));
+
             return $current;
         });
     }
 
     /**
-     * @return list<ClassifiedLine>
+     * Chạy định kỳ: Lô nhập chưa xác nhận quá hạn xác nhận chuyển Quá hạn xác nhận; nội dung tạm
+     * và file upload tạm cũ bị xoá.
+     *
+     * @return int số Lô nhập vừa hết hạn
      */
-    private function classifyPending(BatchLine $line, Product $product): array
+    public function purgeExpired(): int
     {
-        $content = $this->crypto->decrypt(new EncryptedContent((string) $line->pending_ciphertext, (int) $line->pending_key_version));
+        $expired = Batch::query()
+            ->whereIn('status', BatchStatus::pending())
+            ->where('created_at', '<', self::staleCutoff())
+            ->update(['status' => BatchStatus::Expired]);
 
-        return $this->classifier->classify($product, $content, $line->separator);
+        $pendingLineIds = BatchLine::query()
+            ->whereHas('batch', fn ($query) => $query->whereIn('status', BatchStatus::pending()))
+            ->pluck('id')
+            ->all();
+
+        $this->pending->purgeExcept($pendingLineIds, CarbonImmutable::now()->subHour());
+        self::purgeUploadsWrittenBefore(self::staleCutoff());
+
+        return $expired;
     }
 
     /**
-     * Chèn các dòng hợp lệ. Dòng bị Lô nhập khác chiếm mã trước (ON CONFLICT) chuyển thành trùng trong kho.
+     * Phân loại lại mọi Dòng nhập theo kho hiện tại và ghi kết quả xem trước; không ghi kho.
+     *
+     * @throws InvalidBatch nội dung tạm đã bị xoá hoặc không đọc được
+     */
+    private function recordPreview(Batch $batch): void
+    {
+        $lines = $batch->lines()->with('product.contentFields')->get();
+        $results = $this->classifyBatch($batch, $lines, $lines->mapWithKeys(fn (BatchLine $line): array => [$line->product_id => $line->product])->all());
+
+        foreach ($lines as $line) {
+            self::recordClassification($line, $line->product, ...$results[$line->id]);
+        }
+    }
+
+    private static function stockDuplicatesNeedAcknowledgement(int $count): InvalidBatch
+    {
+        return new InvalidBatch(sprintf(
+            'Có %s dòng trùng trong kho; hãy tick xác nhận bỏ qua các dòng này rồi xác nhận lại.',
+            self::formatCount($count),
+        ));
+    }
+
+    /**
+     * @throws InvalidBatch
+     */
+    private function ensureReadable(BatchLineDraft $line): void
+    {
+        $name = $line->product->name;
+
+        try {
+            $rows = count($this->reader->read($line->product->loadMissing('contentFields'), $line->content, $line->source, $line->separator)->rows);
+        } catch (InvalidBatch $exception) {
+            throw new InvalidBatch("Dòng nhập \"{$name}\": {$exception->getMessage()}");
+        }
+
+        if ($rows === 0) {
+            throw new InvalidBatch("Dòng nhập \"{$name}\" chưa có nội dung.");
+        }
+
+        if ($rows > self::maxLines()) {
+            throw new InvalidBatch(sprintf(
+                'Dòng nhập "%s" có %s dòng, vượt giới hạn %s dòng mỗi file hoặc danh sách dán.',
+                $name,
+                self::formatCount($rows),
+                self::formatCount(self::maxLines()),
+            ));
+        }
+    }
+
+    /**
+     * Phân loại mọi Dòng nhập. Dòng trùng Khoá chống trùng với một dòng đứng trước ở Dòng nhập
+     * khác (cùng loại hàng) xếp vào trùng trong file.
+     *
+     * @param  Collection<int, BatchLine>  $lines
+     * @param  array<int, Product>  $products  theo id
+     * @return array<int, array{list<ClassifiedLine>, list<string>}> theo id Dòng nhập: dòng đã phân loại, cột bị bỏ qua
+     *
+     * @throws InvalidBatch nội dung tạm đã bị xoá hoặc không đọc được
+     */
+    private function classifyBatch(Batch $batch, Collection $lines, array $products): array
+    {
+        $seen = [];
+        $results = [];
+
+        foreach ($lines as $line) {
+            $product = $products[$line->product_id];
+            $source = $this->reader->read($product, $this->pending->get($line), $line->source, $line->separator);
+
+            $classified = array_map(function (ClassifiedLine $row) use (&$seen, $product): ClassifiedLine {
+                if (! $row->isImportable()) {
+                    return $row;
+                }
+
+                $key = $product->type->value.':'.$row->dedupeHash;
+
+                if (isset($seen[$key])) {
+                    return $row->asFileDuplicate(sprintf('Trùng Khoá chống trùng với dòng %d của Dòng nhập "%s".', ...$seen[$key]));
+                }
+
+                $seen[$key] = [$row->lineNumber, $product->name];
+
+                return $row;
+            }, $this->classifier->classify($product, $source, self::defaults($batch, $line, $product)));
+
+            $results[$line->id] = [$classified, $source->ignoredColumns];
+        }
+
+        return $results;
+    }
+
+    /**
+     * Chèn các dòng nhập được. Tài khoản nhập lại nhả khoá của Đơn vị hàng cũ trước (chỉ khi cái
+     * cũ vẫn Huỷ hàng hoặc quá Hạn sử dụng). Dòng bị Lô nhập khác chiếm mã trước (ON CONFLICT)
+     * chuyển thành trùng trong kho.
      *
      * @param  list<ClassifiedLine>  $classified
      * @return list<ClassifiedLine>
@@ -218,11 +428,23 @@ class BatchIntake
     private function store(User $actor, Batch $batch, BatchLine $line, Product $product, array $classified): array
     {
         $sensitive = $product->contentFields->where('sensitive', true)->pluck('key')->flip()->all();
-        $valid = array_filter($classified, fn (ClassifiedLine $row): bool => $row->class === LineClass::Valid);
+        $importable = array_values(array_filter($classified, fn (ClassifiedLine $row): bool => $row->isImportable()));
         $inserted = [];
 
-        foreach (array_chunk($valid, self::INSERT_CHUNK) as $chunk) {
+        foreach (array_chunk($importable, self::INSERT_CHUNK) as $chunk) {
             $now = now();
+            $released = self::releaseRenewedKeys($chunk);
+            $rows = [];
+
+            foreach ($chunk as $row) {
+                if ($row->renewsStockUnitId === null || isset($released[$row->renewsStockUnitId])) {
+                    $rows[(string) $row->dedupeHash] = $row;
+                }
+            }
+
+            if ($rows === []) {
+                continue;
+            }
 
             $units = DB::table('stock_units')->insertOrIgnoreReturning(array_map(function (ClassifiedLine $row) use ($line, $product, $sensitive, $now): array {
                 $secret = array_intersect_key($row->values, $sensitive);
@@ -234,7 +456,11 @@ class BatchIntake
                     'product_id' => $product->id,
                     'kind' => $product->type->value,
                     'status' => StockUnitStatus::Active->value,
-                    'unit_cost' => $line->unit_cost,
+                    'unit_cost' => $row->unitCost,
+                    'slot_count' => $row->slots,
+                    'expires_on' => $row->expiresOn,
+                    'renews_stock_unit_id' => $row->renewsStockUnitId,
+                    'holds_dedupe_key' => true,
                     'dedupe_hash' => $row->dedupeHash,
                     'content' => $plain === [] ? null : json_encode($plain),
                     'secret_ciphertext' => $encrypted?->ciphertext,
@@ -242,31 +468,38 @@ class BatchIntake
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
-            }, $chunk), ['id', 'dedupe_hash']);
+            }, array_values($rows)), ['id', 'dedupe_hash']);
 
             $slotRows = [];
             $transitions = [];
 
             foreach ($units as $unit) {
+                $row = $rows[$unit->dedupe_hash];
                 $inserted[$unit->dedupe_hash] = true;
                 $transitions[] = StockTransition::unitCreated((int) $unit->id);
-                $slotRows[] = [
-                    'stock_unit_id' => $unit->id,
-                    'status' => SlotStatus::InStock->value,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ];
+
+                foreach (self::splitCost($row->unitCost, $row->slots) as $cost) {
+                    $slotRows[] = [
+                        'stock_unit_id' => $unit->id,
+                        'status' => SlotStatus::InStock->value,
+                        'cost' => $cost,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
             }
 
-            foreach (DB::table('slots')->insertOrIgnoreReturning($slotRows, ['id', 'stock_unit_id']) as $slot) {
-                $transitions[] = StockTransition::slotCreated((int) $slot->stock_unit_id, (int) $slot->id);
+            foreach (array_chunk($slotRows, self::SLOT_INSERT_CHUNK) as $slotChunk) {
+                foreach (DB::table('slots')->insertOrIgnoreReturning($slotChunk, ['id', 'stock_unit_id']) as $slot) {
+                    $transitions[] = StockTransition::slotCreated((int) $slot->stock_unit_id, (int) $slot->id);
+                }
             }
 
             $this->ledger->append($actor, $transitions, "Nhập hàng theo Lô nhập #{$batch->id}");
         }
 
         return array_map(
-            fn (ClassifiedLine $row): ClassifiedLine => $row->class === LineClass::Valid && ! isset($inserted[$row->dedupeHash])
+            fn (ClassifiedLine $row): ClassifiedLine => $row->isImportable() && ! isset($inserted[$row->dedupeHash])
                 ? $row->asStockDuplicate()
                 : $row,
             $classified,
@@ -274,31 +507,164 @@ class BatchIntake
     }
 
     /**
-     * @param  list<ClassifiedLine>  $classified
+     * Nhả Khoá chống trùng của các Tài khoản cũ được nhập lại. Điều kiện kiểm tra lại dưới khoá
+     * hàng, nên hai Lô nhập cùng nhập lại một Tài khoản thì chỉ một bên được.
+     *
+     * @param  list<ClassifiedLine>  $rows
+     * @return array<int, true> id Đơn vị hàng cũ đã nhả khoá
      */
-    private static function recordClassification(BatchLine $line, Product $product, array $classified): void
+    private static function releaseRenewedKeys(array $rows): array
+    {
+        $ids = array_values(array_filter(array_map(fn (ClassifiedLine $row): ?int => $row->renewsStockUnitId, $rows)));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $released = DB::select(
+            sprintf(
+                'UPDATE stock_units SET holds_dedupe_key = false, updated_at = ? WHERE id IN (%s) AND kind = ? AND holds_dedupe_key AND (status = ? OR expires_on < ?) RETURNING id',
+                implode(', ', array_fill(0, count($ids), '?')),
+            ),
+            [now(), ...$ids, ProductType::Account->value, StockUnitStatus::Voided->value, CarbonImmutable::today()->toDateString()],
+        );
+
+        return array_fill_keys(array_map(fn (object $row): int => (int) $row->id, $released), true);
+    }
+
+    /**
+     * Giá vốn Đơn vị hàng chia đều cho số slot; phần dư dồn vào slot đầu để tổng khớp.
+     *
+     * @return list<int>
+     */
+    private static function splitCost(int $cost, int $slots): array
+    {
+        $share = intdiv($cost, $slots);
+        $costs = array_fill(0, $slots, $share);
+        $costs[0] += $cost - $share * $slots;
+
+        return $costs;
+    }
+
+    /**
+     * @param  list<ClassifiedLine>  $classified
+     * @param  list<string>  $ignoredColumns
+     */
+    private static function recordClassification(BatchLine $line, Product $product, array $classified, array $ignoredColumns): void
     {
         $count = fn (LineClass $class): int => count(array_filter($classified, fn (ClassifiedLine $row): bool => $row->class === $class));
-        $valid = array_values(array_filter($classified, fn (ClassifiedLine $row): bool => $row->class === LineClass::Valid));
-        $rejected = array_values(array_filter($classified, fn (ClassifiedLine $row): bool => $row->class !== LineClass::Valid));
+        $importable = array_values(array_filter($classified, fn (ClassifiedLine $row): bool => $row->isImportable()));
+        $rejected = array_values(array_filter($classified, fn (ClassifiedLine $row): bool => ! $row->isImportable()));
 
         $line->forceFill([
             'valid_count' => $count(LineClass::Valid),
+            'renewal_count' => $count(LineClass::Renewal),
             'invalid_count' => $count(LineClass::Invalid),
             'file_duplicate_count' => $count(LineClass::FileDuplicate),
             'stock_duplicate_count' => $count(LineClass::StockDuplicate),
+            'total_cost' => array_sum(array_map(fn (ClassifiedLine $row): int => $row->unitCost, $importable)),
             'preview' => [
                 'rejected' => array_map(fn (ClassifiedLine $row): array => [
                     'line' => $row->lineNumber,
                     'class' => $row->class->value,
                     'reason' => (string) $row->reason,
                 ], $rejected),
-                'sample' => array_map(
-                    fn (ClassifiedLine $row): array => MaskedContent::of($product->contentFields, $row->values),
-                    array_slice($valid, 0, self::SAMPLE_SIZE),
-                ),
+                'sample' => array_map(fn (ClassifiedLine $row): array => self::sample($product, $row), array_slice($importable, 0, self::SAMPLE_SIZE)),
+                'ignored_columns' => $ignoredColumns,
             ],
         ])->save();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function sample(Product $product, ClassifiedLine $row): array
+    {
+        $sample = MaskedContent::of($product->contentFields, $row->values);
+
+        if ($product->type === ProductType::Account) {
+            $sample['Số slot'] = (string) $row->slots;
+        }
+
+        if ($row->expiresOn !== null) {
+            $sample['Hạn sử dụng'] = CarbonImmutable::parse($row->expiresOn)->format('d/m/Y');
+        }
+
+        return $sample;
+    }
+
+    private static function defaults(Batch $batch, BatchLine $line, Product $product): LineDefaults
+    {
+        $expiry = match (true) {
+            $line->expires_on !== null => ExpiryRule::on($line->expires_on),
+            $line->expires_after_days !== null => ExpiryRule::afterDays($line->expires_after_days),
+            default => null,
+        };
+
+        return new LineDefaults(
+            receivedOn: $batch->received_on,
+            unitCost: $line->unit_cost,
+            slots: $product->type === ProductType::OneTimeCode ? 1 : ($line->slots ?? $product->default_slots),
+            expiresOn: $expiry?->resolve($batch->received_on),
+        );
+    }
+
+    private function forgetPending(Batch $batch): void
+    {
+        foreach ($batch->lines as $line) {
+            $this->pending->forget($line);
+        }
+    }
+
+    /**
+     * @throws InvalidBatch
+     */
+    private static function ensureConfirmable(Batch $batch): void
+    {
+        match ($batch->status) {
+            BatchStatus::Validated => null,
+            BatchStatus::Confirmed => throw new InvalidBatch('Lô nhập đã xác nhận và đã đóng.'),
+            BatchStatus::Discarded => throw new InvalidBatch('Lô nhập đã bị bỏ.'),
+            BatchStatus::Expired => throw self::expired(),
+            BatchStatus::ValidationFailed => throw new InvalidBatch('Lô nhập kiểm tra thất bại; hãy tạo lại Lô nhập.'),
+            BatchStatus::Validating => throw new InvalidBatch('Lô nhập chưa kiểm tra xong, chưa xác nhận được.'),
+        };
+
+        if ($batch->created_at !== null && $batch->created_at->lt(self::staleCutoff())) {
+            throw self::expired();
+        }
+    }
+
+    private static function expired(): InvalidBatch
+    {
+        return new InvalidBatch(sprintf(
+            'Bản kiểm tra quá %d giờ chưa xác nhận nên nội dung tạm đã bị xoá; hãy tạo lại Lô nhập.',
+            (int) config('inventory.intake.pending_ttl_hours'),
+        ));
+    }
+
+    /**
+     * File upload tạm của Livewire (bản rõ) còn sót khi form nhập hàng lỗi hoặc bị bỏ dở.
+     */
+    private static function purgeUploadsWrittenBefore(CarbonImmutable $cutoff): void
+    {
+        $storage = FileUploadConfiguration::storage();
+
+        foreach ($storage->files(FileUploadConfiguration::directory()) as $path) {
+            if ($storage->lastModified($path) < $cutoff->getTimestamp()) {
+                $storage->delete($path);
+            }
+        }
+    }
+
+    private static function staleCutoff(): CarbonImmutable
+    {
+        return CarbonImmutable::now()->subHours((int) config('inventory.intake.pending_ttl_hours'));
+    }
+
+    private static function maxLines(): int
+    {
+        return (int) config('inventory.intake.max_lines');
     }
 
     /**
@@ -310,12 +676,26 @@ class BatchIntake
             throw new InvalidBatch('Lô nhập phải có ít nhất một Dòng nhập.');
         }
 
+        if ($draft->invoiceTotal !== null && $draft->invoiceTotal < 0) {
+            throw new InvalidBatch('Tổng tiền hoá đơn không được âm.');
+        }
+
+        if ($draft->supplements !== null
+            && ! Batch::query()->whereKey($draft->supplements->getKey())->where('status', BatchStatus::Confirmed)->exists()) {
+            throw new InvalidBatch('Chỉ bổ sung cho Lô nhập đã xác nhận.');
+        }
+
+        $maxBytes = (int) config('inventory.intake.max_bytes');
+        $products = [];
+
         foreach ($draft->lines as $line) {
             $name = $line->product->name;
 
-            if ($line->product->type !== ProductType::OneTimeCode) {
-                throw new InvalidBatch("Chưa hỗ trợ nhập Tài khoản (Sản phẩm \"{$name}\").");
+            if (isset($products[$line->product->getKey()])) {
+                throw new InvalidBatch("Sản phẩm \"{$name}\" có hai Dòng nhập; mỗi Sản phẩm một Dòng nhập.");
             }
+
+            $products[$line->product->getKey()] = true;
 
             if ($line->unitCost < 0) {
                 throw new InvalidBatch("Giá vốn của Dòng nhập \"{$name}\" không được âm.");
@@ -325,10 +705,31 @@ class BatchIntake
                 throw new InvalidBatch("Dòng nhập \"{$name}\" chưa có nội dung.");
             }
 
-            if ($line->separator === '') {
+            if (strlen($line->content) > $maxBytes) {
+                throw new InvalidBatch(sprintf('Dòng nhập "%s" vượt giới hạn %s mỗi file hoặc danh sách dán.', $name, Number::fileSize($maxBytes)));
+            }
+
+            if ($line->source === IntakeSource::Paste && $line->separator === '') {
                 throw new InvalidBatch("Dòng nhập \"{$name}\" chưa chọn ký tự phân tách.");
             }
+
+            if ($line->slots !== null && $line->product->type === ProductType::OneTimeCode && $line->slots !== 1) {
+                throw new InvalidBatch("Mã dùng một lần luôn có đúng 1 slot (Dòng nhập \"{$name}\").");
+            }
+
+            if ($line->slots !== null && ($line->slots < 1 || $line->slots > LineClassifier::MAX_SLOTS)) {
+                throw new InvalidBatch(sprintf('Số slot của Dòng nhập "%s" phải từ 1 đến %s.', $name, self::formatCount(LineClassifier::MAX_SLOTS)));
+            }
+
+            if ($line->expiry?->days !== null && $line->expiry->days < 0) {
+                throw new InvalidBatch("Số ngày Hạn sử dụng của Dòng nhập \"{$name}\" không được âm.");
+            }
         }
+    }
+
+    private static function formatCount(int $number): string
+    {
+        return number_format($number, 0, ',', '.');
     }
 
     private static function blankToNull(?string $value): ?string

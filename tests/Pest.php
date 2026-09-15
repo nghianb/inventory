@@ -9,6 +9,10 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature');
 
+// Test đồng thời cần dữ liệu commit thật giữa các tiến trình: không bọc transaction.
+pest()->extend(TestCase::class)
+    ->in('Concurrency');
+
 /**
  * Nhân viên đã bật 2FA, mang các Vai trò cho trước. Cần chạy RoleSeeder trước.
  */

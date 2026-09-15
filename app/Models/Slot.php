@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property int $stock_unit_id
  * @property SlotStatus $status
+ * @property int $cost Giá vốn Slot: Giá vốn Đơn vị hàng chia đều cho số slot
  * @property-read StockUnit $stockUnit
  */
 class Slot extends Model
@@ -23,6 +24,7 @@ class Slot extends Model
     {
         return [
             'status' => SlotStatus::class,
+            'cost' => 'integer',
         ];
     }
 

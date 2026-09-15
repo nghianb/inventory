@@ -63,6 +63,11 @@ class StockUnitResource extends Resource
                         ->countBy(fn (Slot $slot): string => $slot->status->value)
                         ->map(fn (int $count, string $status): string => $count.' '.SlotStatus::from($status)->label())
                         ->implode(', ')),
+                TextColumn::make('expires_on')
+                    ->label('Hạn sử dụng')
+                    ->date('d/m/Y')
+                    ->placeholder('Không có')
+                    ->sortable(),
                 TextColumn::make('unit_cost')
                     ->label('Giá vốn')
                     ->formatStateUsing(fn (int $state): string => number_format($state, 0, ',', '.').' ₫')

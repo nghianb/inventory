@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Inventory\Catalog\ProductType;
 use App\Inventory\Stock\MaskedContent;
 use App\Inventory\Stock\StockUnitStatus;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,6 +21,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property ProductType $kind
  * @property StockUnitStatus $status
  * @property int $unit_cost
+ * @property int $slot_count
+ * @property ?CarbonImmutable $expires_on
+ * @property ?int $renews_stock_unit_id
+ * @property bool $holds_dedupe_key
  * @property string $dedupe_hash
  * @property ?array<string, string> $content
  * @property ?string $secret_ciphertext
@@ -27,6 +32,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read Product $product
  * @property-read BatchLine $batchLine
  * @property-read Collection<int, Slot> $slots
+ * @property-read ?StockUnit $renews
  */
 class StockUnit extends Model
 {
@@ -41,6 +47,9 @@ class StockUnit extends Model
             'kind' => ProductType::class,
             'status' => StockUnitStatus::class,
             'unit_cost' => 'integer',
+            'slot_count' => 'integer',
+            'expires_on' => 'immutable_date',
+            'holds_dedupe_key' => 'boolean',
             'content' => 'array',
             'secret_key_version' => 'integer',
         ];
@@ -60,6 +69,16 @@ class StockUnit extends Model
     public function batchLine(): BelongsTo
     {
         return $this->belongsTo(BatchLine::class);
+    }
+
+    /**
+     * Đơn vị hàng cũ mà Tài khoản này nhập lại (gia hạn).
+     *
+     * @return BelongsTo<StockUnit, $this>
+     */
+    public function renews(): BelongsTo
+    {
+        return $this->belongsTo(StockUnit::class, 'renews_stock_unit_id');
     }
 
     /**

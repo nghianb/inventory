@@ -10,17 +10,30 @@ final readonly class BatchLinePreview
 {
     /**
      * @param  list<RejectedLine>  $rejected
-     * @param  list<array<string, string>>  $sample  vài Đơn vị hàng hợp lệ ở dạng che
-     * @param  int  $totalCost  tổng Giá vốn phần hợp lệ, VND
+     * @param  list<array<string, string>>  $sample  vài Đơn vị hàng nhập được ở dạng che
+     * @param  list<string>  $ignoredColumns  cột file bị bỏ qua
+     * @param  int  $totalCost  tổng Giá vốn phần nhập được (hợp lệ và nhập lại), VND
      */
     public function __construct(
         public string $productName,
+        public IntakeSource $source,
+        public ?string $fileName,
         public int $validCount,
+        public int $renewalCount,
         public int $invalidCount,
         public int $fileDuplicateCount,
         public int $stockDuplicateCount,
         public array $rejected,
         public array $sample,
+        public array $ignoredColumns,
         public int $totalCost,
     ) {}
+
+    /**
+     * Số Đơn vị hàng vào kho khi xác nhận.
+     */
+    public function importCount(): int
+    {
+        return $this->validCount + $this->renewalCount;
+    }
 }
