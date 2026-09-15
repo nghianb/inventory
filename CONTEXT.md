@@ -17,17 +17,17 @@ Một đơn vị hàng là thông tin đăng nhập (username, password, có th�
 _Avoid_: acc, nick
 
 **Đơn vị hàng** (Stock unit):
-Một thứ cụ thể nằm trong kho: một **Mã dùng một lần** hoặc một **Tài khoản**. Có trạng thái Hoạt động, Lỗi hoặc Đã huỷ; khi Lỗi hoặc Đã huỷ thì mọi **Slot** còn trong kho của nó không bán được. Mang **Giá vốn** của cả đơn vị.
+Một thứ cụ thể nằm trong kho: một **Mã dùng một lần** hoặc một **Tài khoản**. Có trạng thái Hoạt động, Lỗi, Đã huỷ hoặc Đã huỷ nhập; khi Lỗi hoặc Đã huỷ thì mọi **Slot** còn trong kho của nó không bán được. Mang **Giá vốn** của cả đơn vị.
 _Avoid_: item, hàng (khi nói chung chung)
 
 **Trường nội dung** (Content field):
 Một phần nội dung của **Đơn vị hàng** do **Sản phẩm** khai báo, ví dụ Serial và Mã thẻ của thẻ nạp, hay username và password của **Tài khoản**. Mỗi trường có cờ nhạy cảm, mặc định bật: trường nhạy cảm được mã hoá và che hoàn toàn; trường không nhạy cảm (ví dụ Serial thẻ nạp) hiển thị và tìm kiếm được. Một trường được chọn làm **Khoá chống trùng**. Khi Sản phẩm đã có hàng, chỉ được thêm trường tuỳ chọn hoặc đổi tên hiển thị.
 
 **Khoá chống trùng** (Dedupe key):
-**Trường nội dung** dùng để phát hiện một **Đơn vị hàng** bị nhập hai lần. Với **Tài khoản** là định danh đăng nhập, không phải mật khẩu. Mã dùng một lần là duy nhất toàn kho mãi mãi; một Tài khoản được nhập lại khi Đơn vị hàng cũ đã bị **Huỷ hàng** hoặc quá **Hạn sử dụng**, và Đơn vị hàng mới liên kết với cái cũ.
+**Trường nội dung** dùng để phát hiện một **Đơn vị hàng** bị nhập hai lần. Với **Tài khoản** là định danh đăng nhập, không phải mật khẩu. Mã dùng một lần là duy nhất toàn kho mãi mãi, trừ khi bị **Huỷ nhập**; một Tài khoản được nhập lại khi Đơn vị hàng cũ đã bị **Huỷ hàng** hoặc quá **Hạn sử dụng**, và Đơn vị hàng mới liên kết với cái cũ.
 
 **Slot**:
-Một phần của **Tài khoản** được bán cho một khách. Shop tự khai báo số slot tối đa khi nhập; mã dùng một lần coi như có đúng một slot. Có trạng thái Còn hàng, Đã giữ, Đã giao hoặc Đã huỷ. Slot đã giao không bao giờ quay về Còn hàng.
+Một phần của **Tài khoản** được bán cho một khách. Shop tự khai báo số slot tối đa khi nhập; mã dùng một lần coi như có đúng một slot. Có trạng thái Còn hàng, Đã giữ, Đã giao, Đã huỷ hoặc Đã huỷ nhập. Slot đã giao không bao giờ quay về Còn hàng.
 
 **Giữ hàng** (Reserve):
 Tạm khoá một **Slot** cho một **Phiếu xuất** để không giao trùng cho đơn khác, trước khi **Giao hàng**. Giữ hàng luôn có hạn, do **Kênh bán** quy định; quá hạn thì Slot tự trở về Còn hàng và Phiếu xuất sang Hết hạn giữ. Xuất kho thủ công giữ và giao trong một bước.
@@ -138,7 +138,7 @@ Một lần nhập hàng vào kho từ một **Nhà cung cấp**, gồm một ho
 Phần của một **Lô nhập** dành cho đúng một **Sản phẩm**: một file hoặc một danh sách dán, kèm đơn giá **Giá vốn** và các giá trị mặc định (số slot, **Hạn sử dụng**) cho các **Đơn vị hàng** trong đó.
 
 **Huỷ nhập** (Import reversal):
-Rút lại hàng đã nhập nhầm, coi như chưa từng vào kho: giải phóng **Khoá chống trùng** để nhập lại được, nhưng vẫn giữ bản ghi. Chỉ làm được khi mọi **Slot** liên quan vẫn Còn hàng.
+Rút lại hàng đã nhập nhầm, coi như chưa từng vào kho: giải phóng **Khoá chống trùng** để nhập lại được, nhưng vẫn giữ bản ghi. Làm theo **Dòng nhập** hoặc cả **Lô nhập**, chỉ **Quản trị**; chỉ huỷ **Đơn vị hàng** mà mọi **Slot** vẫn Còn hàng, phần còn lại ở lại. Hàng Đã huỷ nhập không tính là tồn.
 _Avoid_: xoá lô, Huỷ hàng (Huỷ hàng không giải phóng Khoá chống trùng)
 
 **Nhà cung cấp** (Supplier):

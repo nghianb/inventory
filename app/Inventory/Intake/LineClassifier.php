@@ -89,8 +89,8 @@ class LineClassifier
 
     /**
      * Đơn vị hàng đang chiếm Khoá chống trùng. Mã dùng một lần là duy nhất toàn kho mãi mãi,
-     * bất kể Sản phẩm hay trạng thái. Tài khoản chỉ trùng với Đơn vị hàng còn chiếm khoá; nếu
-     * cái đó đã Huỷ hàng hoặc quá Hạn sử dụng thì được nhập lại.
+     * bất kể Sản phẩm hay trạng thái, trừ khi đã Huỷ nhập. Tài khoản chỉ trùng với Đơn vị hàng
+     * còn chiếm khoá; nếu cái đó đã Huỷ hàng hoặc quá Hạn sử dụng thì được nhập lại.
      *
      * @param  list<string>  $hashes
      * @return array<string, ?int> hash → id Đơn vị hàng nhập lại được, null nếu khoá đang bị chiếm
@@ -104,7 +104,7 @@ class LineClassifier
             $units = StockUnit::query()
                 ->where('kind', $kind)
                 ->whereIn('dedupe_hash', $chunk)
-                ->when($kind === ProductType::Account, fn ($query) => $query->where('holds_dedupe_key', true))
+                ->where('holds_dedupe_key', true)
                 ->get(['id', 'dedupe_hash', 'status', 'expires_on']);
 
             foreach ($units as $unit) {

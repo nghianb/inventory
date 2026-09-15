@@ -11,6 +11,8 @@ enum SlotStatus: string
     case Reserved = 'reserved';
     case Delivered = 'delivered';
     case Voided = 'voided';
+    // Huỷ nhập: coi như chưa từng vào kho, không phải tồn, không phải tổn thất.
+    case Reversed = 'reversed';
 
     public function label(): string
     {
@@ -19,6 +21,7 @@ enum SlotStatus: string
             self::Reserved => 'Đã giữ',
             self::Delivered => 'Đã giao',
             self::Voided => 'Đã huỷ',
+            self::Reversed => 'Đã huỷ nhập',
         };
     }
 }

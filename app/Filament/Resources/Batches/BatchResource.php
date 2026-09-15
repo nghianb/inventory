@@ -273,6 +273,7 @@ class BatchResource extends Resource
                     'file_duplicate' => $line->fileDuplicateCount,
                     'stock_duplicate' => $line->stockDuplicateCount,
                     'total_cost' => $money($line->totalCost),
+                    'reversed' => $line->reversedCount === 0 ? null : $line->reversedCount,
                     'sample' => array_map(
                         fn (array $unit): string => collect($unit)->map(fn (string $value, string $label): string => "{$label}: {$value}")->implode(' · '),
                         $line->sample,
@@ -293,7 +294,8 @@ class BatchResource extends Resource
                     TextEntry::make('file_duplicate')->label('Trùng trong file'),
                     TextEntry::make('stock_duplicate')->label('Trùng trong kho'),
                     TextEntry::make('total_cost')->label('Tổng Giá vốn'),
-                    TextEntry::make('source')->label('Nguồn')->columnSpan(3),
+                    TextEntry::make('source')->label('Nguồn')->columnSpan(2),
+                    TextEntry::make('reversed')->label('Đã Huỷ nhập')->color('danger')->placeholder('Không'),
                     TextEntry::make('ignored_columns')
                         ->label('Cột bị bỏ qua')
                         ->placeholder('Không có')

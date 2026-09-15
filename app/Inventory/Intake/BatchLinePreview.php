@@ -13,6 +13,7 @@ final readonly class BatchLinePreview
      * @param  list<array<string, string>>  $sample  vài Đơn vị hàng nhập được ở dạng che
      * @param  list<string>  $ignoredColumns  cột file bị bỏ qua
      * @param  int  $totalCost  tổng Giá vốn phần nhập được (hợp lệ và nhập lại), VND
+     * @param  int  $reversedCount  số Đơn vị hàng đã bị Huỷ nhập sau khi xác nhận
      */
     public function __construct(
         public string $productName,
@@ -27,6 +28,7 @@ final readonly class BatchLinePreview
         public array $sample,
         public array $ignoredColumns,
         public int $totalCost,
+        public int $reversedCount = 0,
     ) {}
 
     /**
