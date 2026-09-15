@@ -209,6 +209,11 @@ class ProductResource extends Resource
                 TextColumn::make('low_stock_threshold')
                     ->label('Ngưỡng sắp hết')
                     ->placeholder('Không cảnh báo'),
+                TextColumn::make('in_stock_slots_count')
+                    ->label('Còn hàng')
+                    ->counts('inStockSlots')
+                    ->suffix(' slot')
+                    ->sortable(),
                 IconColumn::make('has_stock')
                     ->label('Đã có hàng')
                     ->boolean()

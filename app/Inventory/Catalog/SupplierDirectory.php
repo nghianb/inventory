@@ -5,6 +5,7 @@ namespace App\Inventory\Catalog;
 use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
+use App\Models\Batch;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -45,6 +46,10 @@ class SupplierDirectory
     public function delete(User $actor, Supplier $supplier): void
     {
         $this->roles->authorize($actor, Role::NhapKho);
+
+        if (Batch::query()->where('supplier_id', $supplier->getKey())->exists()) {
+            throw new InvalidSupplier("Nhà cung cấp \"{$supplier->name}\" đã có Lô nhập, không xoá được.");
+        }
 
         $supplier->delete();
     }
