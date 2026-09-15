@@ -74,7 +74,7 @@ Ngày tuỳ chọn mà sau đó **Đơn vị hàng** không được bán nữa,
 _Avoid_: thời hạn (dễ nhầm với **Hạn bảo hành**)
 
 **Hạn bảo hành** (Warranty end):
-Ngày **Giao hàng** cộng thời hạn bảo hành của **Sản phẩm**, nhưng không vượt quá **Hạn sử dụng** của **Slot**. Là giá trị suy ra, không phải trạng thái. **Đổi hàng** kế thừa Hạn bảo hành của lần giao gốc, không tính lại. Hết Hạn sử dụng không bao giờ là lỗi.
+Ngày **Giao hàng** cộng thời hạn bảo hành mà **Sản phẩm** khai báo tại thời điểm Giao hàng, nhưng không vượt quá **Hạn sử dụng** của **Slot**. Sản phẩm đổi thời hạn bảo hành sau đó thì chỉ áp cho lần giao mới. Là giá trị suy ra, không phải trạng thái. **Đổi hàng** kế thừa Hạn bảo hành của lần giao gốc, không tính lại. Hết Hạn sử dụng không bao giờ là lỗi.
 
 **Huỷ hàng** (Void):
 Việc shop tự loại một **Slot** hoặc **Đơn vị hàng** khỏi vòng đời bán vì lý do không phải lỗi hàng, kèm lý do: giao nhầm, nhân viên làm lộ nội dung, ngừng kinh doanh lô hàng. Hàng hỏng hoặc bị nhà cung cấp thu hồi thì dùng **Đánh dấu Lỗi**.
@@ -205,4 +205,5 @@ Quản trị ghi lại một lần **Giao hàng** đã thực sự xảy ra như
 - "tồn kho" từng gộp cả Slot đang giữ và hàng không bán được. Đã chốt: cảnh báo và con số chính dùng **Tồn bán được**; Slot Đã giữ, tạm ngừng, không đạt hạn tối thiểu và **Tồn lỗi** hiện tách riêng.
 - "lãi/lỗ" có thể hiểu là chỉ Giá bán trừ Giá vốn hàng đã giao. Đã chốt: tách **Lãi gộp** và **Lãi ròng kho**; hàng lỗi, huỷ, hết hạn và Chi phí đổi hàng chỉ trừ vào Lãi ròng kho.
 - "khoá" dùng cho nhiều thứ khác nhau. Đã chốt: **Khoá API** (bí mật của kênh), **Khoá chống trùng** (trường nội dung), **Khoá nhân viên** (chặn đăng nhập); còn khoá mã hoá của kho chỉ **Người vận hành server** đụng tới và luôn nói rõ là "khoá mã hoá".
+- Đổi thời hạn bảo hành của **Sản phẩm** có thể hiểu là đổi cả **Hạn bảo hành** của các lần giao cũ. Đã chốt: không; Hạn bảo hành theo thời hạn bảo hành tại thời điểm **Giao hàng**, nên Sản phẩm vẫn đổi được thời hạn bảo hành khi đã có hàng.
 - Hàng nhập nhầm từng chỉ có cách Huỷ hàng, khiến Mã dùng một lần không nhập lại được. Đã chốt: tách riêng **Huỷ nhập**, giải phóng Khoá chống trùng.
