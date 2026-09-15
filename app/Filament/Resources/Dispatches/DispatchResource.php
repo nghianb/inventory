@@ -68,6 +68,8 @@ class DispatchResource extends Resource
     {
         $channel = fn (Get $get): ?SalesChannel => filled($get('sales_channel_id')) ? SalesChannel::query()->find($get('sales_channel_id')) : null;
         $product = fn (Get $get): ?Product => filled($get('product_id')) ? Product::query()->find($get('product_id')) : null;
+        // Giao thêm: Thông tin đơn lấy từ phiếu cũ, chỉ đọc.
+        $additional = fn (mixed $livewire): bool => $livewire instanceof CreateDispatch && $livewire->isAdditional();
 
         return $schema->components([
             Callout::make('Phiếu xuất chưa hợp lệ')
@@ -76,11 +78,17 @@ class DispatchResource extends Resource
                 ->visible(fn (mixed $livewire): bool => $livewire instanceof CreateDispatch && $livewire->problems !== [])
                 ->columnSpanFull(),
             Section::make('Thông tin đơn')
+                ->description(fn (mixed $livewire): ?string => $additional($livewire) ? 'Giao thêm vào phiếu này; không sửa được ở đây.' : null)
+                ->disabled($additional)
                 ->columns(2)
                 ->schema([
                     Select::make('sales_channel_id')
                         ->label('Kênh bán')
-                        ->options(fn (): array => SalesChannel::query()->usable()->orderBy('name')->pluck('name', 'id')->all())
+                        ->options(fn (mixed $livewire): array => SalesChannel::query()
+                            ->when(! $additional($livewire), fn (Builder $query) => $query->usable())
+                            ->orderBy('name')
+                            ->pluck('name', 'id')
+                            ->all())
                         ->markAsRequired()
                         ->live(),
                     TextInput::make('external_ref')
@@ -104,7 +112,9 @@ class DispatchResource extends Resource
                         ->columnSpanFull(),
                 ]),
             Section::make('Dòng xuất')
-                ->description('Slot được chọn tự động theo Thứ tự xuất.')
+                ->description(fn (mixed $livewire): string => $additional($livewire)
+                    ? 'Dòng xuất mới có Loại Giao thêm; Slot được chọn tự động theo Thứ tự xuất.'
+                    : 'Slot được chọn tự động theo Thứ tự xuất.')
                 ->schema([
                     Repeater::make('lines')
                         ->hiddenLabel()

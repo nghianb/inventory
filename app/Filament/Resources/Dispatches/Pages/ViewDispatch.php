@@ -7,6 +7,7 @@ use App\Filament\Support\InventoryAction;
 use App\Inventory\Dispatch\DispatchEdit;
 use App\Inventory\Dispatch\DispatchEditor;
 use App\Inventory\Dispatch\ExternalRefs;
+use App\Inventory\Dispatch\ManualDispatch;
 use App\Models\Dispatch;
 use App\Models\DispatchLine;
 use Filament\Actions\Action;
@@ -28,6 +29,11 @@ class ViewDispatch extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('additional')
+                ->label('Giao thêm')
+                ->icon(Heroicon::OutlinedPlusCircle)
+                ->url(fn (): string => DispatchResource::getUrl('create', [CreateDispatch::ADDITIONAL_QUERY => $this->dispatchRecord()->id]))
+                ->visible(fn (ManualDispatch $manual): bool => $manual->canAddLines(InventoryAction::actor(), $this->dispatchRecord())),
             Action::make('edit')
                 ->label('Sửa phiếu')
                 ->icon(Heroicon::OutlinedPencilSquare)

@@ -106,7 +106,11 @@ class DispatchResult extends Page
 
         return $schema->components([
             $this->unavailable === null
-                ? Callout::make(sprintf('Xuất kho thành công · %s Slot', DispatchResource::count(count($this->delivered))))
+                ? Callout::make(sprintf(
+                    '%s thành công · %s Slot',
+                    $dispatch->result_from_line_id === null ? 'Xuất kho' : 'Giao thêm',
+                    DispatchResource::count(count($this->delivered)),
+                ))
                     ->success()
                     ->description("Phiếu xuất #{$dispatch->id} · {$dispatch->salesChannel->name} · mã đơn {$dispatch->external_ref}")
                 : Callout::make('Không hiện được nội dung')
