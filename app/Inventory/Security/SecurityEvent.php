@@ -16,6 +16,7 @@ enum SecurityEvent: string
     case StaffDeactivated = 'staff_deactivated';
     case StaffReactivated = 'staff_reactivated';
     case TwoFactorReset = 'two_factor_reset';
+    case KeyFingerprintRegistered = 'key_fingerprint_registered';
 
     public function label(): string
     {
@@ -29,6 +30,7 @@ enum SecurityEvent: string
             self::StaffDeactivated => 'Khoá nhân viên',
             self::StaffReactivated => 'Mở khoá nhân viên',
             self::TwoFactorReset => 'Reset 2FA',
+            self::KeyFingerprintRegistered => 'Đăng ký dấu vân tay khoá mã hoá',
         };
     }
 }

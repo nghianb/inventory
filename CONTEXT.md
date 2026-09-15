@@ -160,7 +160,7 @@ Bản ghi mà qua đó nội dung đầy đủ của một **Slot** được hi�
 Nhật ký chỉ-ghi-thêm mỗi lần nội dung đầy đủ bị hiển thị hoặc tải về: ai (nhân viên hoặc **Khoá API**), khi nào, Slot nào, **Ngữ cảnh xem mã**, lý do. Không chứa nội dung mã, không ghi thao tác Copy, trừ Copy tất cả khi màn kết quả chỉ hiện dạng che (từ 50 **Slot** trở lên); lưu vĩnh viễn, chỉ **Quản trị** xem được.
 
 **Nhật ký bảo mật** (Security log):
-Nhật ký chỉ-ghi-thêm các sự kiện về quyền truy cập: đăng nhập, sai 2FA, reset 2FA, tạo hoặc **Khoá nhân viên**, đổi **Vai trò**, tạo, thu hồi hoặc xoay **Khoá API**, xoay khoá mã hoá của kho, bật hoặc tắt **Tạm dừng xuất kho**. Không bao giờ chứa giá trị khoá. Lưu vĩnh viễn, chỉ **Quản trị** xem được.
+Nhật ký chỉ-ghi-thêm các sự kiện về quyền truy cập: đăng nhập, sai 2FA, reset 2FA, tạo hoặc **Khoá nhân viên**, đổi **Vai trò**, tạo, thu hồi hoặc xoay **Khoá API**, đăng ký dấu vân tay hoặc xoay khoá mã hoá của kho, bật hoặc tắt **Tạm dừng xuất kho**. Không bao giờ chứa giá trị khoá. Lưu vĩnh viễn, chỉ **Quản trị** xem được.
 
 **Khoá nhân viên** (Deactivate staff):
 Chặn một nhân viên đăng nhập, có hiệu lực ngay kể cả phiên đang mở. Nhân viên không bao giờ bị xoá vì các nhật ký tham chiếu tới họ.

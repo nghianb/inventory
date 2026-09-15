@@ -11,11 +11,22 @@ cp .env.example .env
 docker compose build
 docker compose run --rm app composer install
 docker compose run --rm app php artisan key:generate
+for k in CONTENT HMAC BACKUP; do
+  sed -i "s|^INVENTORY_${k}_KEY=.*|INVENTORY_${k}_KEY=1:base64:$(openssl rand -base64 32)|" .env
+done
 docker compose run --rm app php artisan migrate --seed
+docker compose run --rm app php artisan inventory:keys:register
 docker compose up -d
 ```
 
 Panel ở <http://localhost:8080/admin>. Mọi nhân viên phải bật 2FA (TOTP) ngay sau lần đăng nhập đầu tiên.
+
+## Khoá mã hoá
+
+Khoá nội dung, khoá HMAC và khoá backup nằm trong `.env`, tách khỏi `APP_KEY` (xem ADR 0001). Mỗi khoá có phiên bản; DB chỉ lưu dấu vân tay của khoá, không lưu giá trị. Giữ bản sao khoá ngoài server, tách khỏi backup: mất khoá nội dung là mất toàn bộ hàng.
+
+- `php artisan inventory:keys:register`: đăng ký dấu vân tay các khoá mới (lần đầu, hoặc khi thêm phiên bản). Không ghi đè dấu vân tay đã có; ghi Nhật ký bảo mật.
+- `php artisan inventory:keys:verify`: chạy trước khi web server khởi động; queue worker cũng tự kiểm tra khi khởi động. Khoá không khớp thì từ chối chạy.
 
 ## Khôi phục quyền Quản trị
 
