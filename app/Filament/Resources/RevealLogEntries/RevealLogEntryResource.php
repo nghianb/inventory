@@ -5,6 +5,7 @@ namespace App\Filament\Resources\RevealLogEntries;
 use App\Filament\Resources\Batches\BatchResource;
 use App\Filament\Resources\RevealLogEntries\Pages\ManageRevealLogEntries;
 use App\Filament\Resources\StockUnits\StockUnitResource;
+use App\Filament\Resources\SupplierClaims\SupplierClaimResource;
 use App\Inventory\Reveal\RevealContextType;
 use App\Models\RevealLogEntry;
 use BackedEnum;
@@ -65,9 +66,12 @@ class RevealLogEntryResource extends Resource
                     ->formatStateUsing(fn (RevealContextType $state, RevealLogEntry $record): string => $record->context_id === null
                         ? $state->label()
                         : "{$state->label()} #{$record->context_id}")
-                    ->url(fn (RevealLogEntry $record): ?string => $record->context === RevealContextType::Batch && $record->context_id !== null
-                        ? BatchResource::getUrl('view', ['record' => $record->context_id])
-                        : null),
+                    ->url(fn (RevealLogEntry $record): ?string => match (true) {
+                        $record->context_id === null => null,
+                        $record->context === RevealContextType::Batch => BatchResource::getUrl('view', ['record' => $record->context_id]),
+                        $record->context === RevealContextType::SupplierClaim => SupplierClaimResource::getUrl('view', ['record' => $record->context_id]),
+                        default => null,
+                    }),
                 TextColumn::make('slot_id')
                     ->label('Slot')
                     ->prefix('#')

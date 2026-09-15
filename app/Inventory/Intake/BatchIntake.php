@@ -20,6 +20,7 @@ use App\Inventory\Stock\StockUnitStatus;
 use App\Models\Batch;
 use App\Models\BatchLine;
 use App\Models\Product;
+use App\Models\SupplierClaim;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
@@ -83,6 +84,7 @@ class BatchIntake
                     'note' => self::blankToNull($draft->note),
                     'invoice_total' => $draft->invoiceTotal,
                     'supplements_batch_id' => $draft->supplements?->getKey(),
+                    'supplier_claim_id' => $draft->supplierClaim?->getKey(),
                     'status' => BatchStatus::Validating,
                     'created_by' => $actor->getKey(),
                 ])->save();
@@ -241,6 +243,9 @@ class BatchIntake
             $current = Batch::query()->lockForUpdate()->findOrFail($batch->getKey());
             self::ensureConfirmable($current);
 
+            // Hàng thay thế: khoá Khiếu nại để hai Lô nhập xác nhận cùng lúc không vượt số được thay.
+            $claim = $current->supplier_claim_id === null ? null : SupplierClaim::query()->lockForUpdate()->findOrFail($current->supplier_claim_id);
+
             $stockDuplicates = (int) $current->lines->sum('stock_duplicate_count');
 
             if ($stockDuplicates > 0 && ! $skipStockDuplicates) {
@@ -269,6 +274,16 @@ class BatchIntake
                 if ($line->valid_count + $line->renewal_count > 0 && ! $product->hasStock()) {
                     $product->forceFill(['stocked_at' => now()])->save();
                 }
+            }
+
+            // Đếm sau khi ghi: dòng thành trùng lúc ghi không tính. Vượt thì cả transaction bị huỷ.
+            if ($claim !== null && $claim->replacementGoodsImported() > $claim->replacementGoodsAllowance()) {
+                throw new InvalidBatch(sprintf(
+                    'Khiếu nại #%d chỉ có %d Đơn vị hàng được Hàng thay thế; Lô nhập này làm số hàng thay thế đã nhập thành %d.',
+                    $claim->id,
+                    $claim->replacementGoodsAllowance(),
+                    $claim->replacementGoodsImported(),
+                ));
             }
 
             if (! $skipStockDuplicates && $current->lines->sum('stock_duplicate_count') > 0) {
@@ -551,7 +566,7 @@ class BatchIntake
             $product = $products[$line->product_id];
             $source = $this->reader->read($product, $this->pending->get($line), $line->source, $line->separator);
 
-            $classified = array_map(function (ClassifiedLine $row) use (&$seen, $product): ClassifiedLine {
+            $classified = array_map(function (ClassifiedLine $row) use (&$seen, $product, $batch): ClassifiedLine {
                 if (! $row->isImportable()) {
                     return $row;
                 }
@@ -564,7 +579,8 @@ class BatchIntake
 
                 $seen[$key] = [$row->lineNumber, $product->name];
 
-                return $row;
+                // Hàng thay thế từ Khiếu nại nhà cung cấp: Giá vốn 0, bỏ qua cột gia_von của file.
+                return $batch->supplier_claim_id === null ? $row : $row->withoutCost();
             }, $this->classifier->classify($product, $source, self::defaults($batch, $line, $product)));
 
             $results[$line->id] = [$classified, $source->ignoredColumns];
@@ -841,6 +857,10 @@ class BatchIntake
             throw new InvalidBatch('Chỉ bổ sung cho Lô nhập đã xác nhận.');
         }
 
+        if ($draft->supplierClaim !== null) {
+            self::validateReplacementGoodsDraft($draft, $draft->supplierClaim);
+        }
+
         $maxBytes = (int) config('inventory.intake.max_bytes');
         $products = [];
 
@@ -879,6 +899,35 @@ class BatchIntake
 
             if ($line->expiry?->days !== null && $line->expiry->days < 0) {
                 throw new InvalidBatch("Số ngày Hạn sử dụng của Dòng nhập \"{$name}\" không được âm.");
+            }
+        }
+    }
+
+    /**
+     * Lô nhập hàng thay thế: cùng Nhà cung cấp với Khiếu nại Đã giải quyết có kết quả Hàng thay thế,
+     * mọi Dòng nhập Giá vốn 0.
+     *
+     * @throws InvalidBatch
+     */
+    private static function validateReplacementGoodsDraft(BatchDraft $draft, SupplierClaim $claim): void
+    {
+        $eligible = SupplierClaim::query()->acceptsReplacementGoods()->whereKey($claim->getKey())->first();
+
+        if ($eligible === null) {
+            throw new InvalidBatch('Chỉ nhập hàng thay thế cho Khiếu nại Đã giải quyết có kết quả Hàng thay thế.');
+        }
+
+        if ($eligible->supplier_id !== (int) $draft->supplier->getKey()) {
+            throw new InvalidBatch('Lô nhập hàng thay thế phải cùng Nhà cung cấp với Khiếu nại.');
+        }
+
+        if ($eligible->replacementGoodsImported() >= $eligible->replacementGoodsAllowance()) {
+            throw new InvalidBatch(sprintf('Khiếu nại #%d đã nhập đủ %d Đơn vị hàng thay thế.', $eligible->id, $eligible->replacementGoodsAllowance()));
+        }
+
+        foreach ($draft->lines as $line) {
+            if ($line->unitCost !== 0) {
+                throw new InvalidBatch("Hàng thay thế từ Khiếu nại nhà cung cấp có Giá vốn 0 (Dòng nhập \"{$line->product->name}\").");
             }
         }
     }

@@ -11,6 +11,7 @@ use App\Inventory\Intake\ExpiryRule;
 use App\Models\Batch;
 use App\Models\Product;
 use App\Models\Supplier;
+use App\Models\SupplierClaim;
 use Carbon\CarbonImmutable;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
@@ -27,6 +28,9 @@ class CreateBatch extends CreateRecord
 {
     protected static string $resource = BatchResource::class;
 
+    /** Tham số query: mở trang tạo Lô nhập hàng thay thế cho Khiếu nại nhà cung cấp. */
+    public const CLAIM_QUERY = 'khieu-nai';
+
     protected static bool $canCreateAnother = false;
 
     /**
@@ -36,6 +40,7 @@ class CreateBatch extends CreateRecord
     {
         $uploads = [];
         $lines = [];
+        $claim = filled($data['supplier_claim_id'] ?? null) ? SupplierClaim::query()->findOrFail($data['supplier_claim_id']) : null;
 
         try {
             foreach ($data['lines'] as $line) {
@@ -45,7 +50,8 @@ class CreateBatch extends CreateRecord
                     $uploads[] = $upload;
                 }
 
-                $lines[] = self::line($line, $upload);
+                // Hàng thay thế từ Khiếu nại: form ẩn Giá vốn, luôn 0.
+                $lines[] = self::line($claim === null ? $line : [...$line, 'unit_cost' => 0], $upload);
             }
 
             return app(BatchIntake::class)->submit(InventoryAction::actor(), new BatchDraft(
@@ -56,6 +62,7 @@ class CreateBatch extends CreateRecord
                 note: $data['note'] ?? null,
                 invoiceTotal: filled($data['invoice_total'] ?? null) ? (int) $data['invoice_total'] : null,
                 supplements: filled($data['supplements_batch_id'] ?? null) ? Batch::query()->findOrFail($data['supplements_batch_id']) : null,
+                supplierClaim: $claim,
             ));
         } catch (Throwable $exception) {
             if (! InventoryAction::isBusinessError($exception)) {

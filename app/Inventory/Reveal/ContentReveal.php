@@ -15,6 +15,7 @@ use App\Inventory\Encryption\EncryptedContent;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Stock\SlotStatus;
+use App\Inventory\Stock\StockUnitStatus;
 use App\Inventory\Warranty\DefectReporting;
 use App\Inventory\Warranty\DefectReportStatus;
 use App\Models\ContentField;
@@ -24,6 +25,7 @@ use App\Models\Dispatch;
 use App\Models\Replacement;
 use App\Models\Slot;
 use App\Models\StockUnit;
+use App\Models\SupplierClaimUnit;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -60,6 +62,7 @@ class ContentReveal
             RevealContextType::Delivery => throw new InvalidReveal('Nội dung lần Giao hàng chỉ xem qua màn kết quả xuất kho hoặc Xem mã của lần giao.'),
             RevealContextType::DefectReport => throw new InvalidReveal('Nội dung Báo lỗi chỉ xem qua Xem mã của Báo lỗi.'),
             RevealContextType::Replacement => throw new InvalidReveal('Nội dung Đổi hàng chỉ xem qua màn kết quả Đổi hàng.'),
+            RevealContextType::SupplierClaim => throw new InvalidReveal('Nội dung Khiếu nại nhà cung cấp chỉ xem qua Xem mã của Đơn vị hàng trong khiếu nại.'),
         };
 
         $this->fingerprints->verify();
@@ -312,6 +315,56 @@ class ContentReveal
 
             return $this->deliveredContent($delivery, $delivery->dispatchLine->dispatch);
         });
+    }
+
+    /**
+     * Xem nội dung một Đơn vị hàng trong Khiếu nại nhà cung cấp để gửi bằng chứng. Quản trị và Nhập
+     * kho, khi Đơn vị hàng còn nằm trong khiếu nại (chưa gỡ, khiếu nại chưa huỷ); mỗi lần ghi một dòng
+     * Nhật ký xem mã ngữ cảnh Khiếu nại nhà cung cấp cho mỗi Slot của Đơn vị hàng.
+     *
+     * @throws MissingRole
+     * @throws InvalidReveal
+     * @throws KeyFingerprintMismatch
+     */
+    public function revealClaimUnit(User $actor, SupplierClaimUnit $claimUnit): RevealedContent
+    {
+        $this->roles->authorize($actor, Role::NhapKho);
+        $this->fingerprints->verify();
+
+        return DB::transaction(function () use ($actor, $claimUnit): RevealedContent {
+            // Khoá chia sẻ: không bị gỡ hay huỷ khiếu nại giữa lúc kiểm tra và lúc trả nội dung.
+            $current = SupplierClaimUnit::query()->sharedLock()->findOrFail($claimUnit->getKey());
+
+            if (! $current->active) {
+                throw new InvalidReveal('Đơn vị hàng không còn nằm trong Khiếu nại; không xem mã qua Khiếu nại được.');
+            }
+
+            $unit = $current->stockUnit()->with('product.contentFields')->firstOrFail();
+
+            // Đã Khôi phục thì là hàng bán được: chỉ Quản trị xem kèm lý do.
+            if ($unit->status !== StockUnitStatus::Defective) {
+                throw new InvalidReveal('Đơn vị hàng không còn Lỗi; không xem mã qua Khiếu nại được.');
+            }
+
+            $claim = $current->claim()->firstOrFail();
+
+            // Nội dung là của cả Đơn vị hàng: mỗi Slot một dòng, để tra theo Slot hay lần giao đều thấy lần xem này.
+            foreach ($unit->slots as $slot) {
+                $this->log->record(RevealActor::staff($actor), RevealContext::supplierClaim($claim), "Khiếu nại nhà cung cấp #{$claim->id}", $slot);
+            }
+
+            return new RevealedContent(self::byLabel($unit, $this->decryptedValues($unit)));
+        });
+    }
+
+    /**
+     * Để panel ẩn nút xem, không thay cho kiểm tra trong {@see revealClaimUnit()}.
+     */
+    public function canRevealClaimUnit(User $actor, SupplierClaimUnit $claimUnit): bool
+    {
+        return $this->roles->allows($actor, Role::NhapKho)
+            && $claimUnit->active
+            && $claimUnit->stockUnit->status === StockUnitStatus::Defective;
     }
 
     /**

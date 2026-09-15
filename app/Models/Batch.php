@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property ?string $note
  * @property ?int $invoice_total
  * @property ?int $supplements_batch_id
+ * @property ?int $supplier_claim_id Khiếu nại nhà cung cấp, khi lô là hàng thay thế
  * @property BatchStatus $status
  * @property ?string $validation_error
  * @property int $created_by
@@ -30,6 +31,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read User $creator
  * @property-read Collection<int, BatchLine> $lines
  * @property-read ?Batch $supplements
+ * @property-read ?SupplierClaim $supplierClaim
  */
 class Batch extends Model
 {
@@ -70,6 +72,16 @@ class Batch extends Model
     public function supplements(): BelongsTo
     {
         return $this->belongsTo(Batch::class, 'supplements_batch_id');
+    }
+
+    /**
+     * Khiếu nại nhà cung cấp mà lô này là hàng thay thế.
+     *
+     * @return BelongsTo<SupplierClaim, $this>
+     */
+    public function supplierClaim(): BelongsTo
+    {
+        return $this->belongsTo(SupplierClaim::class);
     }
 
     /**
