@@ -17,14 +17,16 @@ use App\Models\Product;
 use App\Models\SalesChannel;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use stdClass;
 
 /**
- * Xuất kho thủ công: nhân viên tạo Phiếu xuất cho một đơn, hệ thống chọn Slot theo Thứ tự xuất
- * và giao ngay trong một transaction. Cả phiếu giao đủ hoặc thất bại. Slot được chọn bằng
- * `FOR UPDATE SKIP LOCKED`, nên hai tiến trình xuất cùng lúc không bao giờ chọn trùng Slot.
+ * Xuất kho thủ công: nhân viên tạo Phiếu xuất cho một đơn, hoặc Giao thêm vào phiếu đã Hoàn tất;
+ * hệ thống chọn Slot theo Thứ tự xuất và giao ngay trong một transaction. Cả phần giao đủ hoặc
+ * thất bại. Slot được chọn bằng `FOR UPDATE SKIP LOCKED`, nên hai tiến trình xuất cùng lúc không
+ * bao giờ chọn trùng Slot.
  */
 class ManualDispatch
 {
@@ -52,18 +54,34 @@ class ManualDispatch
     }
 
     /**
-     * Dòng xuất thiếu hàng theo Tồn bán được lúc này, cho modal xác nhận. Không khoá gì, nên
-     * {@see create()} vẫn có thể báo thiếu hàng khi phiếu khác vừa lấy mất.
+     * Lỗi kiểm tra của phần Giao thêm vào một Phiếu xuất, không tính tồn kho.
      *
+     * @param  list<DispatchLineDraft>  $lines
+     * @return list<DispatchProblem>
+     *
+     * @throws MissingRole
+     */
+    public function checkAdditional(User $actor, Dispatch $dispatch, array $lines): array
+    {
+        $this->roles->authorize($actor, Role::BanHang);
+
+        return self::additionalProblems(Dispatch::query()->findOrFail($dispatch->getKey()), $lines);
+    }
+
+    /**
+     * Dòng xuất thiếu hàng theo Tồn bán được lúc này, cho modal xác nhận. Không khoá gì, nên
+     * {@see create()} và {@see addLines()} vẫn có thể báo thiếu hàng khi phiếu khác vừa lấy mất.
+     *
+     * @param  list<DispatchLineDraft>  $lines
      * @return list<Shortage>
      *
      * @throws MissingRole
      */
-    public function shortages(User $actor, DispatchDraft $draft): array
+    public function shortages(User $actor, array $lines): array
     {
         $this->roles->authorize($actor, Role::BanHang);
 
-        $lines = array_values(array_filter($draft->lines, fn (DispatchLineDraft $line): bool => $line->product !== null && $line->quantity > 0));
+        $lines = array_values(array_filter($lines, fn (DispatchLineDraft $line): bool => $line->product !== null && $line->quantity > 0));
         $available = $this->stock->counts(array_values(array_unique(array_map(fn (DispatchLineDraft $line): int => (int) $line->product?->getKey(), $lines))));
         $shortages = [];
 
@@ -104,78 +122,163 @@ class ManualDispatch
             $channel = $draft->channel;
             assert($channel !== null);
 
-            // Khoá chia sẻ theo thứ tự id: Quản trị không Ngừng bán hay đổi Mã sản phẩm, thời hạn
-            // bảo hành giữa lúc kiểm tra và lúc giao; hai phiếu cùng Sản phẩm vẫn chạy song song.
-            $products = Product::query()
-                ->whereIn('id', array_map(fn (DispatchLineDraft $line): int => (int) $line->product?->getKey(), $draft->lines))
-                ->orderBy('id')
-                ->sharedLock()
-                ->get()
-                ->keyBy('id');
-
-            $discontinued = $products->filter(fn (Product $product): bool => $product->isDiscontinued());
-
-            if ($discontinued->isNotEmpty()) {
-                throw new InvalidDispatch($discontinued->map(fn (Product $product): DispatchProblem => self::discontinued($product))->values()->all());
-            }
-
-            $today = CarbonImmutable::today();
-            $picks = [];
-            $shortages = [];
-
-            foreach ($draft->lines as $index => $line) {
-                $product = $products[(int) $line->product?->getKey()];
-                $picks[$index] = self::pick($product, $line->quantity, $today);
-
-                if ($picks[$index]->count() < $line->quantity) {
-                    $shortages[] = new Shortage($product->id, $product->name, $line->quantity, $picks[$index]->count());
-                }
-            }
-
-            if ($shortages !== []) {
-                throw new OutOfStock($shortages);
-            }
-
+            [$products, $picks] = self::lockAndPick($draft->lines);
             $dispatch = $this->insertDispatch($actor, $channel, $draft);
-            $now = now();
-            $transitions = [];
 
-            foreach ($draft->lines as $index => $line) {
-                $product = $products[(int) $line->product?->getKey()];
-
-                $dispatchLine = new DispatchLine;
-                $dispatchLine->forceFill([
-                    'dispatch_id' => $dispatch->id,
-                    'product_id' => $product->id,
-                    'kind' => DispatchLineKind::Sale,
-                    'quantity' => $line->quantity,
-                    'sale_price' => $line->salePrice,
-                ])->save();
-
-                DB::table('slots')
-                    ->whereIn('id', $picks[$index]->pluck('id'))
-                    ->update(['status' => SlotStatus::Delivered->value, 'updated_at' => $now]);
-
-                DB::table('deliveries')->insert($picks[$index]->map(fn (object $slot): array => [
-                    'dispatch_line_id' => $dispatchLine->id,
-                    'slot_id' => $slot->id,
-                    'stock_unit_id' => $slot->stock_unit_id,
-                    'warranty_days' => $product->warranty_days,
-                    'delivered_at' => $now,
-                    'delivered_by' => $actor->getKey(),
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ])->all());
-
-                foreach ($picks[$index] as $slot) {
-                    $transitions[] = new StockTransition((int) $slot->stock_unit_id, (int) $slot->id, SlotStatus::InStock, SlotStatus::Delivered);
-                }
-            }
-
-            $this->ledger->append($actor, $transitions, "Giao hàng theo Phiếu xuất #{$dispatch->id}");
+            $this->deliver($actor, $dispatch, $draft->lines, $products, $picks, DispatchLineKind::Sale, "Giao hàng theo Phiếu xuất #{$dispatch->id}");
 
             return $dispatch;
         }, attempts: 3);
+    }
+
+    /**
+     * Giao thêm: thêm Dòng xuất loại Giao thêm vào một Phiếu xuất Hoàn tất và giao ngay, cùng Thứ
+     * tự xuất và kiểm tra tồn với {@see create()}. Phần thêm giao đủ hoặc thất bại; thất bại thì
+     * phiếu giữ nguyên. Thành công thì màn kết quả của phiếu chuyển sang Slot vừa giao, cho người
+     * vừa Giao thêm.
+     *
+     * @param  list<DispatchLineDraft>  $lines
+     *
+     * @throws MissingRole
+     * @throws InvalidDispatch
+     * @throws OutOfStock
+     * @throws KeyFingerprintMismatch
+     */
+    public function addLines(User $actor, Dispatch $dispatch, array $lines): Dispatch
+    {
+        $this->roles->authorize($actor, Role::BanHang);
+        $this->fingerprints->verify();
+
+        return DB::transaction(function () use ($actor, $dispatch, $lines): Dispatch {
+            // Khoá phiếu: hai lần Giao thêm cùng phiếu chạy lần lượt, giới hạn Slot tính đúng.
+            $current = Dispatch::query()->lockForUpdate()->findOrFail($dispatch->getKey());
+            $problems = self::additionalProblems($current, $lines);
+
+            if ($problems !== []) {
+                throw new InvalidDispatch($problems);
+            }
+
+            [$products, $picks] = self::lockAndPick($lines);
+            $lineIds = $this->deliver($actor, $current, $lines, $products, $picks, DispatchLineKind::Additional, "Giao thêm theo Phiếu xuất #{$current->id}");
+
+            $current->forceFill([
+                'result_by' => $actor->getKey(),
+                'result_from_line_id' => $lineIds[0],
+                'result_revealed_at' => null,
+            ])->save();
+
+            return $current;
+        }, attempts: 3);
+    }
+
+    /**
+     * Nhân viên có Giao thêm được vào phiếu này lúc này không: Bán hàng, phiếu Hoàn tất. Để panel ẩn
+     * nút, không thay cho kiểm tra trong {@see addLines()}.
+     */
+    public function canAddLines(User $actor, Dispatch $dispatch): bool
+    {
+        return $dispatch->status === DispatchStatus::Completed && $this->roles->allows($actor, Role::BanHang);
+    }
+
+    /**
+     * Khoá chia sẻ Sản phẩm theo thứ tự id (Quản trị không Ngừng bán hay đổi Mã sản phẩm, thời hạn
+     * bảo hành giữa lúc kiểm tra và lúc giao; hai phiếu cùng Sản phẩm vẫn chạy song song), rồi chọn
+     * và khoá Slot cho mọi dòng. Thiếu hàng ở bất kỳ dòng nào thì không giao gì.
+     *
+     * @param  list<DispatchLineDraft>  $lines  đã qua kiểm tra
+     * @return array{EloquentCollection<int, Product>, array<int, Collection<int, stdClass>>}
+     *
+     * @throws InvalidDispatch
+     * @throws OutOfStock
+     */
+    private static function lockAndPick(array $lines): array
+    {
+        $products = Product::query()
+            ->whereIn('id', array_map(fn (DispatchLineDraft $line): int => (int) $line->product?->getKey(), $lines))
+            ->orderBy('id')
+            ->sharedLock()
+            ->get()
+            ->keyBy('id');
+
+        $discontinued = $products->filter(fn (Product $product): bool => $product->isDiscontinued());
+
+        if ($discontinued->isNotEmpty()) {
+            throw new InvalidDispatch($discontinued->map(fn (Product $product): DispatchProblem => self::discontinued($product))->values()->all());
+        }
+
+        $today = CarbonImmutable::today();
+        $picks = [];
+        $shortages = [];
+
+        foreach ($lines as $index => $line) {
+            $product = $products[(int) $line->product?->getKey()];
+            $picks[$index] = self::pick($product, $line->quantity, $today);
+
+            if ($picks[$index]->count() < $line->quantity) {
+                $shortages[] = new Shortage($product->id, $product->name, $line->quantity, $picks[$index]->count());
+            }
+        }
+
+        if ($shortages !== []) {
+            throw new OutOfStock($shortages);
+        }
+
+        return [$products, $picks];
+    }
+
+    /**
+     * Chèn Dòng xuất và giao các Slot đã khoá: Slot Còn hàng → Đã giao, ghi Giao hàng và Sổ biến
+     * động kho. Người gọi chạy trong transaction.
+     *
+     * @param  list<DispatchLineDraft>  $lines
+     * @param  EloquentCollection<int, Product>  $products
+     * @param  array<int, Collection<int, stdClass>>  $picks
+     * @return non-empty-list<int> id các Dòng xuất vừa chèn, theo thứ tự dòng
+     */
+    private function deliver(User $actor, Dispatch $dispatch, array $lines, EloquentCollection $products, array $picks, DispatchLineKind $kind, string $ledgerReason): array
+    {
+        $now = now();
+        $transitions = [];
+        $lineIds = [];
+
+        foreach ($lines as $index => $line) {
+            $product = $products[(int) $line->product?->getKey()];
+
+            $dispatchLine = new DispatchLine;
+            $dispatchLine->forceFill([
+                'dispatch_id' => $dispatch->id,
+                'product_id' => $product->id,
+                'kind' => $kind,
+                'quantity' => $line->quantity,
+                'sale_price' => $line->salePrice,
+            ])->save();
+            $lineIds[] = $dispatchLine->id;
+
+            DB::table('slots')
+                ->whereIn('id', $picks[$index]->pluck('id'))
+                ->update(['status' => SlotStatus::Delivered->value, 'updated_at' => $now]);
+
+            DB::table('deliveries')->insert($picks[$index]->map(fn (object $slot): array => [
+                'dispatch_line_id' => $dispatchLine->id,
+                'slot_id' => $slot->id,
+                'stock_unit_id' => $slot->stock_unit_id,
+                'warranty_days' => $product->warranty_days,
+                'delivered_at' => $now,
+                'delivered_by' => $actor->getKey(),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ])->all());
+
+            foreach ($picks[$index] as $slot) {
+                $transitions[] = new StockTransition((int) $slot->stock_unit_id, (int) $slot->id, SlotStatus::InStock, SlotStatus::Delivered);
+            }
+        }
+
+        assert($lineIds !== []);
+
+        $this->ledger->append($actor, $transitions, $ledgerReason);
+
+        return $lineIds;
     }
 
     /**
@@ -235,6 +338,7 @@ class ManualDispatch
                 'note' => self::blankToNull($draft->note),
                 'status' => DispatchStatus::Completed->value,
                 'created_by' => $actor->getKey(),
+                'result_by' => $actor->getKey(),
                 'completed_at' => $now,
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -290,14 +394,47 @@ class ManualDispatch
             $problems[] = new DispatchProblem('Phiếu xuất phải có ít nhất một Dòng xuất.');
         }
 
+        return [...$problems, ...self::lineProblems($draft->lines, 0)];
+    }
+
+    /**
+     * Phần Giao thêm: phiếu phải Hoàn tất; Dòng xuất theo cùng quy tắc với tạo phiếu, giới hạn Slot
+     * tính cả Slot phiếu đã giao. Sản phẩm trùng Dòng xuất cũ được, vì mỗi lần mua thêm là một dòng.
+     *
+     * @param  list<DispatchLineDraft>  $lines
+     * @return list<DispatchProblem>
+     */
+    private static function additionalProblems(Dispatch $dispatch, array $lines): array
+    {
+        $problems = [];
+
+        if ($dispatch->status !== DispatchStatus::Completed) {
+            $problems[] = new DispatchProblem('Chỉ Giao thêm được vào Phiếu xuất Hoàn tất.');
+        }
+
+        if ($lines === []) {
+            $problems[] = new DispatchProblem('Giao thêm phải có ít nhất một Dòng xuất.');
+        }
+
+        return [...$problems, ...self::lineProblems($lines, $dispatch->deliveries()->count())];
+    }
+
+    /**
+     * @param  list<DispatchLineDraft>  $lines
+     * @param  int  $deliveredSlots  số Slot phiếu đã giao trước phần này
+     * @return list<DispatchProblem>
+     */
+    private static function lineProblems(array $lines, int $deliveredSlots): array
+    {
+        $problems = [];
         $products = Product::query()
-            ->whereIn('id', array_filter(array_map(fn (DispatchLineDraft $line): ?int => $line->product?->getKey(), $draft->lines)))
+            ->whereIn('id', array_filter(array_map(fn (DispatchLineDraft $line): ?int => $line->product?->getKey(), $lines)))
             ->get()
             ->keyBy('id');
         $seen = [];
-        $slots = 0;
+        $slots = $deliveredSlots;
 
-        foreach ($draft->lines as $index => $line) {
+        foreach ($lines as $index => $line) {
             $product = $line->product === null ? null : $products->get($line->product->getKey());
 
             if ($product === null) {

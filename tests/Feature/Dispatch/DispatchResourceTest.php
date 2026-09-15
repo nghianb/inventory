@@ -16,6 +16,7 @@ use App\Inventory\Catalog\ProductType;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
+use App\Inventory\Dispatch\DispatchLineKind;
 use App\Inventory\Dispatch\DispatchStatus;
 use App\Inventory\Dispatch\ManualDispatch;
 use App\Inventory\Dispatch\SalesChannelDirectory;
@@ -24,8 +25,10 @@ use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
+use App\Inventory\Reveal\ContentReveal;
 use App\Inventory\Reveal\RevealContextType;
 use App\Models\Dispatch;
+use App\Models\DispatchLine;
 use App\Models\DispatchRevision;
 use App\Models\RevealLogEntry;
 use App\Models\SalesChannel;
@@ -341,4 +344,71 @@ it('tìm theo Khoá chống trùng từ danh sách Phiếu xuất: trả lần g
         ->assertMountedActionModalSee(['Tìm thấy 0 lần giao', 'Không có lần giao nào khớp.']);
 
     expect(RevealLogEntry::count())->toBe(0);
+});
+
+it('Giao thêm từ trang xem phiếu mở lại trang tạo với Thông tin đơn chỉ đọc; màn kết quả chỉ hiện Slot vừa giao', function () {
+    $dispatch = app(ManualDispatch::class)->create($this->seller, new DispatchDraft($this->shopee, 'SP-001', [new DispatchLineDraft($this->steam, 1, 95_000)], 'Anh Minh'));
+    app(ContentReveal::class)->revealDispatchResult($this->seller, $dispatch);
+    $url = DispatchResource::getUrl('create', [CreateDispatch::ADDITIONAL_QUERY => $dispatch->id]);
+    $this->actingAs($this->seller);
+
+    Livewire::test(ViewDispatch::class, ['record' => $dispatch->getRouteKey()])
+        ->assertActionVisible('additional')
+        ->assertActionHasUrl('additional', $url);
+
+    $this->get($url)->assertOk()->assertSee("Giao thêm · Phiếu xuất #{$dispatch->id}");
+
+    Livewire::withQueryParams([CreateDispatch::ADDITIONAL_QUERY => $dispatch->id])
+        ->test(CreateDispatch::class)
+        ->assertSchemaStateSet(['sales_channel_id' => $this->shopee->id, 'external_ref' => 'SP-001', 'customer' => 'Anh Minh'])
+        ->assertFormFieldDisabled('sales_channel_id')
+        ->assertFormFieldDisabled('external_ref')
+        ->assertFormFieldDisabled('customer')
+        ->fillForm(['lines' => [['product_id' => $this->steam->id, 'quantity' => 1, 'sale_price' => 90000]]])
+        ->call('create')
+        ->assertActionMounted('confirmDispatch')
+        ->assertMountedActionModalSee(['Xác nhận Giao thêm', "SP-001 (Phiếu xuất #{$dispatch->id})", 'Anh Minh', 'Steam Wallet 100k', '90.000 ₫'])
+        ->assertMountedActionModalDontSee('AAAA-0002')
+        ->callMountedAction()
+        ->assertHasNoActionErrors()
+        ->assertRedirect(DispatchResource::getUrl('result', ['record' => $dispatch]));
+
+    expect(Dispatch::count())->toBe(1)
+        ->and($dispatch->lines()->get()->map(fn (DispatchLine $line) => [$line->kind, $line->sale_price])->all())
+        ->toBe([[DispatchLineKind::Sale, 95_000], [DispatchLineKind::Additional, 90_000]]);
+
+    Livewire::test(DispatchResult::class, ['record' => $dispatch->getRouteKey()])
+        ->assertSee('Giao thêm thành công · 1 Slot')
+        ->assertSee('Mã thẻ: AAAA-0002')
+        ->assertDontSee('AAAA-0001');
+
+    $this->get(DispatchResource::getUrl('view', ['record' => $dispatch]))
+        ->assertOk()
+        ->assertSee(['Giao bán', 'Giao thêm', '185.000 ₫']);
+});
+
+it('Giao thêm thiếu hàng thì modal báo thiếu và không thêm gì; phiếu không Hoàn tất hoặc Nhập kho thì không mở được', function () {
+    $dispatch = app(ManualDispatch::class)->create($this->seller, new DispatchDraft($this->shopee, 'SP-001', [new DispatchLineDraft($this->steam, 2)]));
+    $url = DispatchResource::getUrl('create', [CreateDispatch::ADDITIONAL_QUERY => $dispatch->id]);
+    $this->actingAs($this->seller);
+
+    Livewire::withQueryParams([CreateDispatch::ADDITIONAL_QUERY => $dispatch->id])
+        ->test(CreateDispatch::class)
+        ->fillForm(['lines' => [['product_id' => $this->steam->id, 'quantity' => 5]]])
+        ->call('create')
+        ->assertActionMounted('confirmDispatch')
+        ->assertMountedActionModalSee(['Không đủ hàng', 'cần 5, còn 1.', 'Quay lại sửa']);
+
+    expect(DispatchLine::count())->toBe(1);
+
+    $this->actingAs(staffMember(Role::NhapKho));
+    $this->get($url)->assertForbidden();
+
+    DB::table('dispatches')->where('id', $dispatch->id)->update(['status' => DispatchStatus::Cancelled->value]);
+    $this->actingAs($this->seller);
+
+    Livewire::test(ViewDispatch::class, ['record' => $dispatch->getRouteKey()])
+        ->assertActionHidden('additional');
+
+    $this->get($url)->assertForbidden();
 });

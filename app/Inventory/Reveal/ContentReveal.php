@@ -22,6 +22,7 @@ use App\Models\Slot;
 use App\Models\StockUnit;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
 
@@ -73,12 +74,13 @@ class ContentReveal
     }
 
     /**
-     * Màn kết quả ngay sau khi xuất kho: nội dung mọi Slot của Phiếu xuất, đã ghép Mẫu giao hàng
-     * của Sản phẩm. Người tạo phiếu không cần quyền xem mã riêng, nhưng chỉ được một lần: mỗi Slot
-     * ghi một dòng Nhật ký xem mã ngữ cảnh Giao hàng trong cùng transaction với việc đánh dấu
-     * màn kết quả đã hiện. Rời màn này thì xem lại là một lần xem mã riêng.
+     * Màn kết quả ngay sau khi xuất kho: nội dung các Slot vừa giao của Phiếu xuất (cả phiếu khi
+     * vừa tạo, chỉ phần thêm sau Giao thêm), đã ghép Mẫu giao hàng của Sản phẩm. Người vừa xuất kho
+     * không cần quyền xem mã riêng, nhưng chỉ được một lần: mỗi Slot ghi một dòng Nhật ký xem mã
+     * ngữ cảnh Giao hàng trong cùng transaction với việc đánh dấu màn kết quả đã hiện. Rời màn này
+     * thì xem lại là một lần xem mã riêng.
      *
-     * Phiếu từ ngưỡng che trở lên chỉ trả dạng che, không giải mã và không ghi nhật ký; nội dung
+     * Từ ngưỡng che trở lên chỉ trả dạng che, không giải mã và không ghi nhật ký; nội dung
      * đầy đủ lấy qua {@see copyAllDispatchResult()} hoặc {@see exportDispatchResult()}.
      *
      * @throws MissingRole
@@ -93,9 +95,9 @@ class ContentReveal
         return DB::transaction(function () use ($actor, $dispatch): DispatchResultContent {
             $current = Dispatch::query()->lockForUpdate()->findOrFail($dispatch->getKey());
 
-            self::ensureCreator($actor, $current);
+            self::ensureResultActor($actor, $current);
 
-            $deliveries = self::deliveries($current);
+            $deliveries = self::resultDeliveries($current);
             $masked = $deliveries->count() >= (int) config('inventory.dispatch.result_mask_slots');
 
             // Dạng che không có plaintext: tải lại trang trong thời hạn tải vẫn hiện lại được để
@@ -125,7 +127,7 @@ class ContentReveal
     }
 
     /**
-     * Tải TXT (theo Mẫu giao hàng) hoặc CSV từ màn kết quả. Chỉ người tạo phiếu, trong thời hạn
+     * Tải TXT (theo Mẫu giao hàng) hoặc CSV từ màn kết quả. Chỉ người vừa xuất kho, trong thời hạn
      * tải ngay sau khi màn kết quả hiện; mỗi lần tải ghi Nhật ký xem mã cho mọi Slot.
      *
      * @throws MissingRole
@@ -161,7 +163,7 @@ class ContentReveal
     }
 
     /**
-     * Người tạo phiếu lấy lại nội dung đầy đủ trong thời hạn tải ngay sau khi màn kết quả hiện.
+     * Người vừa xuất kho lấy lại nội dung đầy đủ trong thời hạn tải ngay sau khi màn kết quả hiện.
      *
      * @template T
      *
@@ -180,7 +182,7 @@ class ContentReveal
         return DB::transaction(function () use ($actor, $dispatch, $reason, $build): mixed {
             $current = Dispatch::query()->sharedLock()->findOrFail($dispatch->getKey());
 
-            self::ensureCreator($actor, $current);
+            self::ensureResultActor($actor, $current);
 
             if (! self::isResultDownloadOpen($current)) {
                 $minutes = (int) config('inventory.dispatch.result_download_minutes');
@@ -188,7 +190,7 @@ class ContentReveal
                 throw new InvalidReveal("Chỉ lấy được nội dung từ màn kết quả, trong {$minutes} phút sau khi màn kết quả hiện.");
             }
 
-            return $build($this->revealDeliveries($actor, $current, self::deliveries($current), $reason));
+            return $build($this->revealDeliveries($actor, $current, self::resultDeliveries($current), $reason));
         });
     }
 
@@ -249,19 +251,23 @@ class ContentReveal
     /**
      * @throws InvalidReveal
      */
-    private static function ensureCreator(User $actor, Dispatch $dispatch): void
+    private static function ensureResultActor(User $actor, Dispatch $dispatch): void
     {
-        if ($dispatch->created_by !== (int) $actor->getKey()) {
-            throw new InvalidReveal('Chỉ người tạo Phiếu xuất xem được màn kết quả.');
+        if ($dispatch->result_by !== (int) $actor->getKey()) {
+            throw new InvalidReveal('Chỉ người vừa xuất kho xem được màn kết quả.');
         }
     }
 
     /**
+     * Lần Giao hàng của lần xuất kho gần nhất: cả phiếu khi vừa tạo, hoặc chỉ các Dòng xuất của lần
+     * Giao thêm gần nhất.
+     *
      * @return EloquentCollection<int, Delivery>
      */
-    private static function deliveries(Dispatch $dispatch): EloquentCollection
+    private static function resultDeliveries(Dispatch $dispatch): EloquentCollection
     {
         return $dispatch->deliveries()
+            ->when($dispatch->result_from_line_id !== null, fn (Builder $query) => $query->where('deliveries.dispatch_line_id', '>=', $dispatch->result_from_line_id))
             ->orderBy('deliveries.id')
             ->with(['slot', 'stockUnit.product.contentFields'])
             ->get();

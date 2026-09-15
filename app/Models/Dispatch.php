@@ -24,6 +24,8 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
  * @property int $created_by
  * @property ?CarbonImmutable $completed_at
  * @property ?CarbonImmutable $result_revealed_at
+ * @property int $result_by nhân viên của lần xuất kho gần nhất (tạo phiếu hoặc Giao thêm), người duy nhất xem được màn kết quả
+ * @property ?int $result_from_line_id Dòng xuất đầu tiên của lần Giao thêm gần nhất; null khi màn kết quả là của lần tạo phiếu
  * @property ?CarbonImmutable $created_at
  * @property-read SalesChannel $salesChannel
  * @property-read User $creator
@@ -43,6 +45,8 @@ class Dispatch extends Model
             'created_by' => 'integer',
             'completed_at' => 'immutable_datetime',
             'result_revealed_at' => 'immutable_datetime',
+            'result_by' => 'integer',
+            'result_from_line_id' => 'integer',
         ];
     }
 

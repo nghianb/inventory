@@ -240,7 +240,7 @@ it('thiếu hàng thì báo từng dòng cần bao nhiêu, còn bao nhiêu; khô
     dispatchStock($this->netflix, "a@shop.test\tpw\nb@shop.test\tpw");
     $draft = dispatchOrder($this->shopee, [[$this->steam, 3], [$this->netflix, 5]], ref: 'SP-9');
 
-    expect($this->manual->shortages($this->seller, $draft))->toEqual([
+    expect($this->manual->shortages($this->seller, $draft->lines))->toEqual([
         new Shortage($this->steam->id, 'Steam Wallet 100k', needed: 3, available: 1),
         new Shortage($this->netflix->id, 'Netflix 1 tháng', needed: 5, available: 4),
     ]);
@@ -261,7 +261,7 @@ it('thiếu hàng thì báo từng dòng cần bao nhiêu, còn bao nhiêu; khô
     dispatchStock($this->steam, "SR2\tA-2\nSR3\tA-3");
     dispatchStock($this->netflix, "c@shop.test\tpw");
 
-    expect($this->manual->shortages($this->seller, $draft))->toBe([])
+    expect($this->manual->shortages($this->seller, $draft->lines))->toBe([])
         ->and($this->manual->create($this->seller, $draft)->external_ref)->toBe('SP-9');
 });
 
@@ -298,7 +298,7 @@ it('bỏ qua Slot không đạt Hạn còn lại tối thiểu, quá Hạn sử 
     $this->travelTo(CarbonImmutable::parse('2026-09-15 23:59'));
 
     expect(app(SellableStock::class)->count($garena))->toBe(2)
-        ->and($this->manual->shortages($this->seller, dispatchOrder($this->zalo, [[$garena, 3]])))
+        ->and($this->manual->shortages($this->seller, dispatchOrder($this->zalo, [[$garena, 3]])->lines))
         ->toEqual([new Shortage($garena->id, 'Garena 50k', needed: 3, available: 2)])
         ->and(deliveredValues($this->manual->create($this->seller, dispatchOrder($this->zalo, [[$garena, 2]])), 'serial'))
         ->toBe(['CON3NGAY', 'KHONGHAN']);
@@ -404,12 +404,12 @@ it('lần hiển thị đầu màn kết quả trả nội dung theo mẫu mặc
         ->and(RevealLogEntry::count())->toBe(2);
 });
 
-it('chỉ người tạo Phiếu xuất xem được màn kết quả', function () {
+it('chỉ người vừa xuất kho xem được màn kết quả', function () {
     dispatchStock($this->steam, "SR1\tAAAA-0001");
     $dispatch = $this->manual->create($this->seller, dispatchOrder($this->zalo, [[$this->steam, 1]]));
 
     expect(fn () => app(ContentReveal::class)->revealDispatchResult($this->admin, $dispatch))
-        ->toThrow(InvalidReveal::class, 'Chỉ người tạo Phiếu xuất xem được màn kết quả.')
+        ->toThrow(InvalidReveal::class, 'Chỉ người vừa xuất kho xem được màn kết quả.')
         ->and(fn () => app(ContentReveal::class)->revealDispatchResult(staffMember(Role::NhapKho), $dispatch))
         ->toThrow(MissingRole::class)
         ->and(RevealLogEntry::count())->toBe(0)
@@ -537,7 +537,7 @@ it('màn kết quả dạng che: Copy tất cả trả nội dung theo Mẫu gia
         ->and(RevealLogEntry::pluck('reason')->unique()->all())->toBe(["Copy tất cả Phiếu xuất #{$dispatch->id}"]);
 });
 
-it('chỉ người tạo phiếu Copy tất cả và tải file được, từ màn kết quả trong 30 phút sau khi xuất kho', function () {
+it('chỉ người vừa xuất kho Copy tất cả và tải file được, từ màn kết quả trong 30 phút sau khi xuất kho', function () {
     dispatchStock($this->steam, "SR1\tAAAA-0001\nSR2\tAAAA-0002");
     $reveal = app(ContentReveal::class);
     $unrevealed = $this->manual->create($this->seller, dispatchOrder($this->zalo, [[$this->steam, 1]]));
@@ -548,7 +548,7 @@ it('chỉ người tạo phiếu Copy tất cả và tải file được, từ m
 
     expect(fn () => $reveal->exportDispatchResult($this->seller, $unrevealed, DispatchResultFormat::Txt))->toThrow(InvalidReveal::class, $closed)
         ->and(fn () => $reveal->copyAllDispatchResult($this->seller, $unrevealed))->toThrow(InvalidReveal::class, $closed)
-        ->and(fn () => $reveal->exportDispatchResult($this->admin, $dispatch, DispatchResultFormat::Csv))->toThrow(InvalidReveal::class, 'Chỉ người tạo Phiếu xuất xem được màn kết quả.')
+        ->and(fn () => $reveal->exportDispatchResult($this->admin, $dispatch, DispatchResultFormat::Csv))->toThrow(InvalidReveal::class, 'Chỉ người vừa xuất kho xem được màn kết quả.')
         ->and(fn () => $reveal->copyAllDispatchResult(staffMember(Role::NhapKho), $dispatch))->toThrow(MissingRole::class);
 
     $this->travel(30)->minutes();
