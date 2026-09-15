@@ -8,8 +8,7 @@ use App\Inventory\Access\RoleGate;
 use App\Inventory\Dispatch\AffectedDelivery;
 use App\Inventory\Dispatch\DeliveryTemplate;
 use App\Inventory\Stock\SlotStatus;
-use App\Inventory\Stock\StockLedger;
-use App\Inventory\Stock\StockTransition;
+use App\Inventory\Stock\StockDefect;
 use App\Inventory\Stock\StockUnitStatus;
 use App\Models\DefectReport;
 use App\Models\Delivery;
@@ -36,7 +35,7 @@ class DefectReporting
 
     public function __construct(
         private RoleGate $roles,
-        private StockLedger $ledger,
+        private StockDefect $defects,
     ) {}
 
     /**
@@ -169,10 +168,7 @@ class DefectReporting
                 }
 
                 if ($unit->status === StockUnitStatus::Active) {
-                    $unit->forceFill(['status' => StockUnitStatus::Defective])->save();
-                    $this->ledger->append($actor, [
-                        new StockTransition($unit->id, null, StockUnitStatus::Active, StockUnitStatus::Defective),
-                    ], "Báo lỗi #{$current->id} Xác nhận cả Đơn vị hàng: {$note}");
+                    $this->defects->markDefectiveWithin($actor, $unit, "Báo lỗi #{$current->id} Xác nhận cả Đơn vị hàng: {$note}");
                 }
             }
 

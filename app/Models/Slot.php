@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $cost Giá vốn Slot: Giá vốn Đơn vị hàng chia đều cho số slot
  * @property ?VoidReason $void_reason lý do Huỷ hàng, khi Slot Đã huỷ
  * @property ?CarbonImmutable $voided_at
+ * @property ?CarbonImmutable $defective_loss_at mốc Tổn thất hàng Lỗi: Slot còn trong kho lúc Đơn vị hàng chuyển Lỗi
  * @property-read StockUnit $stockUnit
  */
 class Slot extends Model
@@ -31,6 +32,7 @@ class Slot extends Model
             'cost' => 'integer',
             'void_reason' => VoidReason::class,
             'voided_at' => 'immutable_datetime',
+            'defective_loss_at' => 'immutable_datetime',
         ];
     }
 

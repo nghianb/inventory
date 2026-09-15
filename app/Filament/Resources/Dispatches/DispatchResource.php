@@ -379,15 +379,18 @@ class DispatchResource extends Resource
     }
 
     /**
-     * Badge Tồn bán được của Sản phẩm: xanh, vàng khi không vượt Ngưỡng sắp hết, đỏ khi hết.
+     * Badge Tồn bán được của Sản phẩm: xanh, vàng khi không vượt Ngưỡng sắp hết, đỏ khi hết. Có Tồn
+     * lỗi thì hiện riêng bên cạnh.
      */
     private static function stockBadge(Product $product): HtmlString
     {
         $stock = app(SellableStock::class);
+        $defective = $stock->defectiveCount($product);
 
         return new HtmlString(Blade::render(
-            '<x-filament::badge :color="$color">Tồn bán được: {{ $count }}</x-filament::badge>',
-            ['color' => $stock->level($product)->color(), 'count' => self::count($stock->count($product))],
+            '<span style="display: inline-flex; gap: 0.25rem"><x-filament::badge :color="$color">Tồn bán được: {{ $count }}</x-filament::badge>'
+                .'@if ($defective > 0)<x-filament::badge color="gray">Tồn lỗi: {{ $defective }}</x-filament::badge>@endif</span>',
+            ['color' => $stock->level($product)->color(), 'count' => self::count($stock->count($product)), 'defective' => $defective],
         ));
     }
 

@@ -27,11 +27,13 @@ use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
 use App\Inventory\Reveal\ContentReveal;
 use App\Inventory\Reveal\RevealContextType;
+use App\Inventory\Stock\StockDefect;
 use App\Models\Dispatch;
 use App\Models\DispatchLine;
 use App\Models\DispatchRevision;
 use App\Models\RevealLogEntry;
 use App\Models\SalesChannel;
+use App\Models\StockUnit;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RoleSeeder;
 use Filament\Actions\CreateAction;
@@ -78,6 +80,17 @@ it('Quản trị và Bán hàng vào được Phiếu xuất, Nhập kho thì kh
     'Bán hàng' => [Role::BanHang, 200, 403],
     'Nhập kho' => [Role::NhapKho, 403, 403],
 ]);
+
+it('form xuất kho hiện Tồn lỗi riêng cạnh Tồn bán được', function () {
+    $this->actingAs($this->seller);
+    $form = ['sales_channel_id' => $this->zalo->id, 'lines' => [['product_id' => $this->steam->id, 'quantity' => 1]]];
+
+    Livewire::test(CreateDispatch::class)->fillForm($form)->assertSee('Tồn bán được: 3')->assertDontSee('Tồn lỗi');
+
+    app(StockDefect::class)->markDefective($this->admin, StockUnit::where('content->serial', 'SR1')->sole(), 'Nhà cung cấp thu hồi');
+
+    Livewire::test(CreateDispatch::class)->fillForm($form)->assertSee('Tồn bán được: 2')->assertSee('Tồn lỗi: 1');
+});
 
 it('Bán hàng tạo Phiếu xuất: modal xác nhận không có nội dung mã, màn kết quả hiện nội dung đúng một lần', function () {
     $this->actingAs($this->seller);

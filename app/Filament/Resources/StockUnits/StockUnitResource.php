@@ -80,6 +80,10 @@ class StockUnitResource extends Resource
                         ->badge()
                         ->formatStateUsing(fn (StockUnitStatus $state): string => $state->label()),
                     TextEntry::make('expires_on')->label('Hạn sử dụng')->date('d/m/Y')->placeholder('Không có'),
+                    TextEntry::make('defective_at')
+                        ->label('Chuyển Lỗi lúc')
+                        ->dateTime('d/m/Y H:i')
+                        ->visible(fn (StockUnit $record): bool => $record->defective_at !== null),
                     TextEntry::make('masked_content')
                         ->label('Nội dung (đã che)')
                         ->state(fn (StockUnit $record): array => collect($record->maskedContent())
