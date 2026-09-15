@@ -38,6 +38,15 @@ return [
             'report' => false,
         ],
 
+        // Nội dung Lô nhập chờ xác nhận (đã mã hoá). Ổ local của server, không vào backup.
+        'intake' => [
+            'driver' => 'local',
+            'root' => env('INVENTORY_INTAKE_PATH', storage_path('app/intake')),
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

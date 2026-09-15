@@ -25,6 +25,16 @@ services:
       postgres:
         condition: service_healthy
 
+  # Lịch chạy: mỗi giờ cho hết hạn Lô nhập chưa xác nhận quá 24 giờ và xoá nội dung tạm.
+  scheduler:
+    image: inventory-app:dev
+    command: php artisan schedule:work
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:17-alpine
     environment:

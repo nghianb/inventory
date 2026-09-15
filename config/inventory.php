@@ -22,4 +22,22 @@ return [
         'backup' => env('INVENTORY_BACKUP_KEY'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Nhập hàng
+    |--------------------------------------------------------------------------
+    |
+    | Giới hạn mỗi file hoặc danh sách dán (con số tạm, chốt lại sau khi đo trên VPS).
+    | Nội dung chờ xác nhận nằm trên disk riêng ở ổ local, mã hoá, không vào backup DB;
+    | Lô nhập chưa xác nhận quá `pending_ttl_hours` thì hết hạn và nội dung tạm bị xoá.
+    |
+    */
+
+    'intake' => [
+        'max_lines' => (int) env('INVENTORY_INTAKE_MAX_LINES', 20_000),
+        'max_bytes' => (int) env('INVENTORY_INTAKE_MAX_BYTES', 10 * 1024 * 1024),
+        'pending_ttl_hours' => (int) env('INVENTORY_INTAKE_PENDING_TTL_HOURS', 24),
+        'disk' => 'intake',
+    ],
+
 ];

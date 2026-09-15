@@ -6,10 +6,13 @@ use App\Filament\Resources\Batches\Pages\CreateBatch;
 use App\Filament\Resources\Batches\Pages\ListBatches;
 use App\Filament\Resources\Batches\Pages\ViewBatch;
 use App\Filament\Support\InventoryAction;
+use App\Inventory\Catalog\InvalidSupplier;
 use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLinePreview;
 use App\Inventory\Intake\BatchStatus;
+use App\Inventory\Intake\LineClassifier;
 use App\Inventory\Intake\RejectedLine;
 use App\Models\Batch;
 use App\Models\BatchLine;
@@ -18,21 +21,28 @@ use App\Models\Supplier;
 use BackedEnum;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\ToggleButtons;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
 /**
  * Lô nhập trong panel. Adapter mỏng: trang tạo gọi BatchIntake::submit, trang xem hiện
- * BatchIntake::preview và nút xác nhận gọi BatchIntake::confirm. Bán hàng không thấy.
+ * BatchIntake::preview, nút xác nhận gọi BatchIntake::confirm và nút bỏ gọi BatchIntake::discard.
+ * Bán hàng không thấy.
  */
 class BatchResource extends Resource
 {
@@ -62,6 +72,8 @@ class BatchResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
+        $productType = fn (Get $get): ?ProductType => Product::query()->find($get('product_id'))?->type;
+
         return $schema->components([
             Section::make('Chứng từ')
                 ->columns(2)
@@ -70,7 +82,22 @@ class BatchResource extends Resource
                         ->label('Nhà cung cấp')
                         ->options(fn (): array => Supplier::query()->orderBy('name')->pluck('name', 'id')->all())
                         ->searchable()
-                        ->required(),
+                        ->required()
+                        ->createOptionForm([
+                            TextInput::make('name')
+                                ->label('Tên Nhà cung cấp')
+                                ->required()
+                                ->maxLength(255),
+                        ])
+                        ->createOptionUsing(function (array $data): int {
+                            try {
+                                return app(SupplierDirectory::class)->create(InventoryAction::actor(), (string) $data['name'])->getKey();
+                            } catch (InvalidSupplier $exception) {
+                                Notification::make()->danger()->title($exception->getMessage())->send();
+
+                                throw new Halt;
+                            }
+                        }),
                     DatePicker::make('received_on')
                         ->label('Ngày nhập')
                         ->default(now())
@@ -78,25 +105,82 @@ class BatchResource extends Resource
                     TextInput::make('document_number')
                         ->label('Số chứng từ')
                         ->maxLength(255),
+                    TextInput::make('invoice_total')
+                        ->label('Tổng tiền hoá đơn')
+                        ->helperText('Để đối chiếu với tổng Giá vốn ở màn xem trước.')
+                        ->suffix('₫')
+                        ->integer()
+                        ->minValue(0),
+                    Select::make('supplements_batch_id')
+                        ->label('Bổ sung cho lô')
+                        ->options(fn (): array => Batch::query()
+                            ->with('supplier')
+                            ->where('status', BatchStatus::Confirmed)
+                            ->latest('id')
+                            ->limit(200)
+                            ->get()
+                            ->mapWithKeys(fn (Batch $batch): array => [$batch->id => "#{$batch->id} · {$batch->supplier->name} · {$batch->received_on->format('d/m/Y')}"])
+                            ->all())
+                        ->searchable(),
                     Textarea::make('note')
                         ->label('Ghi chú')
                         ->helperText('Hàng mua bằng ngoại tệ: ghi tỷ giá đã quy đổi.')
                         ->rows(2),
                 ]),
-            Section::make('Dòng nhập')
+            Repeater::make('lines')
+                ->label('Dòng nhập')
+                ->addActionLabel('Thêm Dòng nhập')
+                ->minItems(1)
+                ->defaultItems(1)
                 ->columns(3)
                 ->schema([
                     Select::make('product_id')
                         ->label('Sản phẩm')
-                        ->options(fn (): array => Product::query()->where('type', ProductType::OneTimeCode)->orderBy('name')->pluck('name', 'id')->all())
-                        ->helperText('Hiện chỉ nhập được Sản phẩm Mã dùng một lần.')
+                        ->options(fn (): array => Product::query()->orderBy('name')->get()
+                            ->mapWithKeys(fn (Product $product): array => [$product->id => "{$product->name} ({$product->type->label()})"])
+                            ->all())
                         ->searchable()
+                        ->distinct()
+                        ->live()
                         ->required(),
                     TextInput::make('unit_cost')
                         ->label('Giá vốn mỗi Đơn vị hàng')
+                        ->helperText('Cột gia_von trong file ghi đè.')
                         ->suffix('₫')
                         ->integer()
                         ->minValue(0)
+                        ->required(),
+                    TextInput::make('slots')
+                        ->label('Số slot mỗi Tài khoản')
+                        ->helperText('Để trống thì theo Sản phẩm; cột slot trong file ghi đè.')
+                        ->placeholder(fn (Get $get): string => (string) Product::query()->find($get('product_id'))?->default_slots)
+                        ->integer()
+                        ->minValue(1)
+                        ->maxValue(LineClassifier::MAX_SLOTS)
+                        ->visible(fn (Get $get): bool => $productType($get) === ProductType::Account),
+                    Select::make('expiry_mode')
+                        ->label('Hạn sử dụng')
+                        ->options(['none' => 'Không có', 'date' => 'Ngày cụ thể', 'days' => 'Số ngày kể từ ngày nhập'])
+                        ->default('none')
+                        ->helperText('Cột han_su_dung trong file ghi đè.')
+                        ->selectablePlaceholder(false)
+                        ->live(),
+                    DatePicker::make('expires_on')
+                        ->label('Ngày hết hạn')
+                        ->visible(fn (Get $get): bool => $get('expiry_mode') === 'date')
+                        ->required(),
+                    TextInput::make('expires_after_days')
+                        ->label('Số ngày')
+                        ->integer()
+                        ->minValue(0)
+                        ->visible(fn (Get $get): bool => $get('expiry_mode') === 'days')
+                        ->required(),
+                    ToggleButtons::make('source')
+                        ->label('Nguồn')
+                        ->options(['paste' => 'Dán văn bản', 'file' => 'File CSV/XLSX'])
+                        ->default('paste')
+                        ->inline()
+                        ->live()
                         ->required(),
                     Select::make('separator')
                         ->label('Ký tự phân tách')
@@ -104,11 +188,22 @@ class BatchResource extends Resource
                         ->default('tab')
                         ->helperText('Bỏ qua nếu Sản phẩm chỉ có một Trường nội dung.')
                         ->selectablePlaceholder(false)
+                        ->visible(fn (Get $get): bool => $get('source') !== 'file')
                         ->required(),
                     Textarea::make('content')
                         ->label('Danh sách Đơn vị hàng')
                         ->helperText('Mỗi dòng một Đơn vị hàng, các trường theo thứ tự khai báo trên Sản phẩm.')
-                        ->rows(12)
+                        ->rows(10)
+                        ->visible(fn (Get $get): bool => $get('source') !== 'file')
+                        ->required()
+                        ->columnSpanFull(),
+                    FileUpload::make('file')
+                        ->label('File CSV hoặc XLSX')
+                        ->helperText('Dòng đầu là tiêu đề trùng tên Trường nội dung; cột slot, han_su_dung, gia_von tuỳ chọn; cột khác bị bỏ qua.')
+                        ->storeFiles(false)
+                        ->acceptedFileTypes(['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
+                        ->maxSize(fn (): int => intdiv((int) config('inventory.intake.max_bytes'), 1024))
+                        ->visible(fn (Get $get): bool => $get('source') === 'file')
                         ->required()
                         ->columnSpanFull(),
                 ]),
@@ -136,6 +231,7 @@ class BatchResource extends Resource
                             BatchStatus::Validated => 'warning',
                             BatchStatus::ValidationFailed => 'danger',
                             BatchStatus::Confirmed => 'success',
+                            BatchStatus::Discarded, BatchStatus::Expired => 'gray',
                         }),
                     TextEntry::make('creator.name')->label('Người tạo'),
                     TextEntry::make('confirmed_at')->label('Xác nhận lúc')->dateTime('d/m/Y H:i')->placeholder('Chưa xác nhận'),
@@ -145,17 +241,34 @@ class BatchResource extends Resource
                         ->color('danger')
                         ->visible(fn (Batch $record): bool => $record->status === BatchStatus::ValidationFailed)
                         ->columnSpanFull(),
+                    TextEntry::make('supplements_batch_id')
+                        ->label('Bổ sung cho lô')
+                        ->prefix('#')
+                        ->visible(fn (Batch $record): bool => $record->supplements_batch_id !== null),
                     TextEntry::make('total_cost')
-                        ->label('Tổng Giá vốn phần hợp lệ')
+                        ->label('Tổng Giá vốn phần nhập được')
                         ->state(fn (Batch $record): string => $money($preview($record)->totalCost()))
                         ->visible(fn (Batch $record): bool => in_array($record->status, [BatchStatus::Validated, BatchStatus::Confirmed], true)),
+                    TextEntry::make('invoice_total')
+                        ->label('Tổng tiền hoá đơn')
+                        ->formatStateUsing(fn (int $state): string => $money($state))
+                        ->visible(fn (Batch $record): bool => $record->invoice_total !== null),
+                    TextEntry::make('invoice_difference')
+                        ->label('Chênh lệch hoá đơn − Giá vốn')
+                        ->state(fn (Batch $record): string => $money((int) $preview($record)->invoiceDifference()))
+                        ->color(fn (Batch $record): string => $preview($record)->invoiceDifference() === 0 ? 'success' : 'danger')
+                        ->visible(fn (Batch $record): bool => $record->invoice_total !== null
+                            && in_array($record->status, [BatchStatus::Validated, BatchStatus::Confirmed], true)),
                 ]),
             RepeatableEntry::make('line_previews')
                 ->label('Kết quả kiểm tra')
                 ->visible(fn (Batch $record): bool => in_array($record->status, [BatchStatus::Validated, BatchStatus::Confirmed], true))
                 ->state(fn (Batch $record): array => array_map(fn (BatchLinePreview $line): array => [
                     'product' => $line->productName,
+                    'source' => $line->fileName === null ? $line->source->label() : "{$line->source->label()}: {$line->fileName}",
                     'valid' => $line->validCount,
+                    'renewal' => $line->renewalCount,
+                    'ignored_columns' => $line->ignoredColumns === [] ? null : implode(', ', $line->ignoredColumns),
                     'invalid' => $line->invalidCount,
                     'file_duplicate' => $line->fileDuplicateCount,
                     'stock_duplicate' => $line->stockDuplicateCount,
@@ -171,16 +284,22 @@ class BatchResource extends Resource
                     ], $line->rejected),
                 ], $preview($record)->lines))
                 ->columnSpanFull()
-                ->columns(6)
+                ->columns(7)
                 ->schema([
                     TextEntry::make('product')->label('Sản phẩm'),
                     TextEntry::make('valid')->label('Hợp lệ')->color('success'),
+                    TextEntry::make('renewal')->label('Nhập lại Tài khoản')->color('success'),
                     TextEntry::make('invalid')->label('Lỗi định dạng'),
                     TextEntry::make('file_duplicate')->label('Trùng trong file'),
                     TextEntry::make('stock_duplicate')->label('Trùng trong kho'),
                     TextEntry::make('total_cost')->label('Tổng Giá vốn'),
+                    TextEntry::make('source')->label('Nguồn')->columnSpan(3),
+                    TextEntry::make('ignored_columns')
+                        ->label('Cột bị bỏ qua')
+                        ->placeholder('Không có')
+                        ->columnSpan(4),
                     TextEntry::make('sample')
-                        ->label('Mẫu Đơn vị hàng hợp lệ (đã che)')
+                        ->label('Mẫu Đơn vị hàng nhập được (đã che)')
                         ->listWithLineBreaks()
                         ->placeholder('Không có dòng hợp lệ')
                         ->columnSpanFull(),

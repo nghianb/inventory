@@ -8,6 +8,7 @@ use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchStatus;
 use App\Models\Batch;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
@@ -21,6 +22,8 @@ class ViewBatch extends ViewRecord
 
     protected function getHeaderActions(): array
     {
+        $stockDuplicates = fn (BatchIntake $intake): int => $intake->preview(InventoryAction::actor(), $this->batch())->stockDuplicateCount();
+
         return [
             Action::make('refresh')
                 ->label('Làm mới')
@@ -34,16 +37,43 @@ class ViewBatch extends ViewRecord
                 ->color('success')
                 ->requiresConfirmation()
                 ->modalDescription(fn (BatchIntake $intake): string => sprintf(
-                    'Chỉ %s Đơn vị hàng hợp lệ vào kho; dòng lỗi và dòng trùng bị bỏ. Lô nhập đã xác nhận thì đóng.',
-                    number_format($intake->preview(InventoryAction::actor(), $this->batch())->validCount(), 0, ',', '.'),
+                    'Chỉ %s Đơn vị hàng nhập được vào kho; dòng lỗi và dòng trùng bị bỏ. Lô nhập đã xác nhận thì đóng.',
+                    number_format($intake->preview(InventoryAction::actor(), $this->batch())->importCount(), 0, ',', '.'),
                 ))
+                ->schema([
+                    Checkbox::make('skip_stock_duplicates')
+                        ->label(fn (BatchIntake $intake): string => sprintf(
+                            'Tôi xác nhận bỏ qua %s dòng trùng trong kho.',
+                            number_format($stockDuplicates($intake), 0, ',', '.'),
+                        ))
+                        ->accepted()
+                        ->visible(fn (BatchIntake $intake): bool => $stockDuplicates($intake) > 0),
+                ])
                 ->visible(fn (): bool => $this->batch()->status === BatchStatus::Validated
                     && InventoryAction::actor()->can('confirm', $this->batch()))
-                ->action(function (Action $action, BatchIntake $intake): void {
-                    InventoryAction::attempt($action, fn () => $intake->confirm(InventoryAction::actor(), $this->batch()));
+                ->action(function (Action $action, BatchIntake $intake, array $data): void {
+                    InventoryAction::attempt($action, fn () => $intake->confirm(
+                        InventoryAction::actor(),
+                        $this->batch(),
+                        skipStockDuplicates: (bool) ($data['skip_stock_duplicates'] ?? false),
+                    ));
                     $this->batch()->refresh();
 
                     Notification::make()->success()->title('Đã nhập kho phần hợp lệ của Lô nhập.')->send();
+                }),
+            Action::make('discard')
+                ->label('Bỏ Lô nhập')
+                ->icon(Heroicon::OutlinedTrash)
+                ->color('danger')
+                ->requiresConfirmation()
+                ->modalDescription('Nội dung tạm của Lô nhập bị xoá, không xác nhận được nữa.')
+                ->visible(fn (): bool => in_array($this->batch()->status, BatchStatus::pending(), true)
+                    && InventoryAction::actor()->can('confirm', $this->batch()))
+                ->action(function (Action $action, BatchIntake $intake): void {
+                    InventoryAction::attempt($action, fn () => $intake->discard(InventoryAction::actor(), $this->batch()));
+                    $this->batch()->refresh();
+
+                    Notification::make()->success()->title('Đã bỏ Lô nhập.')->send();
                 }),
         ];
     }
