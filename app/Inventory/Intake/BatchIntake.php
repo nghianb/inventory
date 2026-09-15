@@ -243,6 +243,9 @@ class BatchIntake
             $current = Batch::query()->lockForUpdate()->findOrFail($batch->getKey());
             self::ensureConfirmable($current);
 
+            // Hàng thay thế: khoá Khiếu nại để hai Lô nhập xác nhận cùng lúc không vượt số được thay.
+            $claim = $current->supplier_claim_id === null ? null : SupplierClaim::query()->lockForUpdate()->findOrFail($current->supplier_claim_id);
+
             $stockDuplicates = (int) $current->lines->sum('stock_duplicate_count');
 
             if ($stockDuplicates > 0 && ! $skipStockDuplicates) {
@@ -271,6 +274,16 @@ class BatchIntake
                 if ($line->valid_count + $line->renewal_count > 0 && ! $product->hasStock()) {
                     $product->forceFill(['stocked_at' => now()])->save();
                 }
+            }
+
+            // Đếm sau khi ghi: dòng thành trùng lúc ghi không tính. Vượt thì cả transaction bị huỷ.
+            if ($claim !== null && $claim->replacementGoodsImported() > $claim->replacementGoodsAllowance()) {
+                throw new InvalidBatch(sprintf(
+                    'Khiếu nại #%d chỉ có %d Đơn vị hàng được Hàng thay thế; Lô nhập này làm số hàng thay thế đã nhập thành %d.',
+                    $claim->id,
+                    $claim->replacementGoodsAllowance(),
+                    $claim->replacementGoodsImported(),
+                ));
             }
 
             if (! $skipStockDuplicates && $current->lines->sum('stock_duplicate_count') > 0) {
@@ -906,6 +919,10 @@ class BatchIntake
 
         if ($eligible->supplier_id !== (int) $draft->supplier->getKey()) {
             throw new InvalidBatch('Lô nhập hàng thay thế phải cùng Nhà cung cấp với Khiếu nại.');
+        }
+
+        if ($eligible->replacementGoodsImported() >= $eligible->replacementGoodsAllowance()) {
+            throw new InvalidBatch(sprintf('Khiếu nại #%d đã nhập đủ %d Đơn vị hàng thay thế.', $eligible->id, $eligible->replacementGoodsAllowance()));
         }
 
         foreach ($draft->lines as $line) {

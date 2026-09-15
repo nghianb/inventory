@@ -149,7 +149,9 @@ it('trang chi tiết: gỡ, thêm, gửi, Xem mã, giải quyết rồi nhập h
         ->assertActionMounted('revealedContent')
         ->assertMountedActionModalSee(['Mật khẩu', 'pw-a']);
 
-    expect(RevealLogEntry::sole())->context->toBe(RevealContextType::SupplierClaim)->context_id->toBe($claim->id);
+    expect(RevealLogEntry::count())->toBe($this->a->slots()->count())
+        ->and(RevealLogEntry::pluck('context')->unique()->all())->toBe([RevealContextType::SupplierClaim])
+        ->and(RevealLogEntry::pluck('context_id')->unique()->all())->toBe([$claim->id]);
 
     $page
         ->callAction('resolve', data: ['outcomes' => [

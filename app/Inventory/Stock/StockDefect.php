@@ -78,7 +78,7 @@ class StockDefect
             $this->ledger->append($actor, [
                 new StockTransition($current->id, null, StockUnitStatus::Defective, StockUnitStatus::Active),
             ], "Khôi phục: {$reason}");
-            $this->claims->releaseRestored($current, "Khôi phục Đơn vị hàng: {$reason}");
+            $this->claims->releaseRestored($actor, $current, "Khôi phục Đơn vị hàng: {$reason}");
         });
     }
 

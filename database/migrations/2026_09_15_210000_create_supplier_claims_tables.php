@@ -37,7 +37,7 @@ return new class extends Migration
             $table->boolean('active')->default(true);
             $table->timestampTz('removed_at')->nullable();
             $table->text('removal_reason')->nullable();
-            // Kết quả khi giải quyết.
+            // Kết quả khi giải quyết. refunded_on là ngày nhận tiền để đối chiếu; Lãi ròng kho tính theo resolved_at.
             $table->string('outcome')->nullable();
             $table->unsignedBigInteger('refund_amount')->nullable();
             $table->date('refunded_on')->nullable();

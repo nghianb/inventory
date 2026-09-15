@@ -17,6 +17,7 @@ use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
+use App\Inventory\Intake\BatchStatus;
 use App\Inventory\Intake\InvalidBatch;
 use App\Inventory\Reveal\ContentReveal;
 use App\Inventory\Reveal\InvalidReveal;
@@ -210,7 +211,10 @@ it('Khôi phục Đơn vị hàng gỡ nó khỏi khiếu nại chưa giải quy
 
     expect(claimedIds($draft))->toBe([$this->b->id])
         ->and($draft->claimUnits()->where('stock_unit_id', $this->a->id)->sole())->active->toBeFalse()->removal_reason->toBe('Khôi phục Đơn vị hàng: Nhà cung cấp mở khoá')
-        ->and(claimedIds($sent))->toBe([]);
+        ->and(claimedIds($sent))->toBe([])
+        // Khiếu nại Đã gửi hết Đơn vị hàng thì tự huỷ; Nháp còn Đơn vị hàng giữ nguyên.
+        ->and($sent->fresh())->status->toBe(SupplierClaimStatus::Cancelled)->cancelled_by->toBe($this->admin->id)->cancel_reason->toBe(SupplierClaims::AUTO_CANCEL_REASON)
+        ->and($draft->fresh()->status)->toBe(SupplierClaimStatus::Draft);
 
     // Lỗi lại thì là hàng Lỗi chưa khiếu nại.
     $defects->markDefective($this->admin, $this->a, 'Hỏng lại');
@@ -243,13 +247,9 @@ it('Xem mã Đơn vị hàng trong khiếu nại ghi Nhật ký xem mã ngữ c�
     $reveal = app(ContentReveal::class);
 
     expect($reveal->revealClaimUnit($this->stocker, $unitA)->fields)->toBe(['Tên đăng nhập' => 'a@shop.test', 'Mật khẩu' => 'pw-a'])
-        ->and(RevealLogEntry::sole())
-        ->user_id->toBe($this->stocker->id)
-        ->context->toBe(RevealContextType::SupplierClaim)
-        ->context_id->toBe($claim->id)
-        ->stock_unit_id->toBe($this->a->id)
-        ->slot_id->toBeNull()
-        ->reason->toBe("Khiếu nại nhà cung cấp #{$claim->id}")
+        // Mỗi Slot của Tài khoản một dòng Nhật ký xem mã.
+        ->and(RevealLogEntry::orderBy('id')->get()->map(fn (RevealLogEntry $row) => [$row->user_id, $row->context, $row->context_id, $row->stock_unit_id, $row->slot_id, $row->reason])->all())
+        ->toBe($this->a->slots->map(fn (Slot $slot) => [$this->stocker->id, RevealContextType::SupplierClaim, $claim->id, $this->a->id, $slot->id, "Khiếu nại nhà cung cấp #{$claim->id}"])->all())
         ->and($reveal->canRevealClaimUnit($this->stocker, $unitA))->toBeTrue()
         ->and($reveal->canRevealClaimUnit($this->seller, $unitA))->toBeFalse()
         ->and(fn () => $reveal->revealClaimUnit($this->seller, $unitA))->toThrow(MissingRole::class);
@@ -260,7 +260,7 @@ it('Xem mã Đơn vị hàng trong khiếu nại ghi Nhật ký xem mã ngữ c�
         ->and(fn () => $reveal->revealClaimUnit($this->admin, $unitB))->toThrow(InvalidReveal::class, 'Đơn vị hàng không còn nằm trong Khiếu nại; không xem mã qua Khiếu nại được.')
         ->and(fn () => $reveal->reveal(RevealActor::staff($this->admin), $this->a->slots[0], RevealContext::supplierClaim($claim)))
         ->toThrow(InvalidReveal::class, 'Nội dung Khiếu nại nhà cung cấp chỉ xem qua Xem mã của Đơn vị hàng trong khiếu nại.')
-        ->and(RevealLogEntry::count())->toBe(1);
+        ->and(RevealLogEntry::count())->toBe(3);
 
     // Khiếu nại đã giải quyết vẫn xem được để đối chiếu; đã huỷ thì không.
     $this->claims->send($this->stocker, $claim);
@@ -289,7 +289,19 @@ it('Hàng thay thế vào kho bằng Lô nhập bình thường liên kết vớ
     expect(fn () => $intake->submit($this->stocker, $replacement()))
         ->toThrow(InvalidBatch::class, 'Chỉ nhập hàng thay thế cho Khiếu nại Đã giải quyết có kết quả Hàng thay thế.');
 
-    $this->claims->resolve($this->stocker, $claim, [$unitA->id => ClaimOutcomeDraft::replacementGoods(), $unitB->id => ClaimOutcomeDraft::rejected()]);
+    $this->claims->resolve($this->stocker, $claim, [$unitA->id => ClaimOutcomeDraft::replacementGoods(), $unitB->id => ClaimOutcomeDraft::replacementGoods()]);
+
+    // Không nhập quá số Đơn vị hàng được thay: 3 Đơn vị hàng cho 2 kết quả Hàng thay thế thì không xác nhận được.
+    $tooMany = $intake->submit($this->stocker, new BatchDraft(
+        supplier: $this->kinguin,
+        receivedOn: CarbonImmutable::today(),
+        lines: [new BatchLineDraft($this->netflix, 0, "x@shop.test\tpw-x\ny@shop.test\tpw-y\nz@shop.test\tpw-z")],
+        supplierClaim: $claim,
+    ));
+
+    expect(fn () => $intake->confirm($this->stocker, $tooMany))
+        ->toThrow(InvalidBatch::class, "Khiếu nại #{$claim->id} chỉ có 2 Đơn vị hàng được Hàng thay thế; Lô nhập này làm số hàng thay thế đã nhập thành 3.")
+        ->and(StockUnit::where('content->username', 'x@shop.test')->exists())->toBeFalse();
 
     expect(fn () => $intake->submit($this->stocker, $replacement(cost: 1)))
         ->toThrow(InvalidBatch::class, 'Hàng thay thế từ Khiếu nại nhà cung cấp có Giá vốn 0 (Dòng nhập "Netflix 1 tháng").')
@@ -301,9 +313,13 @@ it('Hàng thay thế vào kho bằng Lô nhập bình thường liên kết vớ
     $units = StockUnit::whereIn('content->username', ['r@shop.test', 's@shop.test'])->orderBy('id')->get();
 
     expect($batch->fresh())->supplier_claim_id->toBe($claim->id)
-        ->and($claim->batches()->pluck('id')->all())->toBe([$batch->id])
+        // Lô nhập vượt số được thay vẫn Chờ xác nhận, không có hàng vào kho.
+        ->and($claim->batches()->pluck('id')->all())->toBe([$tooMany->id, $batch->id])
+        ->and($tooMany->fresh()->status)->toBe(BatchStatus::Validated)
         ->and($units)->toHaveCount(2)
         ->and($units->pluck('unit_cost')->all())->toBe([0, 0])
         ->and(Slot::whereIn('stock_unit_id', $units->pluck('id'))->pluck('cost')->unique()->all())->toBe([0])
-        ->and($batch->lines()->sole()->total_cost)->toBe(0);
+        ->and($batch->lines()->sole()->total_cost)->toBe(0)
+        ->and(fn () => $intake->submit($this->stocker, $replacement()))
+        ->toThrow(InvalidBatch::class, "Khiếu nại #{$claim->id} đã nhập đủ 2 Đơn vị hàng thay thế.");
 });

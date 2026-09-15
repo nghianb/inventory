@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Inventory\Claims\ClaimOutcome;
 use App\Inventory\Claims\SupplierClaims;
 use App\Inventory\Claims\SupplierClaimStatus;
+use App\Inventory\Stock\StockUnitStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -67,6 +68,26 @@ class SupplierClaim extends Model
     {
         $query->where('status', SupplierClaimStatus::Resolved)
             ->whereHas('claimUnits', fn (Builder $units) => $units->where('active', true)->where('outcome', ClaimOutcome::ReplacementGoods));
+    }
+
+    /**
+     * Số Đơn vị hàng có kết quả Hàng thay thế: tối đa bấy nhiêu Đơn vị hàng được nhập bằng Lô nhập hàng
+     * thay thế của khiếu nại.
+     */
+    public function replacementGoodsAllowance(): int
+    {
+        return $this->claimUnits()->reorder()->where('active', true)->where('outcome', ClaimOutcome::ReplacementGoods)->count();
+    }
+
+    /**
+     * Số Đơn vị hàng đã nhập bằng Lô nhập hàng thay thế của khiếu nại, trừ hàng đã Huỷ nhập.
+     */
+    public function replacementGoodsImported(): int
+    {
+        return StockUnit::query()
+            ->where('status', '!=', StockUnitStatus::Reversed)
+            ->whereHas('batchLine.batch', fn (Builder $batches) => $batches->where('supplier_claim_id', $this->id))
+            ->count();
     }
 
     /**

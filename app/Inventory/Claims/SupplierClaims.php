@@ -22,6 +22,9 @@ use Illuminate\Support\Facades\DB;
  */
 class SupplierClaims
 {
+    /** Lý do khi Khiếu nại Đã gửi tự huỷ vì mọi Đơn vị hàng đã Khôi phục. */
+    public const AUTO_CANCEL_REASON = 'Tự huỷ: mọi Đơn vị hàng đã Khôi phục.';
+
     public function __construct(private RoleGate $roles) {}
 
     /**
@@ -200,10 +203,11 @@ class SupplierClaims
     }
 
     /**
-     * Đơn vị hàng vừa Khôi phục rời mọi khiếu nại chưa giải quyết. Không kiểm tra quyền: người gọi
-     * (Khôi phục) đã khoá Đơn vị hàng và chạy trong transaction. Khiếu nại đã giải quyết giữ nguyên.
+     * Đơn vị hàng vừa Khôi phục rời mọi khiếu nại chưa giải quyết; khiếu nại Đã gửi hết Đơn vị hàng thì
+     * tự huỷ, người huỷ là người Khôi phục. Không kiểm tra quyền: người gọi (Khôi phục) đã khoá Đơn vị
+     * hàng và chạy trong transaction. Khiếu nại đã giải quyết giữ nguyên.
      */
-    public function releaseRestored(StockUnit $lockedUnit, string $reason): void
+    public function releaseRestored(User $actor, StockUnit $lockedUnit, string $reason): void
     {
         $claimIds = SupplierClaimUnit::query()
             ->where('stock_unit_id', $lockedUnit->getKey())
@@ -229,6 +233,19 @@ class SupplierClaims
             ->whereIn('supplier_claim_id', $open)
             ->where('active', true)
             ->update(['active' => false, 'removed_at' => now(), 'removal_reason' => $reason, 'updated_at' => now()]);
+
+        // Khiếu nại Đã gửi không còn Đơn vị hàng nào thì không giải quyết được nữa: tự huỷ. Nháp giữ lại để sửa.
+        SupplierClaim::query()
+            ->whereKey($open)
+            ->where('status', SupplierClaimStatus::Sent)
+            ->whereDoesntHave('claimUnits', fn (Builder $units) => $units->where('active', true))
+            ->update([
+                'status' => SupplierClaimStatus::Cancelled->value,
+                'cancelled_by' => $actor->getKey(),
+                'cancelled_at' => now(),
+                'cancel_reason' => self::AUTO_CANCEL_REASON,
+                'updated_at' => now(),
+            ]);
     }
 
     /**

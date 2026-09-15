@@ -320,7 +320,7 @@ class ContentReveal
     /**
      * Xem nội dung một Đơn vị hàng trong Khiếu nại nhà cung cấp để gửi bằng chứng. Quản trị và Nhập
      * kho, khi Đơn vị hàng còn nằm trong khiếu nại (chưa gỡ, khiếu nại chưa huỷ); mỗi lần ghi một dòng
-     * Nhật ký xem mã ngữ cảnh Khiếu nại nhà cung cấp cho cả Đơn vị hàng.
+     * Nhật ký xem mã ngữ cảnh Khiếu nại nhà cung cấp cho mỗi Slot của Đơn vị hàng.
      *
      * @throws MissingRole
      * @throws InvalidReveal
@@ -348,7 +348,10 @@ class ContentReveal
 
             $claim = $current->claim()->firstOrFail();
 
-            $this->log->record(RevealActor::staff($actor), RevealContext::supplierClaim($claim), "Khiếu nại nhà cung cấp #{$claim->id}", unit: $unit);
+            // Nội dung là của cả Đơn vị hàng: mỗi Slot một dòng, để tra theo Slot hay lần giao đều thấy lần xem này.
+            foreach ($unit->slots as $slot) {
+                $this->log->record(RevealActor::staff($actor), RevealContext::supplierClaim($claim), "Khiếu nại nhà cung cấp #{$claim->id}", $slot);
+            }
 
             return new RevealedContent(self::byLabel($unit, $this->decryptedValues($unit)));
         });
