@@ -5,6 +5,7 @@ namespace App\Inventory\Catalog;
 use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
+use App\Inventory\Dispatch\DeliveryTemplate;
 use App\Models\BatchLine;
 use App\Models\Product;
 use App\Models\User;
@@ -158,6 +159,7 @@ class ProductCatalog
             'low_stock_threshold' => $draft->lowStockThreshold,
             'case_insensitive' => $draft->normalization()->caseInsensitive,
             'strip_separators' => $draft->normalization()->stripSeparators,
+            'delivery_template' => DeliveryTemplate::normalize($draft->deliveryTemplate),
         ])->save();
 
         $keys = array_map(fn (ContentFieldDraft $field): string => $field->key, $draft->fields);
@@ -246,6 +248,10 @@ class ProductCatalog
 
             $keys[] = $field->key;
 
+            if (in_array($field->key, DeliveryTemplate::BUILT_IN, true)) {
+                $fail("Định danh trường \"{$field->key}\" trùng tên biến của Mẫu giao hàng.");
+            }
+
             if (trim($field->label) === '') {
                 $fail("Tên hiển thị của trường \"{$field->key}\" không được để trống.");
             }
@@ -261,6 +267,12 @@ class ProductCatalog
 
         if (count(array_filter($draft->fields, fn (ContentFieldDraft $field): bool => $field->dedupeKey)) !== 1) {
             $fail('Phải chọn đúng một Trường nội dung làm Khoá chống trùng.');
+        }
+
+        $unknown = DeliveryTemplate::unknownVariables((string) $draft->deliveryTemplate, $keys);
+
+        if ($unknown !== []) {
+            $fail('Mẫu giao hàng dùng biến không có: '.implode(', ', array_map(fn (string $name): string => "{{{$name}}}", $unknown)).'.');
         }
 
         $codeTaken = Product::query()

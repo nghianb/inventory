@@ -9,6 +9,7 @@ use App\Inventory\Catalog\ContentFieldType;
 use App\Inventory\Catalog\ProductCatalog;
 use App\Inventory\Catalog\ProductDraft;
 use App\Inventory\Catalog\ProductType;
+use App\Inventory\Dispatch\DeliveryTemplate;
 use App\Inventory\Encryption\Normalization;
 use App\Models\ContentField;
 use App\Models\Product;
@@ -19,6 +20,7 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
@@ -136,6 +138,19 @@ class ProductResource extends Resource
                         ->disabled($hasStock)
                         ->dehydrated(),
                 ]),
+            Section::make('Mẫu giao hàng')
+                ->description('Văn bản ghép nội dung một Slot thành tin nhắn gửi khách. Để trống thì mỗi Trường nội dung một dòng "Tên trường: giá trị".')
+                ->schema([
+                    Textarea::make('delivery_template')
+                        ->hiddenLabel()
+                        ->rows(6)
+                        ->helperText(fn (Get $get): string => 'Biến: '.collect([
+                            ...array_map(fn (array $field): string => (string) ($field['key'] ?? ''), array_values((array) $get('fields'))),
+                            ...DeliveryTemplate::BUILT_IN,
+                        ])->filter()->map(fn (string $name): string => "{{{$name}}}")->implode(', ').'. Hạn sử dụng, Hạn bảo hành hiện dạng ngày/tháng/năm; mã đơn là mã đơn ngoài của Phiếu xuất.')
+                        ->placeholder("Cảm ơn bạn đã mua {{san_pham}} (đơn {{ma_don}})\nTài khoản: {{username}}\nBảo hành đến {{han_bao_hanh}}"),
+                ])
+                ->columnSpanFull(),
             Repeater::make('fields')
                 ->label('Trường nội dung')
                 ->helperText('Sản phẩm đã có hàng chỉ thêm được trường tuỳ chọn hoặc đổi tên hiển thị.')
@@ -281,6 +296,7 @@ class ProductResource extends Resource
             'low_stock_threshold' => $product->low_stock_threshold,
             'case_insensitive' => $product->case_insensitive,
             'strip_separators' => $product->strip_separators,
+            'delivery_template' => $product->delivery_template,
             'fields' => $product->contentFields->map(fn (ContentField $field): array => [
                 'persisted' => true,
                 'key' => $field->key,
@@ -319,6 +335,7 @@ class ProductResource extends Resource
             minRemainingDays: (int) $data['min_remaining_days'],
             lowStockThreshold: filled($data['low_stock_threshold'] ?? null) ? (int) $data['low_stock_threshold'] : null,
             normalization: new Normalization((bool) $data['case_insensitive'], (bool) $data['strip_separators']),
+            deliveryTemplate: $data['delivery_template'] ?? null,
         );
     }
 }

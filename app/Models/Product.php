@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
  * @property ?int $low_stock_threshold
  * @property bool $case_insensitive
  * @property bool $strip_separators
+ * @property ?string $delivery_template Mẫu giao hàng; null thì dùng mẫu mặc định
  * @property ?CarbonImmutable $stocked_at
  * @property ?CarbonImmutable $discontinued_at
  * @property-read Collection<int, ContentField> $contentFields

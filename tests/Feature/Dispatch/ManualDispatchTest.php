@@ -14,6 +14,7 @@ use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
 use App\Inventory\Dispatch\DispatchLineKind;
 use App\Inventory\Dispatch\DispatchProblem;
+use App\Inventory\Dispatch\DispatchResultFormat;
 use App\Inventory\Dispatch\DispatchStatus;
 use App\Inventory\Dispatch\InvalidDispatch;
 use App\Inventory\Dispatch\ManualDispatch;
@@ -382,7 +383,7 @@ it('lần hiển thị đầu màn kết quả trả nội dung theo mẫu mặc
     $dispatch = $this->manual->create($this->seller, dispatchOrder($this->zalo, [[$this->steam, 2]]));
     $deliveries = Delivery::orderBy('id')->get();
 
-    $result = app(ContentReveal::class)->revealDispatchResult($this->seller, $dispatch);
+    $result = app(ContentReveal::class)->revealDispatchResult($this->seller, $dispatch)->slots;
 
     expect(array_map(fn (DeliveredContent $slot) => [$slot->deliveryId, $slot->productName, $slot->slotId, $slot->fields, $slot->message], $result))->toBe([
         [$deliveries[0]->id, 'Steam Wallet 100k', $deliveries[0]->slot_id, ['Serial' => 'SR1', 'Mã thẻ' => 'AAAA-0001'], "Serial: SR1\nMã thẻ: AAAA-0001"],
@@ -412,5 +413,152 @@ it('chỉ người tạo Phiếu xuất xem được màn kết quả', function
         ->and(fn () => app(ContentReveal::class)->revealDispatchResult(staffMember(Role::NhapKho), $dispatch))
         ->toThrow(MissingRole::class)
         ->and(RevealLogEntry::count())->toBe(0)
-        ->and(app(ContentReveal::class)->revealDispatchResult($this->seller, $dispatch))->toHaveCount(1);
+        ->and(app(ContentReveal::class)->revealDispatchResult($this->seller, $dispatch)->slots)->toHaveCount(1);
+});
+
+it('màn kết quả ghép nội dung theo Mẫu giao hàng của từng Sản phẩm; Sản phẩm chưa có mẫu dùng mẫu mặc định', function () {
+    app(ProductCatalog::class)->update($this->admin, $this->netflix, netflixDispatchDraft(
+        deliveryTemplate: "{{san_pham}} · đơn {{ma_don}}\nĐăng nhập: {{username}} / {{ password }}\nHạn sử dụng: {{han_su_dung}}\nBảo hành đến: {{han_bao_hanh}}\nKhông đổi mật khẩu.",
+    ));
+    dispatchStock($this->netflix, "a@shop.test\tpw-1", ExpiryRule::on(CarbonImmutable::parse('2026-09-25')));
+    dispatchStock($this->steam, "SR1\tAAAA-0001");
+    $dispatch = $this->manual->create($this->seller, dispatchOrder($this->shopee, [[$this->netflix, 1], [$this->steam, 1]], ref: 'SP-7'));
+
+    $result = app(ContentReveal::class)->revealDispatchResult($this->seller, $dispatch);
+
+    expect(array_map(fn (DeliveredContent $slot) => $slot->message, $result->slots))->toBe([
+        "Netflix 1 tháng · đơn SP-7\nĐăng nhập: a@shop.test / pw-1\nHạn sử dụng: 25/09/2026\nBảo hành đến: 25/09/2026\nKhông đổi mật khẩu.",
+        "Serial: SR1\nMã thẻ: AAAA-0001",
+    ]);
+});
+
+it('biến Hạn sử dụng của hàng không có hạn hiện "Không thời hạn"; Hạn bảo hành = ngày giao + thời hạn bảo hành', function () {
+    app(ProductCatalog::class)->update($this->admin, $this->steam, new ProductDraft(
+        type: ProductType::OneTimeCode,
+        name: 'Steam Wallet 100k',
+        code: 'STEAM-100K',
+        fields: [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        warrantyDays: 7,
+        deliveryTemplate: '{{code}} | {{han_su_dung}} | {{han_bao_hanh}}',
+    ));
+    dispatchStock($this->steam, "SR1\tAAAA-0001");
+    $dispatch = $this->manual->create($this->seller, dispatchOrder($this->zalo, [[$this->steam, 1]]));
+
+    expect(app(ContentReveal::class)->revealDispatchResult($this->seller, $dispatch)->slots[0]->message)
+        ->toBe('AAAA-0001 | Không thời hạn | 22/09/2026');
+});
+
+it('từ 50 Slot trở lên màn kết quả chỉ hiện dạng che: không có nội dung, không ghi Nhật ký xem mã, tải lại trang trong thời hạn tải vẫn hiện lại dạng che', function (int $quantity, bool $masked, int $logged) {
+    dispatchStock($this->steam, implode("\n", array_map(fn (int $i) => sprintf("SR%d\tCODE-%04d", $i, $i), range(1, $quantity))));
+    $dispatch = $this->manual->create($this->seller, dispatchOrder($this->zalo, [[$this->steam, $quantity]]));
+
+    $result = app(ContentReveal::class)->revealDispatchResult($this->seller, $dispatch);
+
+    expect($result->masked)->toBe($masked)
+        ->and($result->slots)->toHaveCount($quantity)
+        ->and($result->slots[0]->fields)->toBe(['Serial' => 'SR1', 'Mã thẻ' => $masked ? '••••••' : 'CODE-0001'])
+        ->and(str_contains((string) json_encode(array_map(fn (DeliveredContent $slot) => [$slot->fields, $slot->message], $result->slots)), 'CODE-0001'))->toBe(! $masked)
+        ->and($result->slots[0]->message === null)->toBe($masked)
+        ->and(RevealLogEntry::count())->toBe($logged);
+
+    if ($masked) {
+        $this->travel(30)->minutes();
+
+        expect(app(ContentReveal::class)->revealDispatchResult($this->seller, $dispatch))
+            ->masked->toBeTrue()
+            ->and(RevealLogEntry::count())->toBe(0);
+
+        $this->travel(1)->minute();
+    }
+
+    expect(fn () => app(ContentReveal::class)->revealDispatchResult($this->seller, $dispatch))
+        ->toThrow(InvalidReveal::class, 'Màn kết quả chỉ hiện một lần ngay sau khi xuất kho.');
+})->with([
+    '49 Slot hiện nội dung' => [49, false, 49],
+    '50 Slot chỉ hiện dạng che' => [50, true, 0],
+]);
+
+/**
+ * Phiếu xuất hai Slot đã qua màn kết quả: Netflix theo Mẫu giao hàng riêng, Steam theo mẫu mặc định.
+ */
+function revealedTwoProductDispatch(): Dispatch
+{
+    app(ProductCatalog::class)->update(test()->admin, test()->netflix, netflixDispatchDraft(deliveryTemplate: "{{username}} / {{password}}\nBảo hành đến {{han_bao_hanh}}"));
+    dispatchStock(test()->netflix, "a@shop.test\tpw-1", ExpiryRule::on(CarbonImmutable::parse('2026-09-25')));
+    dispatchStock(test()->steam, "SR1\tAAAA-0001");
+    $dispatch = test()->manual->create(test()->seller, dispatchOrder(test()->shopee, [[test()->netflix, 1], [test()->steam, 1]], ref: 'SP-7'));
+    app(ContentReveal::class)->revealDispatchResult(test()->seller, $dispatch);
+
+    return $dispatch;
+}
+
+it('tải TXT theo Mẫu giao hàng và CSV mỗi Slot một dòng, mỗi Trường nội dung một cột; mỗi lần tải ghi Nhật ký xem mã cho mọi Slot', function () {
+    $dispatch = revealedTwoProductDispatch();
+    $deliveries = Delivery::orderBy('id')->get();
+    $reveal = app(ContentReveal::class);
+
+    $txt = $reveal->exportDispatchResult($this->seller, $dispatch, DispatchResultFormat::Txt);
+
+    expect($txt->fileName)->toBe("phieu-xuat-{$dispatch->id}.txt")
+        ->and($txt->contentType)->toBe('text/plain; charset=UTF-8')
+        ->and($txt->contents)->toBe("a@shop.test / pw-1\nBảo hành đến 25/09/2026\n\n----------\n\nSerial: SR1\nMã thẻ: AAAA-0001\n");
+
+    $csv = $reveal->exportDispatchResult($this->seller, $dispatch, DispatchResultFormat::Csv);
+
+    expect($csv->fileName)->toBe("phieu-xuat-{$dispatch->id}.csv")
+        ->and($csv->contentType)->toBe('text/csv; charset=UTF-8')
+        ->and(str_starts_with($csv->contents, "\xEF\xBB\xBF"))->toBeTrue()
+        ->and(array_map(fn (string $row) => str_getcsv($row, escape: ''), explode("\n", trim(substr($csv->contents, 3)))))->toBe([
+            ['Sản phẩm', 'Tên đăng nhập', 'Mật khẩu', 'Serial', 'Mã thẻ', 'Hạn sử dụng', 'Hạn bảo hành'],
+            ['Netflix 1 tháng', 'a@shop.test', 'pw-1', '', '', '25/09/2026', '25/09/2026'],
+            ['Steam Wallet 100k', '', '', 'SR1', 'AAAA-0001', '', '22/09/2026'],
+        ]);
+
+    expect(RevealLogEntry::orderBy('id')->get()->map(fn (RevealLogEntry $entry) => [$entry->user_id, $entry->context, $entry->context_id, $entry->slot_id, $entry->reason])->slice(2)->values()->all())->toBe([
+        [$this->seller->id, RevealContextType::Delivery, $deliveries[0]->id, $deliveries[0]->slot_id, "Tải TXT Phiếu xuất #{$dispatch->id}"],
+        [$this->seller->id, RevealContextType::Delivery, $deliveries[1]->id, $deliveries[1]->slot_id, "Tải TXT Phiếu xuất #{$dispatch->id}"],
+        [$this->seller->id, RevealContextType::Delivery, $deliveries[0]->id, $deliveries[0]->slot_id, "Tải CSV Phiếu xuất #{$dispatch->id}"],
+        [$this->seller->id, RevealContextType::Delivery, $deliveries[1]->id, $deliveries[1]->slot_id, "Tải CSV Phiếu xuất #{$dispatch->id}"],
+    ]);
+});
+
+it('màn kết quả dạng che: Copy tất cả trả nội dung theo Mẫu giao hàng và ghi Nhật ký xem mã cho mọi Slot', function () {
+    dispatchStock($this->steam, implode("\n", array_map(fn (int $i) => sprintf("SR%d\tCODE-%04d", $i, $i), range(1, 50))));
+    $dispatch = $this->manual->create($this->seller, dispatchOrder($this->zalo, [[$this->steam, 50]]));
+    $reveal = app(ContentReveal::class);
+    $reveal->revealDispatchResult($this->seller, $dispatch);
+
+    $text = $reveal->copyAllDispatchResult($this->seller, $dispatch);
+
+    expect($text)->toStartWith("Serial: SR1\nMã thẻ: CODE-0001\n\n----------\n\nSerial: SR2\nMã thẻ: CODE-0002")
+        ->and($text)->toEndWith("Serial: SR50\nMã thẻ: CODE-0050")
+        ->and(RevealLogEntry::count())->toBe(50)
+        ->and(RevealLogEntry::distinct()->count('slot_id'))->toBe(50)
+        ->and(RevealLogEntry::pluck('reason')->unique()->all())->toBe(["Copy tất cả Phiếu xuất #{$dispatch->id}"]);
+});
+
+it('chỉ người tạo phiếu Copy tất cả và tải file được, từ màn kết quả trong 30 phút sau khi xuất kho', function () {
+    dispatchStock($this->steam, "SR1\tAAAA-0001\nSR2\tAAAA-0002");
+    $reveal = app(ContentReveal::class);
+    $unrevealed = $this->manual->create($this->seller, dispatchOrder($this->zalo, [[$this->steam, 1]]));
+    $dispatch = $this->manual->create($this->seller, dispatchOrder($this->zalo, [[$this->steam, 1]]));
+    $reveal->revealDispatchResult($this->seller, $dispatch);
+    $logged = RevealLogEntry::count();
+    $closed = 'Chỉ lấy được nội dung từ màn kết quả, trong 30 phút sau khi màn kết quả hiện.';
+
+    expect(fn () => $reveal->exportDispatchResult($this->seller, $unrevealed, DispatchResultFormat::Txt))->toThrow(InvalidReveal::class, $closed)
+        ->and(fn () => $reveal->copyAllDispatchResult($this->seller, $unrevealed))->toThrow(InvalidReveal::class, $closed)
+        ->and(fn () => $reveal->exportDispatchResult($this->admin, $dispatch, DispatchResultFormat::Csv))->toThrow(InvalidReveal::class, 'Chỉ người tạo Phiếu xuất xem được màn kết quả.')
+        ->and(fn () => $reveal->copyAllDispatchResult(staffMember(Role::NhapKho), $dispatch))->toThrow(MissingRole::class);
+
+    $this->travel(30)->minutes();
+
+    expect($reveal->exportDispatchResult($this->seller, $dispatch, DispatchResultFormat::Csv)->contents)->toContain('AAAA-0002')
+        ->and($reveal->copyAllDispatchResult($this->seller, $dispatch))->toBe("Serial: SR2\nMã thẻ: AAAA-0002");
+
+    $this->travel(1)->minute();
+
+    expect(fn () => $reveal->exportDispatchResult($this->seller, $dispatch, DispatchResultFormat::Txt))->toThrow(InvalidReveal::class, $closed)
+        ->and(fn () => $reveal->copyAllDispatchResult($this->seller, $dispatch))->toThrow(InvalidReveal::class, $closed)
+        ->and(RevealLogEntry::count())->toBe($logged + 2);
 });

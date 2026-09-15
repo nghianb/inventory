@@ -6,6 +6,10 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
 use App\Inventory\Dispatch\DeliveredContent;
+use App\Inventory\Dispatch\DeliveryTemplate;
+use App\Inventory\Dispatch\DispatchResultContent;
+use App\Inventory\Dispatch\DispatchResultExport;
+use App\Inventory\Dispatch\DispatchResultFormat;
 use App\Inventory\Encryption\ContentCrypto;
 use App\Inventory\Encryption\EncryptedContent;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
@@ -17,6 +21,7 @@ use App\Models\Dispatch;
 use App\Models\Slot;
 use App\Models\StockUnit;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -60,63 +65,201 @@ class ContentReveal
 
             $this->log->record($actor, $context, $reason, $current);
 
-            return new RevealedContent($this->decrypt($current->stockUnit()->with('product.contentFields')->firstOrFail()));
+            $unit = $current->stockUnit()->with('product.contentFields')->firstOrFail();
+
+            return new RevealedContent(self::byLabel($unit, $this->decryptedValues($unit)));
         });
     }
 
     /**
      * Màn kết quả ngay sau khi xuất kho: nội dung mọi Slot của Phiếu xuất, đã ghép Mẫu giao hàng
-     * mặc định. Người tạo phiếu không cần quyền xem mã riêng, nhưng chỉ được một lần: mỗi Slot
+     * của Sản phẩm. Người tạo phiếu không cần quyền xem mã riêng, nhưng chỉ được một lần: mỗi Slot
      * ghi một dòng Nhật ký xem mã ngữ cảnh Giao hàng trong cùng transaction với việc đánh dấu
      * màn kết quả đã hiện. Rời màn này thì xem lại là một lần xem mã riêng.
      *
-     * @return list<DeliveredContent>
+     * Phiếu từ ngưỡng che trở lên chỉ trả dạng che, không giải mã và không ghi nhật ký; nội dung
+     * đầy đủ lấy qua {@see copyAllDispatchResult()} hoặc {@see exportDispatchResult()}.
      *
      * @throws MissingRole
      * @throws InvalidReveal
      * @throws KeyFingerprintMismatch
      */
-    public function revealDispatchResult(User $actor, Dispatch $dispatch): array
+    public function revealDispatchResult(User $actor, Dispatch $dispatch): DispatchResultContent
     {
         $this->roles->authorize($actor, Role::BanHang);
         $this->fingerprints->verify();
 
-        return DB::transaction(function () use ($actor, $dispatch): array {
+        return DB::transaction(function () use ($actor, $dispatch): DispatchResultContent {
             $current = Dispatch::query()->lockForUpdate()->findOrFail($dispatch->getKey());
 
-            if ($current->created_by !== (int) $actor->getKey()) {
-                throw new InvalidReveal('Chỉ người tạo Phiếu xuất xem được màn kết quả.');
-            }
+            self::ensureCreator($actor, $current);
 
-            if ($current->result_revealed_at !== null) {
+            $deliveries = self::deliveries($current);
+            $masked = $deliveries->count() >= (int) config('inventory.dispatch.result_mask_slots');
+
+            // Dạng che không có plaintext: tải lại trang trong thời hạn tải vẫn hiện lại được để
+            // Copy tất cả và Tải file; dạng đầy đủ chỉ hiện một lần.
+            if ($current->result_revealed_at !== null && ! ($masked && self::isResultDownloadOpen($current))) {
                 throw new InvalidReveal('Màn kết quả chỉ hiện một lần ngay sau khi xuất kho.');
             }
 
-            $current->forceFill(['result_revealed_at' => now()])->save();
+            $current->forceFill(['result_revealed_at' => $current->result_revealed_at ?? now()])->save();
 
-            $staff = RevealActor::staff($actor);
-            $reason = "Màn kết quả Phiếu xuất #{$current->id}";
+            // Phiếu lớn: không bày plaintext ra màn hình, nên không giải mã và không ghi nhật ký.
+            if ($masked) {
+                return new DispatchResultContent(true, $deliveries->map(fn (Delivery $delivery): DeliveredContent => new DeliveredContent(
+                    deliveryId: $delivery->id,
+                    productName: $delivery->stockUnit->product->name,
+                    stockUnitId: $delivery->stock_unit_id,
+                    slotId: $delivery->slot_id,
+                    fields: $delivery->stockUnit->maskedContent(),
+                    message: null,
+                    expiresOn: $delivery->stockUnit->expires_on,
+                    warrantyEndsOn: $delivery->warrantyEndsOn(),
+                ))->values()->all());
+            }
 
-            return $current->deliveries()
-                ->orderBy('deliveries.id')
-                ->with(['slot', 'stockUnit.product.contentFields'])
-                ->get()
-                ->map(function (Delivery $delivery) use ($staff, $reason): DeliveredContent {
-                    $this->log->record($staff, RevealContext::delivery($delivery), $reason, $delivery->slot);
-                    $fields = $this->decrypt($delivery->stockUnit);
-
-                    return new DeliveredContent(
-                        deliveryId: $delivery->id,
-                        productName: $delivery->stockUnit->product->name,
-                        stockUnitId: $delivery->stock_unit_id,
-                        slotId: $delivery->slot_id,
-                        fields: $fields,
-                        message: DeliveredContent::defaultMessage($fields),
-                    );
-                })
-                ->values()
-                ->all();
+            return new DispatchResultContent(false, $this->revealDeliveries($actor, $current, $deliveries, "Màn kết quả Phiếu xuất #{$current->id}"));
         });
+    }
+
+    /**
+     * Tải TXT (theo Mẫu giao hàng) hoặc CSV từ màn kết quả. Chỉ người tạo phiếu, trong thời hạn
+     * tải ngay sau khi màn kết quả hiện; mỗi lần tải ghi Nhật ký xem mã cho mọi Slot.
+     *
+     * @throws MissingRole
+     * @throws InvalidReveal
+     * @throws KeyFingerprintMismatch
+     */
+    public function exportDispatchResult(User $actor, Dispatch $dispatch, DispatchResultFormat $format): DispatchResultExport
+    {
+        return $this->revealAfterResult(
+            $actor,
+            $dispatch,
+            "Tải {$format->label()} Phiếu xuất #{$dispatch->getKey()}",
+            fn (array $slots): DispatchResultExport => DispatchResultExport::of((int) $dispatch->getKey(), $format, $slots),
+        );
+    }
+
+    /**
+     * Copy tất cả từ màn kết quả dạng che: tin nhắn theo Mẫu giao hàng của mọi Slot, có dòng phân
+     * cách. Cùng điều kiện với tải file; ghi Nhật ký xem mã cho mọi Slot.
+     *
+     * @throws MissingRole
+     * @throws InvalidReveal
+     * @throws KeyFingerprintMismatch
+     */
+    public function copyAllDispatchResult(User $actor, Dispatch $dispatch): string
+    {
+        return $this->revealAfterResult(
+            $actor,
+            $dispatch,
+            "Copy tất cả Phiếu xuất #{$dispatch->getKey()}",
+            fn (array $slots): string => DeliveredContent::copyAll($slots),
+        );
+    }
+
+    /**
+     * Người tạo phiếu lấy lại nội dung đầy đủ trong thời hạn tải ngay sau khi màn kết quả hiện.
+     *
+     * @template T
+     *
+     * @param  callable(list<DeliveredContent>): T  $build
+     * @return T
+     *
+     * @throws MissingRole
+     * @throws InvalidReveal
+     * @throws KeyFingerprintMismatch
+     */
+    private function revealAfterResult(User $actor, Dispatch $dispatch, string $reason, callable $build): mixed
+    {
+        $this->roles->authorize($actor, Role::BanHang);
+        $this->fingerprints->verify();
+
+        return DB::transaction(function () use ($actor, $dispatch, $reason, $build): mixed {
+            $current = Dispatch::query()->sharedLock()->findOrFail($dispatch->getKey());
+
+            self::ensureCreator($actor, $current);
+
+            if (! self::isResultDownloadOpen($current)) {
+                $minutes = (int) config('inventory.dispatch.result_download_minutes');
+
+                throw new InvalidReveal("Chỉ lấy được nội dung từ màn kết quả, trong {$minutes} phút sau khi màn kết quả hiện.");
+            }
+
+            return $build($this->revealDeliveries($actor, $current, self::deliveries($current), $reason));
+        });
+    }
+
+    /**
+     * Màn kết quả đã hiện và chưa quá thời hạn tải.
+     */
+    private static function isResultDownloadOpen(Dispatch $dispatch): bool
+    {
+        return $dispatch->result_revealed_at !== null
+            && ! $dispatch->result_revealed_at->addMinutes((int) config('inventory.dispatch.result_download_minutes'))->isPast();
+    }
+
+    /**
+     * @throws InvalidReveal
+     */
+    private static function ensureCreator(User $actor, Dispatch $dispatch): void
+    {
+        if ($dispatch->created_by !== (int) $actor->getKey()) {
+            throw new InvalidReveal('Chỉ người tạo Phiếu xuất xem được màn kết quả.');
+        }
+    }
+
+    /**
+     * @return EloquentCollection<int, Delivery>
+     */
+    private static function deliveries(Dispatch $dispatch): EloquentCollection
+    {
+        return $dispatch->deliveries()
+            ->orderBy('deliveries.id')
+            ->with(['slot', 'stockUnit.product.contentFields'])
+            ->get();
+    }
+
+    /**
+     * Nội dung đầy đủ đã ghép Mẫu giao hàng; mỗi Slot ghi một dòng Nhật ký xem mã ngữ cảnh Giao
+     * hàng trước khi giải mã. Người gọi chạy trong transaction.
+     *
+     * @param  EloquentCollection<int, Delivery>  $deliveries
+     * @return list<DeliveredContent>
+     */
+    private function revealDeliveries(User $actor, Dispatch $dispatch, EloquentCollection $deliveries, string $reason): array
+    {
+        $staff = RevealActor::staff($actor);
+
+        return $deliveries
+            ->map(function (Delivery $delivery) use ($dispatch, $staff, $reason): DeliveredContent {
+                $this->log->record($staff, RevealContext::delivery($delivery), $reason, $delivery->slot);
+                $unit = $delivery->stockUnit;
+                $values = $this->decryptedValues($unit);
+                $fields = self::byLabel($unit, $values);
+
+                return new DeliveredContent(
+                    deliveryId: $delivery->id,
+                    productName: $unit->product->name,
+                    stockUnitId: $delivery->stock_unit_id,
+                    slotId: $delivery->slot_id,
+                    fields: $fields,
+                    message: DeliveryTemplate::render(
+                        $unit->product->delivery_template,
+                        $values,
+                        $fields,
+                        $unit->product->name,
+                        $dispatch->external_ref,
+                        $unit->expires_on,
+                        $delivery->warrantyEndsOn(),
+                    ),
+                    expiresOn: $unit->expires_on,
+                    warrantyEndsOn: $delivery->warrantyEndsOn(),
+                );
+            })
+            ->values()
+            ->all();
     }
 
     /**
@@ -151,9 +294,11 @@ class ContentReveal
     }
 
     /**
+     * Nội dung đầy đủ đã giải mã, theo định danh Trường nội dung.
+     *
      * @return array<string, string>
      */
-    private function decrypt(StockUnit $unit): array
+    private function decryptedValues(StockUnit $unit): array
     {
         $secret = $unit->secret_ciphertext === null
             ? []
@@ -161,7 +306,18 @@ class ContentReveal
         $values = [...($unit->content ?? []), ...$secret];
 
         return $unit->product->contentFields->mapWithKeys(fn (ContentField $field): array => [
-            $field->label => (string) ($values[$field->key] ?? ''),
+            $field->key => (string) ($values[$field->key] ?? ''),
+        ])->all();
+    }
+
+    /**
+     * @param  array<string, string>  $values  theo định danh Trường nội dung
+     * @return array<string, string> theo tên hiển thị, đúng thứ tự trường
+     */
+    private static function byLabel(StockUnit $unit, array $values): array
+    {
+        return $unit->product->contentFields->mapWithKeys(fn (ContentField $field): array => [
+            $field->label => $values[$field->key],
         ])->all();
     }
 }
