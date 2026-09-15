@@ -15,6 +15,7 @@ use App\Inventory\Stock\VoidReason;
 use App\Models\Delivery;
 use App\Models\Dispatch;
 use App\Models\DispatchLine;
+use App\Models\Replacement;
 use App\Models\Slot;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -30,6 +31,9 @@ use Illuminate\Support\Facades\DB;
  */
 class CorrectiveDelivery
 {
+    /** Lần giao Đổi hàng mang Hạn bảo hành kế thừa và thuộc một chuỗi Đổi hàng: Giao thay sẽ làm mất cả hai. */
+    private const REPLACEMENT_PROBLEM = 'Lần giao Đổi hàng không Giao thay được; hãy Báo lỗi rồi Đổi hàng.';
+
     public function __construct(
         private RoleGate $roles,
         private KeyFingerprints $fingerprints,
@@ -65,6 +69,7 @@ class CorrectiveDelivery
         return $this->roles->allows($actor, Role::BanHang)
             && $delivery->dispatchLine->dispatch->status === DispatchStatus::Completed
             && $delivery->slot->status === SlotStatus::Delivered
+            && ! self::isReplacement($delivery)
             && StockVoid::pendingDefectReportId($delivery->slot_id) === null
             && (! self::isLate($delivery) || $this->roles->allows($actor));
     }
@@ -135,6 +140,10 @@ class CorrectiveDelivery
             return [new DispatchProblem('Lần giao này đã bị huỷ; không Giao thay được nữa.')];
         }
 
+        if (self::isReplacement($delivery)) {
+            return [new DispatchProblem(self::REPLACEMENT_PROBLEM)];
+        }
+
         if (! self::isLate($delivery)) {
             return [];
         }
@@ -163,6 +172,11 @@ class CorrectiveDelivery
         ])->save();
 
         return $line->id;
+    }
+
+    private static function isReplacement(Delivery $delivery): bool
+    {
+        return Replacement::query()->where('delivery_id', $delivery->id)->exists();
     }
 
     private static function deadline(Delivery $delivery): CarbonImmutable

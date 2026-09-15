@@ -20,6 +20,9 @@ enum RevealContextType: string
     /** Xác minh một Báo lỗi Chờ xác minh. */
     case DefectReport = 'defect-report';
 
+    /** Màn kết quả ngay sau khi Đổi hàng. */
+    case Replacement = 'replacement';
+
     public function label(): string
     {
         return match ($this) {
@@ -27,6 +30,7 @@ enum RevealContextType: string
             self::Batch => 'Lô nhập',
             self::Delivery => 'Giao hàng',
             self::DefectReport => 'Báo lỗi',
+            self::Replacement => 'Đổi hàng',
         };
     }
 }

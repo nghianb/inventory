@@ -21,6 +21,7 @@ use App\Models\ContentField;
 use App\Models\DefectReport;
 use App\Models\Delivery;
 use App\Models\Dispatch;
+use App\Models\Replacement;
 use App\Models\Slot;
 use App\Models\StockUnit;
 use App\Models\User;
@@ -58,6 +59,7 @@ class ContentReveal
             RevealContextType::Batch => throw new InvalidReveal('Ngữ cảnh Lô nhập chỉ dùng để tải dòng bị bỏ khi nhập.'),
             RevealContextType::Delivery => throw new InvalidReveal('Nội dung lần Giao hàng chỉ xem qua màn kết quả xuất kho hoặc Xem mã của lần giao.'),
             RevealContextType::DefectReport => throw new InvalidReveal('Nội dung Báo lỗi chỉ xem qua Xem mã của Báo lỗi.'),
+            RevealContextType::Replacement => throw new InvalidReveal('Nội dung Đổi hàng chỉ xem qua màn kết quả Đổi hàng.'),
         };
 
         $this->fingerprints->verify();
@@ -270,6 +272,43 @@ class ContentReveal
                 ->findOrFail($current->delivery_id);
 
             $this->log->record(RevealActor::staff($actor), RevealContext::defectReport($current), "Xác minh Báo lỗi #{$current->id}", $delivery->slot);
+
+            return $this->deliveredContent($delivery, $delivery->dispatchLine->dispatch);
+        });
+    }
+
+    /**
+     * Màn kết quả ngay sau khi Đổi hàng: nội dung Slot thay thế, đã ghép Mẫu giao hàng. Chỉ người vừa
+     * Đổi hàng và chỉ một lần: ghi Nhật ký xem mã ngữ cảnh Đổi hàng trong cùng transaction với việc
+     * đánh dấu màn kết quả đã hiện. Xem lại sau đó qua {@see revealDelivery()}.
+     *
+     * @throws MissingRole
+     * @throws InvalidReveal
+     * @throws KeyFingerprintMismatch
+     */
+    public function revealReplacement(User $actor, Replacement $replacement): DeliveredContent
+    {
+        $this->roles->authorize($actor, Role::BanHang);
+        $this->fingerprints->verify();
+
+        return DB::transaction(function () use ($actor, $replacement): DeliveredContent {
+            $current = Replacement::query()->lockForUpdate()->findOrFail($replacement->getKey());
+
+            if ($current->created_by !== (int) $actor->getKey()) {
+                throw new InvalidReveal('Chỉ người vừa Đổi hàng xem được màn kết quả Đổi hàng.');
+            }
+
+            if ($current->result_revealed_at !== null) {
+                throw new InvalidReveal('Màn kết quả Đổi hàng chỉ hiện một lần; xem lại qua Xem mã của lần giao.');
+            }
+
+            $current->forceFill(['result_revealed_at' => now()])->save();
+
+            $delivery = Delivery::query()
+                ->with(['slot', 'stockUnit.product.contentFields', 'dispatchLine.dispatch'])
+                ->findOrFail($current->delivery_id);
+
+            $this->log->record(RevealActor::staff($actor), RevealContext::replacement($current), "Màn kết quả Đổi hàng #{$current->id}", $delivery->slot);
 
             return $this->deliveredContent($delivery, $delivery->dispatchLine->dispatch);
         });

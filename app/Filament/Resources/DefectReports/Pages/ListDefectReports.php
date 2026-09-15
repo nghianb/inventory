@@ -10,7 +10,9 @@ use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Danh sách Báo lỗi; tab tồn đọng là Báo lỗi Chờ xác minh quá số giờ cấu hình.
+ * Danh sách Báo lỗi; tab tồn đọng là Báo lỗi Chờ xác minh quá số giờ cấu hình, tab Chờ đổi là Báo lỗi
+ * Xác nhận chưa Đổi hàng hay Không đổi, tab Chờ Quản trị duyệt là Đổi hàng từ lần thứ 3 đã được yêu
+ * cầu duyệt.
  */
 class ListDefectReports extends ListRecords
 {
@@ -28,6 +30,14 @@ class ListDefectReports extends ListRecords
                 ->badge(fn (): int => DefectReport::query()->overdue()->count())
                 ->badgeColor('danger')
                 ->modifyQueryUsing(fn (Builder $query) => $query->whereKey(DefectReport::query()->overdue()->select('id'))),
+            'awaiting' => Tab::make('Chờ đổi')
+                ->badge(fn (): int => DefectReport::query()->awaitingReplacement()->count())
+                ->badgeColor('warning')
+                ->modifyQueryUsing(fn (Builder $query) => $query->whereKey(DefectReport::query()->awaitingReplacement()->select('id'))),
+            'approval' => Tab::make('Chờ Quản trị duyệt')
+                ->badge(fn (): int => DefectReport::query()->awaitingApproval()->count())
+                ->badgeColor('danger')
+                ->modifyQueryUsing(fn (Builder $query) => $query->whereKey(DefectReport::query()->awaitingApproval()->select('id'))),
         ];
     }
 }

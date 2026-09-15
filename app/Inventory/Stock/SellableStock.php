@@ -57,10 +57,34 @@ class SellableStock
     }
 
     /**
-     * Như {@see slots()} nhưng tính cả Sản phẩm Ngừng bán: Slot giao bù được cho lần giao cũ của
-     * chính Sản phẩm đó (Đổi hàng, Giao thay). Không phải Tồn bán được.
+     * Như {@see slots()} nhưng tính cả Sản phẩm Ngừng bán: Slot Giao thay được cho lần giao cũ của
+     * chính Sản phẩm đó. Không phải Tồn bán được.
      */
     public static function slotsIncludingDiscontinued(CarbonImmutable $today): Builder
+    {
+        return self::inStockOfActiveUnits()
+            ->where(fn (Builder $query) => $query
+                ->whereNull('stock_units.expires_on')
+                ->orWhereRaw('stock_units.expires_on >= CAST(? AS date) + products.min_remaining_days', [$today->toDateString()]));
+    }
+
+    /**
+     * Như {@see slotsIncludingDiscontinued()} nhưng chỉ đòi chưa quá Hạn sử dụng, không đòi Hạn còn
+     * lại tối thiểu: ứng viên Đổi hàng, nơi điều kiện đó được thay bằng Hạn sử dụng phủ Hạn bảo hành
+     * kế thừa. Không phải Tồn bán được.
+     */
+    public static function unexpiredIncludingDiscontinued(CarbonImmutable $today): Builder
+    {
+        return self::inStockOfActiveUnits()
+            ->where(fn (Builder $query) => $query
+                ->whereNull('stock_units.expires_on')
+                ->orWhere('stock_units.expires_on', '>=', $today->toDateString()));
+    }
+
+    /**
+     * Slot Còn hàng của Đơn vị hàng Hoạt động, không bị tạm ngừng vì Báo lỗi Chờ xác minh.
+     */
+    private static function inStockOfActiveUnits(): Builder
     {
         return DB::table('slots')
             ->join('stock_units', 'stock_units.id', '=', 'slots.stock_unit_id')
@@ -71,9 +95,6 @@ class SellableStock
                 ->selectRaw('1')
                 ->from('defect_reports')
                 ->whereColumn('defect_reports.stock_unit_id', 'stock_units.id')
-                ->where('defect_reports.status', DefectReportStatus::Pending->value))
-            ->where(fn (Builder $query) => $query
-                ->whereNull('stock_units.expires_on')
-                ->orWhereRaw('stock_units.expires_on >= CAST(? AS date) + products.min_remaining_days', [$today->toDateString()]));
+                ->where('defect_reports.status', DefectReportStatus::Pending->value));
     }
 }

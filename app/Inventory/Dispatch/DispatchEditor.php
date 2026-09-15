@@ -114,6 +114,9 @@ class DispatchEditor
 
             if ($line === null) {
                 $problems[] = new DispatchProblem("Dòng xuất #{$lineId} không thuộc Phiếu xuất #{$dispatch->id}.");
+            } elseif ($price !== null && $line->kind === DispatchLineKind::Replacement) {
+                // Chi phí đổi hàng trừ vào Lãi ròng kho, không vào Lãi gộp của Phiếu xuất gốc.
+                $problems[] = new DispatchProblem('Dòng xuất loại Đổi hàng không có Giá bán.');
             } elseif ($price !== null && $price < 0) {
                 $problems[] = new DispatchProblem("Giá bán của Dòng xuất \"{$line->product->name}\" không được âm.");
             }

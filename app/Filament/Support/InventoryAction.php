@@ -14,6 +14,7 @@ use App\Inventory\Intake\InvalidBatch;
 use App\Inventory\Reveal\InvalidReveal;
 use App\Inventory\Stock\InvalidVoid;
 use App\Inventory\Warranty\InvalidDefectReport;
+use App\Inventory\Warranty\InvalidReplacement;
 use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
@@ -76,6 +77,7 @@ final class InventoryAction
             || $exception instanceof OutOfStock
             || $exception instanceof InvalidVoid
             || $exception instanceof InvalidDefectReport
+            || $exception instanceof InvalidReplacement
             || $exception instanceof KeyFingerprintMismatch;
     }
 }

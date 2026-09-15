@@ -69,7 +69,7 @@ class DispatchDeliveries extends TableWidget
             ->heading('Lần giao')
             ->query(fn (): Builder => Delivery::query()
                 ->whereIn('dispatch_line_id', DispatchLine::query()->where('dispatch_id', $this->dispatchRecord()->id)->select('id'))
-                ->with(['dispatchLine.dispatch', 'dispatchLine.product', 'slot', 'corrects', 'latestDefectReport', 'stockUnit.product.contentFields']))
+                ->with(['dispatchLine.dispatch', 'dispatchLine.product', 'slot', 'corrects', 'replacement.defectReport.delivery', 'latestDefectReport', 'stockUnit.product.contentFields']))
             ->defaultSort('id')
             ->paginated(false)
             ->columns([
@@ -102,6 +102,11 @@ class DispatchDeliveries extends TableWidget
                 TextColumn::make('corrects')
                     ->label('Giao thay cho')
                     ->state(fn (Delivery $record): ?string => $record->corrects?->unitLabel())
+                    ->placeholder('—'),
+                TextColumn::make('replaces')
+                    ->label('Đổi hàng cho')
+                    ->state(fn (Delivery $record): ?string => $record->replacement?->defectReport->delivery->unitLabel())
+                    ->url(fn (Delivery $record): ?string => $record->replacement === null ? null : DefectReportResource::getUrl('view', ['record' => $record->replacement->defect_report_id]))
                     ->placeholder('—'),
                 TextColumn::make('latestDefectReport.status')
                     ->label('Báo lỗi')
