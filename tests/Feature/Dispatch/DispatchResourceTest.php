@@ -3,7 +3,9 @@
 use App\Filament\Resources\Dispatches\DispatchResource;
 use App\Filament\Resources\Dispatches\Pages\CreateDispatch;
 use App\Filament\Resources\Dispatches\Pages\DispatchResult;
+use App\Filament\Resources\Dispatches\Pages\ListDispatches;
 use App\Filament\Resources\Dispatches\Pages\ViewDispatch;
+use App\Filament\Resources\Dispatches\Widgets\DispatchDeliveries;
 use App\Filament\Resources\SalesChannels\Pages\ManageSalesChannels;
 use App\Filament\Resources\SalesChannels\SalesChannelResource;
 use App\Inventory\Access\Role;
@@ -14,6 +16,7 @@ use App\Inventory\Catalog\ProductType;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
+use App\Inventory\Dispatch\DispatchStatus;
 use App\Inventory\Dispatch\ManualDispatch;
 use App\Inventory\Dispatch\SalesChannelDirectory;
 use App\Inventory\Dispatch\SalesChannelDraft;
@@ -23,6 +26,7 @@ use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
 use App\Inventory\Reveal\RevealContextType;
 use App\Models\Dispatch;
+use App\Models\DispatchRevision;
 use App\Models\RevealLogEntry;
 use App\Models\SalesChannel;
 use Carbon\CarbonImmutable;
@@ -30,6 +34,7 @@ use Database\Seeders\RoleSeeder;
 use Filament\Actions\CreateAction;
 use Filament\Actions\Testing\TestAction;
 use Filament\Forms\Components\Repeater;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
@@ -111,6 +116,9 @@ it('Bán hàng tạo Phiếu xuất: modal xác nhận không có nội dung mã
     Livewire::test(ViewDispatch::class, ['record' => $dispatch->getRouteKey()])
         ->assertSee('SP-001')
         ->assertSee('Anh Minh 0901234567')
+        ->assertDontSee('AAAA-0001');
+
+    Livewire::test(DispatchDeliveries::class, ['record' => $dispatch])
         ->assertSee('Mã thẻ: ••••••')
         ->assertSee('15/09/2026')
         ->assertDontSee('AAAA-0001');
@@ -208,4 +216,129 @@ it('màn kết quả từ 50 Slot chỉ hiện bảng dạng che, không Copy t�
     $page->callAction(TestAction::make('downloadCSV')->schemaComponent('resultActions'))->assertFileDownloaded("phieu-xuat-{$dispatch->id}.csv");
 
     expect(RevealLogEntry::count())->toBe(100);
+});
+
+it('trang xem phiếu: Dòng xuất có Loại, Lần giao dạng che; Bán hàng Xem mã có xác nhận trong Hạn bảo hành, ghi Nhật ký xem mã; không thấy Giá vốn và Nhà cung cấp', function () {
+    $dispatch = app(ManualDispatch::class)->create($this->admin, new DispatchDraft($this->shopee, 'SP-001', [new DispatchLineDraft($this->steam, 2, 190_000)], 'Anh Minh'));
+    $delivery = $dispatch->deliveries()->orderBy('deliveries.id')->firstOrFail();
+    $this->actingAs($this->seller);
+
+    $this->get(DispatchResource::getUrl('view', ['record' => $dispatch]))
+        ->assertOk()
+        ->assertSee(['Giao bán', '190.000 ₫', 'Lần giao', 'Mã thẻ: ••••••', 'Xem mã', 'Lịch sử sửa phiếu', 'Chưa sửa lần nào.'])
+        ->assertDontSee(['AAAA-0001', '95.000', 'Kinguin']);
+
+    Livewire::test(DispatchDeliveries::class, ['record' => $dispatch])
+        ->assertCanSeeTableRecords($dispatch->deliveries)
+        ->mountAction(TestAction::make('reveal')->table($delivery))
+        ->assertMountedActionModalSee('Lần xem được ghi vào Nhật ký xem mã.')
+        ->assertMountedActionModalDontSee('AAAA-0001')
+        ->callMountedAction()
+        ->assertHasNoActionErrors()
+        ->assertActionMounted('revealedDelivery')
+        ->assertMountedActionModalSee(['Serial: SR1', 'Mã thẻ: AAAA-0001']);
+
+    expect(RevealLogEntry::sole())
+        ->user_id->toBe($this->seller->id)
+        ->context->toBe(RevealContextType::Delivery)
+        ->context_id->toBe($delivery->id);
+
+    $this->travelTo(CarbonImmutable::parse('2026-09-16 00:00'));
+
+    Livewire::test(DispatchDeliveries::class, ['record' => $dispatch])
+        ->assertActionHidden(TestAction::make('reveal')->table($delivery));
+
+    $this->actingAs($this->admin);
+
+    Livewire::test(DispatchDeliveries::class, ['record' => $dispatch])
+        ->assertActionVisible(TestAction::make('reveal')->table($delivery));
+
+    $this->actingAs(staffMember(Role::NhapKho));
+
+    $this->get(DispatchResource::getUrl('view', ['record' => $dispatch]))->assertForbidden();
+});
+
+it('Sửa phiếu Hoàn tất bằng modal ghi Lịch sử sửa phiếu; mã đơn trùng báo lỗi và không lưu; phiếu không Hoàn tất thì không sửa được', function () {
+    $manual = app(ManualDispatch::class);
+    $manual->create($this->seller, new DispatchDraft($this->shopee, 'SP-000', [new DispatchLineDraft($this->steam, 1)]));
+    $dispatch = $manual->create($this->seller, new DispatchDraft($this->shopee, 'SP-001', [new DispatchLineDraft($this->steam, 1, 100_000)], 'Anh Minh'));
+    $line = $dispatch->lines->sole();
+    $this->actingAs($this->seller);
+
+    Livewire::test(ViewDispatch::class, ['record' => $dispatch->getRouteKey()])
+        ->callAction('edit', data: ['external_ref' => 'SP-000'])
+        ->assertNotified('Mã đơn ngoài "SP-000" đã có trong Kênh bán "Shopee".');
+
+    expect(DispatchRevision::count())->toBe(0);
+
+    Livewire::test(ViewDispatch::class, ['record' => $dispatch->getRouteKey()])
+        ->callAction('edit', data: ['external_ref' => 'SP-002', 'customer' => 'Anh Minh 0901', 'sale_prices' => ["line_{$line->id}" => 120000]])
+        ->assertHasNoActionErrors()
+        ->assertNotified('Đã sửa Phiếu xuất.')
+        ->assertSee(['SP-002', 'Anh Minh 0901', '120.000 ₫', '100.000 ₫']);
+
+    expect($dispatch->fresh())->external_ref->toBe('SP-002')->customer->toBe('Anh Minh 0901')
+        ->and($line->fresh()->sale_price)->toBe(120_000)
+        ->and(DispatchRevision::count())->toBe(3);
+
+    DB::table('dispatches')->where('id', $dispatch->id)->update(['status' => DispatchStatus::Cancelled->value]);
+
+    Livewire::test(ViewDispatch::class, ['record' => $dispatch->getRouteKey()])
+        ->assertActionHidden('edit');
+});
+
+it('tìm Phiếu xuất theo mã đơn ngoài, khách, Kênh bán, người tạo, khoảng ngày và trường không nhạy cảm', function () {
+    $manual = app(ManualDispatch::class);
+    $first = $manual->create($this->seller, new DispatchDraft($this->shopee, 'SP-001', [new DispatchLineDraft($this->steam, 1)], 'Anh Minh'));
+    $this->travelTo(CarbonImmutable::parse('2026-09-17 09:00'));
+    $second = $manual->create($this->admin, new DispatchDraft($this->zalo, null, [new DispatchLineDraft($this->steam, 1)], 'Chị Lan'));
+    $this->actingAs($this->seller);
+
+    Livewire::test(ListDispatches::class)
+        ->searchTable('SP-001')
+        ->assertCanSeeTableRecords([$first])
+        ->assertCanNotSeeTableRecords([$second])
+        ->searchTable('chị lan')
+        ->assertCanSeeTableRecords([$second])
+        ->assertCanNotSeeTableRecords([$first])
+        ->searchTable(null)
+        ->filterTable('sales_channel_id', $this->zalo->id)
+        ->assertCanSeeTableRecords([$second])
+        ->assertCanNotSeeTableRecords([$first])
+        ->resetTableFilters()
+        ->filterTable('created_by', $this->seller->id)
+        ->assertCanSeeTableRecords([$first])
+        ->assertCanNotSeeTableRecords([$second])
+        ->resetTableFilters()
+        ->filterTable('created_at', ['from' => '2026-09-16', 'until' => '2026-09-17'])
+        ->assertCanSeeTableRecords([$second])
+        ->assertCanNotSeeTableRecords([$first])
+        ->filterTable('created_at', ['from' => null, 'until' => '2026-09-15'])
+        ->assertCanSeeTableRecords([$first])
+        ->assertCanNotSeeTableRecords([$second])
+        ->resetTableFilters()
+        ->filterTable('delivered_content', ['term' => 'sr2'])
+        ->assertCanSeeTableRecords([$second])
+        ->assertCanNotSeeTableRecords([$first])
+        ->filterTable('delivered_content', ['term' => 'AAAA-0002'])
+        ->assertCanNotSeeTableRecords([$first, $second]);
+});
+
+it('tìm theo Khoá chống trùng từ danh sách Phiếu xuất: trả lần giao và phiếu, không hiện nội dung, không ghi Nhật ký xem mã', function () {
+    app(ManualDispatch::class)->create($this->admin, new DispatchDraft($this->shopee, 'SP-001', [new DispatchLineDraft($this->steam, 1)]));
+    $this->actingAs($this->seller);
+
+    Livewire::test(ListDispatches::class)
+        ->callAction('lookupDedupeKey', data: ['value' => ' AAAA-0001 '])
+        ->assertHasNoActionErrors()
+        ->assertActionMounted('dedupeKeyResults')
+        ->assertMountedActionModalSee(['Tìm thấy 1 lần giao', 'SP-001', 'Shopee', 'Steam Wallet 100k', '15/09/2026'])
+        ->assertMountedActionModalDontSee(['AAAA-0001', 'SR1', '95.000', 'Kinguin']);
+
+    Livewire::test(ListDispatches::class)
+        ->callAction('lookupDedupeKey', data: ['value' => 'AAAA-9999'])
+        ->assertActionMounted('dedupeKeyResults')
+        ->assertMountedActionModalSee(['Tìm thấy 0 lần giao', 'Không có lần giao nào khớp.']);
+
+    expect(RevealLogEntry::count())->toBe(0);
 });

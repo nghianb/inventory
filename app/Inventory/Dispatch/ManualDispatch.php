@@ -28,7 +28,7 @@ use stdClass;
  */
 class ManualDispatch
 {
-    private const MAX_REF_LENGTH = 100;
+    public const MAX_REF_LENGTH = 100;
 
     private const GENERATED_REF_ATTEMPTS = 50;
 
@@ -338,7 +338,7 @@ class ManualDispatch
         return $problems;
     }
 
-    private static function duplicateRef(SalesChannel $channel, string $ref): DispatchProblem
+    public static function duplicateRef(SalesChannel $channel, string $ref): DispatchProblem
     {
         return new DispatchProblem("Mã đơn ngoài \"{$ref}\" đã có trong Kênh bán \"{$channel->name}\".", self::existingDispatchId($channel, $ref));
     }

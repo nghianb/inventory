@@ -3,12 +3,86 @@
 namespace App\Filament\Resources\Dispatches\Pages;
 
 use App\Filament\Resources\Dispatches\DispatchResource;
+use App\Filament\Support\InventoryAction;
+use App\Inventory\Dispatch\DispatchEdit;
+use App\Inventory\Dispatch\DispatchEditor;
+use App\Models\Dispatch;
+use App\Models\DispatchLine;
+use Filament\Actions\Action;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
+use Filament\Schemas\Components\Section;
+use Filament\Support\Icons\Heroicon;
 
 /**
- * Trang xem Phiếu xuất: thông tin đơn, Dòng xuất và Lần giao ở dạng che.
+ * Trang xem Phiếu xuất: thông tin đơn, Dòng xuất, Lần giao ở dạng che (Xem mã từng lần giao) và
+ * Lịch sử sửa phiếu. Sửa phiếu Hoàn tất qua modal, gọi DispatchEditor.
  */
 class ViewDispatch extends ViewRecord
 {
     protected static string $resource = DispatchResource::class;
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('edit')
+                ->label('Sửa phiếu')
+                ->icon(Heroicon::OutlinedPencilSquare)
+                ->modalHeading('Sửa Phiếu xuất')
+                ->modalDescription('Không sửa được Kênh bán, Dòng xuất và Slot. Mỗi lần sửa ghi vào Lịch sử sửa phiếu.')
+                ->modalSubmitActionLabel('Lưu')
+                ->fillForm(fn (): array => [
+                    'external_ref' => $this->dispatchRecord()->external_ref,
+                    'customer' => $this->dispatchRecord()->customer,
+                    'note' => $this->dispatchRecord()->note,
+                    'sale_prices' => $this->dispatchRecord()->lines->mapWithKeys(fn (DispatchLine $line): array => ["line_{$line->id}" => $line->sale_price])->all(),
+                ])
+                ->schema(fn (): array => [
+                    TextInput::make('external_ref')
+                        ->label('Mã đơn ngoài')
+                        ->required()
+                        ->maxLength(100),
+                    Textarea::make('customer')
+                        ->label('Khách')
+                        ->rows(2),
+                    TextInput::make('note')
+                        ->label('Ghi chú')
+                        ->maxLength(1000),
+                    Section::make('Giá bán (tổng dòng)')
+                        ->compact()
+                        ->schema($this->dispatchRecord()->lines->map(fn (DispatchLine $line): TextInput => TextInput::make("sale_prices.line_{$line->id}")
+                            ->label("{$line->product->name} · {$line->kind->label()} · {$line->quantity} Slot")
+                            ->placeholder('Chưa có')
+                            ->suffix('₫')
+                            ->integer()
+                            ->minValue(0))->all()),
+                ])
+                ->visible(fn (): bool => InventoryAction::actor()->can('update', $this->dispatchRecord()))
+                ->action(function (Action $action, DispatchEditor $editor, array $data): void {
+                    $prices = (array) ($data['sale_prices'] ?? []);
+
+                    InventoryAction::attempt($action, fn () => $editor->edit(InventoryAction::actor(), $this->dispatchRecord(), new DispatchEdit(
+                        externalRef: $data['external_ref'] ?? null,
+                        customer: $data['customer'] ?? null,
+                        note: $data['note'] ?? null,
+                        salePrices: $this->dispatchRecord()->lines->mapWithKeys(fn (DispatchLine $line): array => [
+                            $line->id => filled($prices["line_{$line->id}"] ?? null) ? (int) $prices["line_{$line->id}"] : null,
+                        ])->all(),
+                    )));
+                    $this->dispatchRecord()->refresh();
+
+                    Notification::make()->success()->title('Đã sửa Phiếu xuất.')->send();
+                }),
+        ];
+    }
+
+    private function dispatchRecord(): Dispatch
+    {
+        $record = $this->getRecord();
+        assert($record instanceof Dispatch);
+
+        return $record;
+    }
 }

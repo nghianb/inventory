@@ -21,6 +21,7 @@ use App\Models\Dispatch;
 use App\Models\Slot;
 use App\Models\StockUnit;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
 
@@ -50,7 +51,7 @@ class ContentReveal
         $reason = match ($context->type) {
             RevealContextType::InStock => $this->inStockReason($actor, $reason),
             RevealContextType::Batch => throw new InvalidReveal('Ngữ cảnh Lô nhập chỉ dùng để tải dòng bị bỏ khi nhập.'),
-            RevealContextType::Delivery => throw new InvalidReveal('Nội dung lần Giao hàng chỉ xem qua màn kết quả xuất kho.'),
+            RevealContextType::Delivery => throw new InvalidReveal('Nội dung lần Giao hàng chỉ xem qua màn kết quả xuất kho hoặc Xem mã của lần giao.'),
         };
 
         $this->fingerprints->verify();
@@ -189,6 +190,51 @@ class ContentReveal
 
             return $build($this->revealDeliveries($actor, $current, self::deliveries($current), $reason));
         });
+    }
+
+    /**
+     * Xem lại mã của một lần Giao hàng để gửi lại cho khách, đã ghép Mẫu giao hàng. Bán hàng xem
+     * được mọi Phiếu xuất trong Hạn bảo hành; quá hạn chỉ Quản trị. Mỗi lần ghi một dòng Nhật ký
+     * xem mã ngữ cảnh Giao hàng.
+     *
+     * @throws MissingRole
+     * @throws InvalidReveal
+     * @throws KeyFingerprintMismatch
+     */
+    public function revealDelivery(User $actor, Delivery $delivery): DeliveredContent
+    {
+        $this->roles->authorize($actor, Role::BanHang);
+        $this->fingerprints->verify();
+
+        return DB::transaction(function () use ($actor, $delivery): DeliveredContent {
+            $deliveries = Delivery::query()
+                ->with(['slot', 'stockUnit.product.contentFields', 'dispatchLine.dispatch'])
+                ->whereKey($delivery->getKey())
+                ->get();
+            $current = $deliveries->firstOrFail();
+
+            if (! $this->canRevealDelivery($actor, $current)) {
+                throw new InvalidReveal(sprintf(
+                    'Lần giao đã quá Hạn bảo hành %s; chỉ Quản trị xem được mã.',
+                    $current->warrantyEndsOn()->format(DeliveryTemplate::DATE_FORMAT),
+                ));
+            }
+
+            $dispatch = $current->dispatchLine->dispatch;
+
+            return $this->revealDeliveries($actor, $dispatch, $deliveries, "Xem mã Phiếu xuất #{$dispatch->id}")[0];
+        });
+    }
+
+    /**
+     * Nhân viên có được Xem mã lần giao này lúc này không: Quản trị luôn được, Bán hàng trong Hạn
+     * bảo hành (tính cả ngày hết hạn). Để panel ẩn nút xem, không thay cho kiểm tra trong
+     * {@see revealDelivery()}.
+     */
+    public function canRevealDelivery(User $actor, Delivery $delivery): bool
+    {
+        return $this->roles->allows($actor)
+            || ($this->roles->allows($actor, Role::BanHang) && ! CarbonImmutable::today()->gt($delivery->warrantyEndsOn()));
     }
 
     /**

@@ -44,6 +44,9 @@ Khoá nội dung, khoá HMAC và khoá backup nằm trong `.env`, tách khỏi `
 - Phiếu từ `INVENTORY_DISPATCH_RESULT_MASK_SLOTS` (mặc định 50) Slot trở lên: màn kết quả chỉ hiện bảng dạng che, không Copy từng Slot; Copy tất cả gọi server và ghi Nhật ký xem mã cho mọi Slot.
 - Tải TXT (theo mẫu) và CSV (mỗi Slot một dòng, mỗi Trường nội dung một cột) sinh lúc tải, không lưu trên server; chỉ người tạo phiếu, trong `INVENTORY_DISPATCH_RESULT_DOWNLOAD_MINUTES` (mặc định 30) phút sau khi màn kết quả hiện; mỗi lần tải ghi Nhật ký xem mã cho mọi Slot.
 - Sản phẩm đã có Phiếu xuất không đổi được Mã sản phẩm.
+- Trang xem Phiếu xuất: bảng Lần giao dạng che, Xem mã từng lần giao có xác nhận (`ContentReveal::revealDelivery`): Bán hàng xem mọi phiếu trong Hạn bảo hành (tính cả ngày hết hạn), quá hạn chỉ Quản trị; mỗi lần ghi Nhật ký xem mã ngữ cảnh Giao hàng.
+- Sửa phiếu Hoàn tất (`DispatchEditor`): mã đơn ngoài (vẫn duy nhất trong kênh), khách, ghi chú, Giá bán; không sửa Kênh bán, Dòng xuất, Slot. Mỗi trường đổi ghi một dòng vào `dispatch_revisions` (chỉ-ghi-thêm, chặn bằng trigger), tách khỏi Sổ biến động kho.
+- Danh sách Phiếu xuất tìm theo mã đơn ngoài, khách, Kênh bán, người tạo, khoảng ngày và trường không nhạy cảm của hàng đã giao. Tìm theo Khoá chống trùng (`DeliveryLookup`) qua modal: chuỗi dán vào chuẩn hoá theo từng Sản phẩm, so HMAC khớp chính xác, trả lần giao và phiếu, không hiện nội dung, không ghi Nhật ký xem mã.
 
 ## Xem mã
 

@@ -4,12 +4,13 @@ namespace App\Policies;
 
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
+use App\Inventory\Dispatch\DispatchStatus;
 use App\Models\Dispatch;
 use App\Models\User;
 
 /**
- * Phiếu xuất: Quản trị và Bán hàng tạo và xem; Nhập kho không thấy. Quy tắc thật nằm trong
- * ManualDispatch. Phiếu xuất không xoá.
+ * Phiếu xuất: Quản trị và Bán hàng tạo, xem và sửa phiếu Hoàn tất; Nhập kho không thấy. Quy tắc
+ * thật nằm trong ManualDispatch và DispatchEditor. Phiếu xuất không xoá.
  */
 class DispatchPolicy
 {
@@ -32,7 +33,7 @@ class DispatchPolicy
 
     public function update(User $user, Dispatch $dispatch): bool
     {
-        return false;
+        return $dispatch->status === DispatchStatus::Completed && $this->roles->allows($user, Role::BanHang);
     }
 
     public function delete(User $user, Dispatch $dispatch): bool

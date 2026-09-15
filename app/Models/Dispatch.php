@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Inventory\Dispatch\DispatchStatus;
 use App\Inventory\Dispatch\ManualDispatch;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -75,6 +76,32 @@ class Dispatch extends Model
     public function deliveries(): HasManyThrough
     {
         return $this->hasManyThrough(Delivery::class, DispatchLine::class);
+    }
+
+    /**
+     * Phiếu xuất có hàng đã giao mà một trường không nhạy cảm chứa chuỗi tìm (không phân biệt hoa
+     * thường). Trường nhạy cảm chỉ có dạng mã hoá nên không bao giờ khớp.
+     *
+     * @param  Builder<Dispatch>  $query
+     */
+    public function scopeWhereDeliveredContent(Builder $query, string $term): void
+    {
+        $pattern = '%'.addcslashes($term, '\\%_').'%';
+
+        $query->whereHas('deliveries.stockUnit', fn (Builder $units) => $units->whereRaw(
+            "EXISTS (SELECT 1 FROM jsonb_each_text(stock_units.content) AS field WHERE field.value ILIKE ? ESCAPE '\\')",
+            [$pattern],
+        ));
+    }
+
+    /**
+     * Lịch sử sửa phiếu, cũ trước.
+     *
+     * @return HasMany<DispatchRevision, $this>
+     */
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(DispatchRevision::class)->orderBy('id');
     }
 
     /**

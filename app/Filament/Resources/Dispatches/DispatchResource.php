@@ -6,18 +6,21 @@ use App\Filament\Resources\Dispatches\Pages\CreateDispatch;
 use App\Filament\Resources\Dispatches\Pages\DispatchResult;
 use App\Filament\Resources\Dispatches\Pages\ListDispatches;
 use App\Filament\Resources\Dispatches\Pages\ViewDispatch;
+use App\Filament\Resources\Dispatches\Widgets\DispatchDeliveries;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
+use App\Inventory\Dispatch\DispatchRevisionField;
 use App\Inventory\Dispatch\DispatchStatus;
 use App\Inventory\Stock\SellableStock;
-use App\Inventory\Stock\SlotStatus;
-use App\Models\Delivery;
 use App\Models\Dispatch;
 use App\Models\DispatchLine;
+use App\Models\DispatchRevision;
 use App\Models\Product;
 use App\Models\SalesChannel;
 use BackedEnum;
+use Carbon\CarbonImmutable;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -27,12 +30,14 @@ use Filament\Infolists\Components\RepeatableEntry\TableColumn;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Callout;
+use Filament\Schemas\Components\Livewire;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -187,44 +192,47 @@ class DispatchResource extends Resource
                     TextEntry::make('sale_price')->placeholder('Chưa có'),
                 ])
                 ->columnSpanFull(),
-            RepeatableEntry::make('delivery_rows')
-                ->label('Lần giao')
-                ->state(fn (Dispatch $record): array => $record->deliveries()
-                    ->orderBy('deliveries.id')
-                    ->with(['dispatchLine.product', 'slot', 'stockUnit.product.contentFields'])
-                    ->get()
-                    ->map(fn (Delivery $delivery): array => [
-                        'product' => $delivery->dispatchLine->product->name,
-                        'unit' => "#{$delivery->stock_unit_id} · Slot #{$delivery->slot_id}",
-                        'content' => collect($delivery->stockUnit->maskedContent())
-                            ->map(fn (string $value, string $label): string => "{$label}: {$value}")
-                            ->implode(' · '),
-                        'delivered_at' => $delivery->delivered_at->format('d/m/Y H:i'),
-                        'warranty' => $delivery->warrantyEndsOn()->format('d/m/Y'),
-                        'status' => $delivery->slot->status,
-                    ])
-                    ->all())
-                ->table([
-                    TableColumn::make('Sản phẩm'),
-                    TableColumn::make('Đơn vị hàng'),
-                    TableColumn::make('Nội dung (đã che)'),
-                    TableColumn::make('Giao lúc'),
-                    TableColumn::make('Hạn bảo hành'),
-                    TableColumn::make('Trạng thái'),
-                ])
+            Livewire::make(DispatchDeliveries::class, fn (Dispatch $record): array => ['record' => $record])
+                ->key('deliveries')
+                ->columnSpanFull(),
+            Section::make('Lịch sử sửa phiếu')
+                ->description('Ai sửa, khi nào, giá trị cũ → mới. Tách khỏi Sổ biến động kho.')
                 ->schema([
-                    TextEntry::make('product'),
-                    TextEntry::make('unit'),
-                    TextEntry::make('content'),
-                    TextEntry::make('delivered_at'),
-                    TextEntry::make('warranty'),
-                    TextEntry::make('status')
-                        ->badge()
-                        ->formatStateUsing(fn (SlotStatus $state): string => $state->label())
-                        ->color(fn (SlotStatus $state): string => $state === SlotStatus::Delivered ? 'success' : 'gray'),
+                    RepeatableEntry::make('revision_rows')
+                        ->hiddenLabel()
+                        ->state(fn (Dispatch $record): array => $record->revisions()->with(['actor', 'dispatchLine.product'])->get()->map(fn (DispatchRevision $revision): array => [
+                            'occurred_at' => $revision->occurred_at->format('d/m/Y H:i'),
+                            'actor' => $revision->actor->name,
+                            'field' => $revision->label(),
+                            'old' => self::revisionValue($revision, $revision->old_value),
+                            'new' => self::revisionValue($revision, $revision->new_value),
+                        ])->all())
+                        ->placeholder('Chưa sửa lần nào.')
+                        ->table([
+                            TableColumn::make('Khi nào'),
+                            TableColumn::make('Ai'),
+                            TableColumn::make('Trường'),
+                            TableColumn::make('Cũ'),
+                            TableColumn::make('Mới'),
+                        ])
+                        ->schema([
+                            TextEntry::make('occurred_at'),
+                            TextEntry::make('actor'),
+                            TextEntry::make('field'),
+                            TextEntry::make('old')->placeholder('Trống'),
+                            TextEntry::make('new')->placeholder('Trống'),
+                        ]),
                 ])
                 ->columnSpanFull(),
         ]);
+    }
+
+    /**
+     * Giá trị lịch sử sửa phiếu để hiển thị: Giá bán định dạng tiền.
+     */
+    private static function revisionValue(DispatchRevision $revision, ?string $value): ?string
+    {
+        return $value !== null && $revision->field === DispatchRevisionField::SalePrice ? self::money((int) $value) : $value;
     }
 
     public static function table(Table $table): Table
@@ -262,10 +270,37 @@ class DispatchResource extends Resource
                 SelectFilter::make('sales_channel_id')
                     ->label('Kênh bán')
                     ->relationship('salesChannel', 'name'),
+                SelectFilter::make('created_by')
+                    ->label('Người tạo')
+                    ->relationship('creator', 'name'),
+                Filter::make('created_at')
+                    ->schema([
+                        DatePicker::make('from')->label('Tạo từ ngày'),
+                        DatePicker::make('until')->label('Tạo đến ngày'),
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => $query
+                        ->when($data['from'] ?? null, fn (Builder $query, string $date): Builder => $query->where('created_at', '>=', CarbonImmutable::parse($date)->startOfDay()))
+                        ->when($data['until'] ?? null, fn (Builder $query, string $date): Builder => $query->where('created_at', '<', CarbonImmutable::parse($date)->addDay()->startOfDay()))),
+                Filter::make('delivered_content')
+                    ->schema([
+                        TextInput::make('term')
+                            ->label('Trường không nhạy cảm')
+                            ->helperText('Ví dụ Serial thẻ nạp, tên đăng nhập Tài khoản. Trường nhạy cảm không tìm được; mã hãy tìm theo Khoá chống trùng.'),
+                    ])
+                    ->query(fn (Builder $query, array $data): Builder => filled($data['term'] ?? null)
+                        ? $query->whereDeliveredContent((string) $data['term'])
+                        : $query),
             ])
             ->recordActions([
                 ViewAction::make(),
             ]);
+    }
+
+    public static function getWidgets(): array
+    {
+        return [
+            DispatchDeliveries::class,
+        ];
     }
 
     public static function getPages(): array
