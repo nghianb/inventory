@@ -5,6 +5,7 @@ namespace App\Inventory\Dispatch;
 use App\Inventory\Stock\SellableStock;
 use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Stock\StockTransition;
+use App\Models\Delivery;
 use App\Models\Product;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -25,7 +26,7 @@ final class SlotPicker
      * Slot đang bị giao dịch khác khoá thì bỏ qua; Đơn vị hàng bị khoá chia sẻ để không đổi trạng
      * thái trước khi giao xong.
      */
-    private const LOCK = 'FOR UPDATE OF slots SKIP LOCKED FOR SHARE OF stock_units SKIP LOCKED';
+    private const SKIP_LOCKED_FOR_DELIVERY = 'FOR UPDATE OF slots SKIP LOCKED FOR SHARE OF stock_units SKIP LOCKED';
 
     /**
      * Khoá chia sẻ Sản phẩm theo thứ tự id (Quản trị không Ngừng bán hay đổi Mã sản phẩm, thời hạn
@@ -77,7 +78,7 @@ final class SlotPicker
     {
         $locked = self::lockProducts([(int) $product->getKey()], $allowDiscontinued)->firstOrFail();
 
-        return self::replacementCandidates($locked, CarbonImmutable::today(), $coverUntil, $exceptUnitIds)->lock(self::LOCK)->first()
+        return self::replacementCandidates($locked, CarbonImmutable::today(), $coverUntil, $exceptUnitIds)->lock(self::SKIP_LOCKED_FOR_DELIVERY)->first()
             ?? throw new OutOfStock([new Shortage($locked->id, $locked->name, 1, 0)]);
     }
 
@@ -91,20 +92,20 @@ final class SlotPicker
      */
     public static function replacementCandidates(Product $product, CarbonImmutable $today, CarbonImmutable $coverUntil, array $exceptUnitIds): Builder
     {
-        $covers = '(stock_units.expires_on IS NULL OR stock_units.expires_on >= CAST(? AS date))';
-        $cover = [$coverUntil->toDateString()];
+        $coversSql = '(stock_units.expires_on IS NULL OR stock_units.expires_on >= CAST(? AS date))';
+        $coverUntilBinding = [$coverUntil->toDateString()];
 
         return SellableStock::unexpiredIncludingDiscontinued($today)
             ->where('stock_units.product_id', $product->id)
             ->when($exceptUnitIds !== [], fn (Builder $query) => $query->whereNotIn('stock_units.id', $exceptUnitIds))
             ->select('slots.id', 'slots.stock_unit_id', 'slots.cost', 'stock_units.expires_on')
-            ->selectRaw("{$covers} AS covers", $cover)
-            ->orderByRaw("{$covers} DESC", $cover)
+            ->selectRaw("{$coversSql} AS covers", $coverUntilBinding)
+            ->orderByRaw("{$coversSql} DESC", $coverUntilBinding)
             ->orderByRaw(
-                "CASE WHEN {$covers} THEN EXISTS (SELECT 1 FROM slots delivered WHERE delivered.stock_unit_id = stock_units.id AND delivered.status = ?) END DESC",
-                [...$cover, SlotStatus::Delivered->value],
+                "CASE WHEN {$coversSql} THEN EXISTS (SELECT 1 FROM slots delivered WHERE delivered.stock_unit_id = stock_units.id AND delivered.status = ?) END DESC",
+                [...$coverUntilBinding, SlotStatus::Delivered->value],
             )
-            ->orderByRaw("CASE WHEN {$covers} THEN stock_units.expires_on END ASC NULLS LAST", $cover)
+            ->orderByRaw("CASE WHEN {$coversSql} THEN stock_units.expires_on END ASC NULLS LAST", $coverUntilBinding)
             ->orderByRaw('stock_units.expires_on DESC NULLS LAST')
             ->orderBy('stock_units.id')
             ->orderBy('slots.id');
@@ -115,10 +116,11 @@ final class SlotPicker
      * bảo hành của Sản phẩm lúc giao).
      *
      * @param  Collection<int, stdClass>  $slots  các hàng `id`, `stock_unit_id` từ {@see lockAndPick()}
-     * @param  array<string, mixed>  $attributes  cột thêm của lần giao: lần giao bị huỷ mà Slot Giao thay, Hạn bảo hành kế thừa của Đổi hàng
+     * @param  ?int  $correctsDeliveryId  lần giao bị huỷ mà các Slot này Giao thay
+     * @param  ?Delivery  $inheritsWarrantyFrom  Đổi hàng: lần giao gốc có Hạn bảo hành (và thời hạn bảo hành, để biết lần giao có bảo hành không) được kế thừa
      * @return list<StockTransition> để người gọi ghi Sổ biến động kho
      */
-    public static function deliver(int $dispatchLineId, Product $product, Collection $slots, User $actor, CarbonInterface $now, array $attributes = []): array
+    public static function deliver(int $dispatchLineId, Product $product, Collection $slots, User $actor, CarbonInterface $now, ?int $correctsDeliveryId = null, ?Delivery $inheritsWarrantyFrom = null): array
     {
         DB::table('slots')
             ->whereIn('id', $slots->pluck('id'))
@@ -128,12 +130,13 @@ final class SlotPicker
             'dispatch_line_id' => $dispatchLineId,
             'slot_id' => $slot->id,
             'stock_unit_id' => $slot->stock_unit_id,
-            'warranty_days' => $product->warranty_days,
+            'warranty_days' => $inheritsWarrantyFrom->warranty_days ?? $product->warranty_days,
+            'warranty_ends_on' => $inheritsWarrantyFrom?->warrantyEndsOn()->toDateString(),
+            'corrects_delivery_id' => $correctsDeliveryId,
             'delivered_at' => $now,
             'delivered_by' => $actor->getKey(),
             'created_at' => $now,
             'updated_at' => $now,
-            ...$attributes,
         ])->all());
 
         return $slots->map(fn (object $slot): StockTransition => new StockTransition((int) $slot->stock_unit_id, (int) $slot->id, SlotStatus::InStock, SlotStatus::Delivered))->values()->all();
@@ -184,7 +187,7 @@ final class SlotPicker
             ->orderBy('stock_units.id')
             ->orderBy('slots.id')
             ->limit($quantity)
-            ->lock(self::LOCK)
+            ->lock(self::SKIP_LOCKED_FOR_DELIVERY)
             ->get();
     }
 }

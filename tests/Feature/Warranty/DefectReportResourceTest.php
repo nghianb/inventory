@@ -30,7 +30,10 @@ use App\Inventory\Warranty\DefectReporting;
 use App\Inventory\Warranty\DefectReportStatus;
 use App\Inventory\Warranty\DefectResolution;
 use App\Inventory\Warranty\DefectScope;
+use App\Inventory\Warranty\ReplacementDelivery;
+use App\Inventory\Warranty\ReplacementDraft;
 use App\Models\DefectReport;
+use App\Models\Delivery;
 use App\Models\Dispatch;
 use App\Models\Product;
 use App\Models\Replacement;
@@ -354,4 +357,57 @@ it('Không đổi ở trang Báo lỗi bắt buộc lý do; đã hoàn tiền th
     Livewire::test(ListDefectReports::class)
         ->set('activeTab', 'awaiting')
         ->assertCanNotSeeTableRecords([$refund]);
+});
+
+it('lần đổi thứ 3: Bán hàng thấy cảnh báo và yêu cầu Quản trị duyệt; Quản trị duyệt từ tab Chờ Quản trị duyệt; sau đó Bán hàng Đổi hàng được', function () {
+    panelStock($this->netflix, "b@shop.test\tpw-b\nc@shop.test\tpw-c\nd@shop.test\tpw-d");
+    $reports = app(DefectReporting::class);
+    $replacements = app(ReplacementDelivery::class);
+    $confirmed = function (Delivery $delivery) use ($reports): DefectReport {
+        [$report] = $reports->report($this->seller, [$delivery], new DefectReportDraft('Bị khoá'));
+        $reports->confirm($this->seller, $report, DefectScope::Unit, 'Bị khoá thật');
+
+        return $report->fresh();
+    };
+    $firstReport = $confirmed(panelOrder('SP-001', 1, 'Anh Minh')->deliveries()->firstOrFail());
+    $first = $replacements->replace($this->seller, $firstReport, new ReplacementDraft);
+    $second = $replacements->replace($this->seller, $confirmed($first->delivery), new ReplacementDraft);
+    $third = $confirmed($second->delivery);
+    $this->actingAs($this->seller);
+
+    Livewire::test(ViewDefectReport::class, ['record' => $third->getRouteKey()])
+        ->assertActionHidden('approveReplacement')
+        ->mountAction('replace')
+        ->assertMountedActionModalSee(['Lần đổi thứ 3 trong chuỗi', 'từ lần đổi thứ 3 cần Quản trị duyệt']);
+
+    Livewire::test(ViewDefectReport::class, ['record' => $third->getRouteKey()])
+        ->callAction('requestReplacementApproval')
+        ->assertNotified('Đã yêu cầu Quản trị duyệt Đổi hàng.')
+        ->assertActionHidden('requestReplacementApproval');
+
+    $this->actingAs($this->admin);
+
+    Livewire::test(ListDefectReports::class)
+        ->set('activeTab', 'approval')
+        ->assertCanSeeTableRecords([$third])
+        ->assertCanNotSeeTableRecords([$firstReport]);
+
+    Livewire::test(ViewDefectReport::class, ['record' => $third->getRouteKey()])
+        ->assertSee('Yêu cầu duyệt Đổi hàng')
+        ->assertActionHidden('requestReplacementApproval')
+        ->callAction('approveReplacement')
+        ->assertNotified('Đã duyệt Đổi hàng.')
+        ->assertActionHidden('approveReplacement');
+
+    $this->actingAs($this->seller);
+
+    Livewire::test(ViewDefectReport::class, ['record' => $third->getRouteKey()])
+        ->mountAction('replace')
+        ->assertMountedActionModalSee('Quản trị đã duyệt lần đổi này')
+        ->callMountedAction()
+        ->assertHasNoActionErrors()
+        ->assertActionMounted('revealedContent')
+        ->assertMountedActionModalSee('Mật khẩu: pw-d');
+
+    expect(Replacement::query()->orderByDesc('id')->firstOrFail()->approved_by)->toBe($this->admin->id);
 });

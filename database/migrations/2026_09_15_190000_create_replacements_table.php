@@ -17,11 +17,16 @@ return new class extends Migration
             $table->boolean('refunded')->default(false);
             $table->foreignId('resolved_by')->nullable()->constrained('users')->restrictOnDelete();
             $table->timestampTz('resolved_at')->nullable();
+            // Đổi hàng từ lần thứ 3 của chuỗi: Bán hàng yêu cầu, Quản trị duyệt.
+            $table->foreignId('replacement_approval_requested_by')->nullable()->constrained('users')->restrictOnDelete();
+            $table->timestampTz('replacement_approval_requested_at')->nullable();
+            $table->foreignId('replacement_approved_by')->nullable()->constrained('users')->restrictOnDelete();
+            $table->timestampTz('replacement_approved_at')->nullable();
 
             $table->index(['resolution', 'verified_at']);
         });
 
-        DB::table('defect_reports')->where('status', 'confirmed')->update(['resolution' => 'awaiting']);
+        DB::table('defect_reports')->where('status', 'confirmed')->update(['resolution' => 'awaiting-replacement']);
 
         DB::unprepared(<<<'SQL'
             ALTER TABLE defect_reports
@@ -29,8 +34,11 @@ return new class extends Migration
                     (status = 'confirmed') = (resolution IS NOT NULL)
                     AND (resolution IS NOT DISTINCT FROM 'not-replaced') = (resolution_note IS NOT NULL)
                     AND (NOT refunded OR resolution IS NOT DISTINCT FROM 'not-replaced')
-                    AND (COALESCE(resolution, 'awaiting') <> 'awaiting') = (resolved_by IS NOT NULL)
+                    AND (COALESCE(resolution, 'awaiting-replacement') <> 'awaiting-replacement') = (resolved_by IS NOT NULL)
                     AND (resolved_by IS NULL) = (resolved_at IS NULL)
+                    AND (replacement_approval_requested_by IS NULL) = (replacement_approval_requested_at IS NULL)
+                    AND (replacement_approved_by IS NULL) = (replacement_approved_at IS NULL)
+                    AND (resolution IS NOT NULL OR (replacement_approval_requested_at IS NULL AND replacement_approved_at IS NULL))
                 );
             SQL);
 
@@ -54,6 +62,8 @@ return new class extends Migration
             $table->foreignId('defective_product_id')->constrained('products')->restrictOnDelete();
             $table->foreignId('supplier_id')->constrained()->restrictOnDelete();
             $table->foreignId('created_by')->constrained('users')->restrictOnDelete();
+            // Quản trị đã duyệt (hoặc tự làm) lần đổi từ thứ 3 của chuỗi.
+            $table->foreignId('approved_by')->nullable()->constrained('users')->restrictOnDelete();
             // Mốc màn kết quả Đổi hàng đã hiện nội dung; sau đó xem lại qua Xem mã của lần giao.
             $table->timestampTz('result_revealed_at')->nullable();
             $table->timestampsTz();
@@ -63,8 +73,12 @@ return new class extends Migration
             $table->index('supplier_id');
         });
 
-        DB::statement('ALTER TABLE replacements ADD CONSTRAINT replacements_sequence_positive CHECK (sequence >= 1)');
-        DB::statement('ALTER TABLE replacements ADD CONSTRAINT replacements_cost_not_negative CHECK (cost >= 0)');
+        DB::unprepared(<<<'SQL'
+            ALTER TABLE replacements
+                ADD CONSTRAINT replacements_sequence_positive CHECK (sequence >= 1),
+                ADD CONSTRAINT replacements_cost_not_negative CHECK (cost >= 0),
+                ADD CONSTRAINT replacements_approved CHECK ((sequence >= 3) = (approved_by IS NOT NULL));
+            SQL);
     }
 
     public function down(): void
@@ -74,7 +88,9 @@ return new class extends Migration
         DB::statement('ALTER TABLE defect_reports DROP CONSTRAINT defect_reports_resolution');
         Schema::table('defect_reports', function (Blueprint $table) {
             $table->dropConstrainedForeignId('resolved_by');
-            $table->dropColumn(['resolution', 'resolution_note', 'refunded', 'resolved_at']);
+            $table->dropConstrainedForeignId('replacement_approval_requested_by');
+            $table->dropConstrainedForeignId('replacement_approved_by');
+            $table->dropColumn(['resolution', 'resolution_note', 'refunded', 'resolved_at', 'replacement_approval_requested_at', 'replacement_approved_at']);
         });
     }
 };

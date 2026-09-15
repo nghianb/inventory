@@ -11,8 +11,8 @@ use Carbon\CarbonImmutable;
 final readonly class ReplacementPreview
 {
     /**
-     * @param  ?bool  $coversWarranty  Slot sẽ chọn có Hạn sử dụng phủ Hạn bảo hành kế thừa không; null khi hết hàng
-     * @param  ?CarbonImmutable  $candidateExpiresOn  Hạn sử dụng của Slot sẽ chọn; null khi không có hạn hoặc hết hàng
+     * @param  bool  $requiresApproval  lần đổi này từ thứ {@see ReplacementDelivery::APPROVAL_SEQUENCE}: Bán hàng cần Quản trị duyệt
+     * @param  ?CarbonImmutable  $candidateExpiresOn  Hạn sử dụng của Slot sẽ chọn; null khi Slot không có hạn hoặc hết hàng
      */
     public function __construct(
         public string $productName,
@@ -20,7 +20,7 @@ final readonly class ReplacementPreview
         public CarbonImmutable $warrantyEndsOn,
         public int $sequence,
         public bool $requiresApproval,
-        public ?bool $coversWarranty,
+        public ReplacementAvailability $availability,
         public ?CarbonImmutable $candidateExpiresOn,
     ) {}
 }

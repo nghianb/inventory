@@ -228,8 +228,8 @@ class DefectReporting
                 throw new InvalidDefectReport(['Chỉ đặt Kết quả xử lý cho Báo lỗi Xác nhận.']);
             }
 
-            if ($current->resolution !== DefectResolution::AwaitingReplacement) {
-                throw new InvalidDefectReport(["Báo lỗi đã {$current->resolution?->label()}; không đặt Kết quả xử lý được nữa."]);
+            if (! $current->isAwaitingReplacement()) {
+                throw new InvalidDefectReport(["Báo lỗi đã có Kết quả xử lý {$current->resolution?->label()}; không đặt lại được."]);
             }
 
             $current->forceFill([
@@ -247,7 +247,7 @@ class DefectReporting
      */
     public function canDeclineReplacement(User $actor, DefectReport $report): bool
     {
-        return $this->roles->allows($actor, Role::BanHang) && $report->resolution === DefectResolution::AwaitingReplacement;
+        return $this->roles->allows($actor, Role::BanHang) && $report->isAwaitingReplacement();
     }
 
     /**

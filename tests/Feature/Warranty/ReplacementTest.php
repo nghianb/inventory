@@ -37,6 +37,7 @@ use App\Inventory\Warranty\DefectResolution;
 use App\Inventory\Warranty\DefectScope;
 use App\Inventory\Warranty\InvalidDefectReport;
 use App\Inventory\Warranty\InvalidReplacement;
+use App\Inventory\Warranty\ReplacementAvailability;
 use App\Inventory\Warranty\ReplacementDelivery;
 use App\Inventory\Warranty\ReplacementDraft;
 use App\Models\DefectReport;
@@ -151,7 +152,7 @@ it('Xác nhận Báo lỗi đặt Kết quả xử lý Chờ đổi và vào dan
         ->and(DefectReport::awaitingReplacement()->pluck('id')->all())->toBe([$slot->id])
         ->and($this->reports->canDeclineReplacement($this->seller, $unit->fresh()))->toBeFalse()
         ->and(fn () => $this->reports->declineReplacement($this->seller, $unit, 'Lần nữa', refunded: false))
-        ->toThrow(InvalidDefectReport::class, 'Báo lỗi đã Không đổi; không đặt Kết quả xử lý được nữa.')
+        ->toThrow(InvalidDefectReport::class, 'Báo lỗi đã có Kết quả xử lý Không đổi; không đặt lại được.')
         ->and(fn () => $this->reports->declineReplacement($this->seller, $pending, 'Chưa xác minh', refunded: false))
         ->toThrow(InvalidDefectReport::class, 'Chỉ đặt Kết quả xử lý cho Báo lỗi Xác nhận.');
 
@@ -224,7 +225,7 @@ it('Đổi hàng chọn theo Thứ tự xuất nhưng thay Hạn còn lại tố
         ->toHaveProperty('sequence', 1)
         ->warrantyEndsOn->toEqual(CarbonImmutable::parse('2026-10-15'))
         ->requiresApproval->toBeFalse()
-        ->coversWarranty->toBeTrue()
+        ->availability->toBe(ReplacementAvailability::Covering)
         ->candidateExpiresOn->toEqual(CarbonImmutable::parse('2026-10-20'))
         // VUA không đạt Hạn còn lại tối thiểu 60 ngày nên không thuộc Tồn bán được.
         ->and(app(SellableStock::class)->count($garena))->toBe(1);
@@ -246,7 +247,7 @@ it('không có Slot phủ Hạn bảo hành thì cảnh báo; chấp nhận thì
     $before = $slots();
 
     expect($this->replacements->preview($this->seller, $report))
-        ->coversWarranty->toBeFalse()
+        ->availability->toBe(ReplacementAvailability::ShorterOnly)
         ->candidateExpiresOn->toEqual(CarbonImmutable::parse('2026-10-05'))
         ->and(fn () => $this->replacements->replace($this->seller, $report, new ReplacementDraft))
         ->toThrow(InvalidReplacement::class, 'Không có Slot nào có Hạn sử dụng phủ Hạn bảo hành 15/10/2026; Slot hạn dài nhất hết hạn 05/10/2026. Chấp nhận Slot hạn ngắn hơn để Đổi hàng.')
@@ -266,7 +267,7 @@ it('Đổi hàng sang Sản phẩm khác bắt buộc lý do; Chi phí đổi h�
     $broken = replacementOrder('SP-001', $this->steam)->deliveries()->firstOrFail();
     $report = confirmedDefect($broken);
 
-    expect($this->replacements->preview($this->seller, $report, $this->netflix))->coversWarranty->toBeTrue()
+    expect($this->replacements->preview($this->seller, $report, $this->netflix))->availability->toBe(ReplacementAvailability::Covering)
         ->and(fn () => $this->replacements->replace($this->seller, $report, new ReplacementDraft($this->netflix, productChangeReason: '  ')))
         ->toThrow(InvalidReplacement::class, 'Đổi hàng sang Sản phẩm khác phải nhập lý do.');
 
@@ -289,28 +290,59 @@ it('Sản phẩm gốc đã Ngừng bán vẫn Đổi hàng cùng Sản phẩm �
     expect($this->replacements->replace($this->seller, $report, new ReplacementDraft)->delivery->stockUnit->content['serial'])->toBe('SR2');
 });
 
-it('chuỗi Đổi hàng luôn trỏ về lần giao gốc và kế thừa Hạn bảo hành gốc; lần đổi thứ 3 cần Quản trị duyệt', function () {
-    replacementStock($this->steam, "SR1\tA-1\nSR2\tA-2\nSR3\tA-3\nSR4\tA-4");
+it('chuỗi Đổi hàng luôn trỏ về lần giao gốc và kế thừa Hạn bảo hành gốc; từ lần đổi thứ 3 Bán hàng yêu cầu, Quản trị duyệt rồi Bán hàng mới Đổi hàng được', function () {
+    replacementStock($this->steam, "SR1\tA-1\nSR2\tA-2\nSR3\tA-3\nSR4\tA-4\nSR5\tA-5");
     $original = replacementOrder('SP-001', $this->steam)->deliveries()->firstOrFail();
+    $firstReport = confirmedDefect($original);
 
-    $first = $this->replacements->replace($this->seller, confirmedDefect($original), new ReplacementDraft);
+    expect($this->replacements->canRequestApproval($this->seller, $firstReport))->toBeFalse()
+        ->and(fn () => $this->replacements->requestApproval($this->seller, $firstReport))
+        ->toThrow(InvalidReplacement::class, 'Chỉ từ lần đổi thứ 3 trong chuỗi mới cần Quản trị duyệt.');
+
+    $first = $this->replacements->replace($this->seller, $firstReport, new ReplacementDraft);
     $this->travel(2)->days();
     $second = $this->replacements->replace($this->seller, confirmedDefect($first->delivery), new ReplacementDraft);
     $third = confirmedDefect($second->delivery);
 
-    expect([$first->sequence, $second->sequence])->toBe([1, 2])
+    expect([$first->sequence, $second->sequence, $first->approved_by, $second->approved_by])->toBe([1, 2, null, null])
         ->and($second->original_delivery_id)->toBe($original->id)
         ->and($second->delivery->warrantyEndsOn())->toEqual(CarbonImmutable::parse('2026-09-22'))
         ->and($this->replacements->preview($this->seller, $third))->toHaveProperty('sequence', 3)->requiresApproval->toBeTrue()
         ->and($this->replacements->canReplace($this->seller, $third))->toBeFalse()
         ->and($this->replacements->canReplace($this->admin, $third))->toBeTrue()
+        ->and($this->replacements->canRequestApproval($this->admin, $third))->toBeFalse()
         ->and(fn () => $this->replacements->replace($this->seller, $third, new ReplacementDraft))
         ->toThrow(InvalidReplacement::class, 'Lần đổi thứ 3 trong chuỗi cần Quản trị duyệt.');
 
-    $last = $this->replacements->replace($this->admin, $third, new ReplacementDraft);
+    $this->travel(1)->hours();
+    $this->replacements->requestApproval($this->seller, $third);
 
-    expect([$last->sequence, $last->original_delivery_id])->toBe([3, $original->id])
-        ->and($this->replacements->canReplace($this->seller, $third->fresh()))->toBeFalse();
+    expect($third->fresh())
+        ->replacement_approval_requested_by->toBe($this->seller->id)
+        ->replacement_approval_requested_at->toEqual(now()->toImmutable())
+        ->and(DefectReport::awaitingApproval()->pluck('id')->all())->toBe([$third->id])
+        ->and($this->replacements->canRequestApproval($this->seller, $third->fresh()))->toBeFalse()
+        ->and(fn () => $this->replacements->requestApproval($this->seller, $third))->toThrow(InvalidReplacement::class, 'Đã yêu cầu Quản trị duyệt Đổi hàng.')
+        ->and(fn () => $this->replacements->approve($this->seller, $third))->toThrow(MissingRole::class)
+        ->and($this->replacements->canApprove($this->seller, $third->fresh()))->toBeFalse()
+        ->and($this->replacements->canApprove($this->admin, $third->fresh()))->toBeTrue();
+
+    $this->replacements->approve($this->admin, $third);
+
+    expect($third->fresh()->replacement_approved_by)->toBe($this->admin->id)
+        ->and(DefectReport::awaitingApproval()->count())->toBe(0)
+        ->and($this->replacements->canReplace($this->seller, $third->fresh()))->toBeTrue()
+        ->and(fn () => $this->replacements->approve($this->admin, $third))->toThrow(InvalidReplacement::class, 'Đổi hàng đã được Quản trị duyệt.');
+
+    $approved = $this->replacements->replace($this->seller, $third->fresh(), new ReplacementDraft);
+
+    expect([$approved->sequence, $approved->original_delivery_id, $approved->approved_by, $approved->created_by])->toBe([3, $original->id, $this->admin->id, $this->seller->id])
+        ->and(fn () => $this->replacements->approve($this->admin, $third))->toThrow(InvalidReplacement::class, 'Báo lỗi đã có Kết quả xử lý Đã đổi; không Đổi hàng được nữa.');
+
+    // Quản trị tự Đổi hàng thì không cần duyệt riêng: chính họ là người duyệt.
+    $byAdmin = $this->replacements->replace($this->admin, confirmedDefect($approved->delivery), new ReplacementDraft);
+
+    expect([$byAdmin->sequence, $byAdmin->approved_by])->toBe([4, $this->admin->id]);
 });
 
 it('màn kết quả Đổi hàng ghi Nhật ký xem mã ngữ cảnh Đổi hàng, chỉ người vừa Đổi hàng và chỉ một lần', function () {
@@ -363,7 +395,7 @@ it('Đổi hàng không được và không đổi gì', function (Closure $arra
         test()->reports->declineReplacement(test()->seller, $report, 'Hoàn tiền', refunded: true);
 
         return [test()->seller, $report, new ReplacementDraft];
-    }, InvalidReplacement::class, 'Báo lỗi đã Không đổi; không Đổi hàng được nữa.'],
+    }, InvalidReplacement::class, 'Báo lỗi đã có Kết quả xử lý Không đổi; không Đổi hàng được nữa.'],
     'thiếu hàng' => [function (Delivery $broken) {
         replacementOrder('SP-002', test()->steam);
 

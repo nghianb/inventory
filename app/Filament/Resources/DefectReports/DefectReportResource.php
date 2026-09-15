@@ -127,6 +127,12 @@ class DefectReportResource extends Resource
                         ->color(fn (DefectResolution $state): string => $state->color()),
                     TextEntry::make('resolver.name')->label('Người xử lý')->placeholder('—'),
                     TextEntry::make('resolved_at')->label('Xử lý lúc')->dateTime('d/m/Y H:i')->placeholder('—'),
+                    TextEntry::make('approvalRequester.name')
+                        ->label('Yêu cầu duyệt Đổi hàng')
+                        ->visible(fn (DefectReport $record): bool => $record->replacement_approval_requested_by !== null),
+                    TextEntry::make('replacementApprover.name')
+                        ->label('Quản trị duyệt Đổi hàng')
+                        ->visible(fn (DefectReport $record): bool => $record->replacement_approved_by !== null),
                     TextEntry::make('resolution_note')
                         ->label('Lý do Không đổi')
                         ->visible(fn (DefectReport $record): bool => $record->resolution === DefectResolution::NotReplaced)

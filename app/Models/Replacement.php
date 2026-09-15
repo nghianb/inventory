@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $defective_product_id Sản phẩm của Đơn vị hàng lỗi
  * @property int $supplier_id Nhà cung cấp của Đơn vị hàng lỗi
  * @property int $created_by
+ * @property ?int $approved_by Quản trị duyệt (hoặc tự làm) lần đổi từ thứ 3 của chuỗi
  * @property ?CarbonImmutable $result_revealed_at
  * @property CarbonImmutable $created_at
  * @property-read DefectReport $defectReport
@@ -46,6 +47,7 @@ class Replacement extends Model
             'defective_product_id' => 'integer',
             'supplier_id' => 'integer',
             'created_by' => 'integer',
+            'approved_by' => 'integer',
             'result_revealed_at' => 'immutable_datetime',
             'created_at' => 'immutable_datetime',
         ];

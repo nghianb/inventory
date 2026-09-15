@@ -35,6 +35,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property bool $refunded Không đổi vì khách đã được hoàn tiền ngoài kho
  * @property ?int $resolved_by
  * @property ?CarbonImmutable $resolved_at
+ * @property ?int $replacement_approval_requested_by Bán hàng yêu cầu Quản trị duyệt Đổi hàng từ lần thứ 3
+ * @property ?CarbonImmutable $replacement_approval_requested_at
+ * @property ?int $replacement_approved_by Quản trị duyệt Đổi hàng từ lần thứ 3
+ * @property ?CarbonImmutable $replacement_approved_at
  * @property CarbonImmutable $created_at
  * @property-read Delivery $delivery
  * @property-read Slot $slot
@@ -42,6 +46,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property-read User $creator
  * @property-read ?User $verifier
  * @property-read ?User $resolver
+ * @property-read ?User $approvalRequester
+ * @property-read ?User $replacementApprover
  * @property-read ?DefectReport $source
  * @property-read ?Replacement $replacement
  */
@@ -66,6 +72,10 @@ class DefectReport extends Model
             'refunded' => 'boolean',
             'resolved_by' => 'integer',
             'resolved_at' => 'immutable_datetime',
+            'replacement_approval_requested_by' => 'integer',
+            'replacement_approval_requested_at' => 'immutable_datetime',
+            'replacement_approved_by' => 'integer',
+            'replacement_approved_at' => 'immutable_datetime',
             'created_at' => 'immutable_datetime',
         ];
     }
@@ -78,6 +88,39 @@ class DefectReport extends Model
     public function scopeAwaitingReplacement(Builder $query): void
     {
         $query->where('resolution', DefectResolution::AwaitingReplacement);
+    }
+
+    /**
+     * Danh sách Chờ Quản trị duyệt: Báo lỗi Chờ đổi đã được yêu cầu duyệt Đổi hàng, chưa được duyệt.
+     *
+     * @param  Builder<DefectReport>  $query
+     */
+    public function scopeAwaitingApproval(Builder $query): void
+    {
+        $query->where('resolution', DefectResolution::AwaitingReplacement)
+            ->whereNotNull('replacement_approval_requested_at')
+            ->whereNull('replacement_approved_at');
+    }
+
+    public function isAwaitingReplacement(): bool
+    {
+        return $this->resolution === DefectResolution::AwaitingReplacement;
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function approvalRequester(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'replacement_approval_requested_by');
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function replacementApprover(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'replacement_approved_by');
     }
 
     /**

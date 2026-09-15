@@ -7,7 +7,7 @@ namespace App\Inventory\Warranty;
  */
 enum DefectResolution: string
 {
-    case AwaitingReplacement = 'awaiting';
+    case AwaitingReplacement = 'awaiting-replacement';
     case Replaced = 'replaced';
     case NotReplaced = 'not-replaced';
 
