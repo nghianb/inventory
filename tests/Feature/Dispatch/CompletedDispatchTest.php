@@ -227,6 +227,31 @@ it('sửa phiếu vẫn kiểm tra mã đơn ngoài trùng trong Kênh bán, kh�
         ->and($first->fresh()->customer)->toBeNull();
 });
 
+it('mã đơn ngoài cũ vẫn bị chiếm sau khi sửa: tạo phiếu mới hay sửa phiếu khác sang mã cũ đều báo trùng kèm phiếu từng giữ; chính phiếu đó đổi lại được', function () {
+    completedStock($this->steam, "SR1\tAAAA-0001\nSR2\tAAAA-0002\nSR3\tAAAA-0003");
+    $editor = app(DispatchEditor::class);
+    $edit = fn (string $ref) => new DispatchEdit($ref, null, null);
+    $renamed = completedDispatch([[$this->steam, 1]], ref: 'ZL-001');
+    $other = completedDispatch([[$this->steam, 1]], ref: 'ZL-002');
+    $editor->edit($this->seller, $renamed, $edit('ZL-009'));
+    $taken = new DispatchProblem('Mã đơn ngoài "ZL-001" đã có trong Kênh bán "Zalo".', $renamed->id);
+
+    expect($this->manual->check($this->seller, new DispatchDraft($this->zalo, 'ZL-001', [new DispatchLineDraft($this->steam, 1)])))->toEqual([$taken])
+        ->and(fn () => completedDispatch([[$this->steam, 1]], ref: 'ZL-001'))->toThrow(InvalidDispatch::class, $taken->message)
+        ->and(fn () => $editor->edit($this->seller, $other, $edit('ZL-001')))->toThrow(InvalidDispatch::class, $taken->message)
+        ->and($editor->edit($this->seller, $renamed, $edit('ZL-001'))->external_ref)->toBe('ZL-001')
+        ->and(fn () => $editor->edit($this->seller, $other, $edit('ZL-009')))->toThrow(InvalidDispatch::class, 'Mã đơn ngoài "ZL-009" đã có trong Kênh bán "Zalo".')
+        ->and(completedDispatch([[$this->steam, 1]], ref: 'ZL-001', channel: $this->shopee)->external_ref)->toBe('ZL-001');
+});
+
+it('mã tự sinh bỏ qua mã từng bị chiếm, kể cả khi phiếu giữ mã đã đổi sang mã khác', function () {
+    completedStock($this->steam, "SR1\tAAAA-0001\nSR2\tAAAA-0002");
+    $typed = completedDispatch([[$this->steam, 1]], ref: 'PX-20260915-0001');
+    app(DispatchEditor::class)->edit($this->seller, $typed, new DispatchEdit('ZL-001', null, null));
+
+    expect(completedDispatch([[$this->steam, 1]])->external_ref)->toBe('PX-20260915-0002');
+});
+
 it('tìm theo Khoá chống trùng: chuẩn hoá theo từng Sản phẩm, khớp chính xác, trả lần Giao hàng và Phiếu xuất, không ghi Nhật ký xem mã', function () {
     completedStock($this->steam, "SR1\tAAAA-0001\nSR2\tAAAA-0002");
     completedStock($this->netflix, "a@shop.test\tpw");
