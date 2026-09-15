@@ -5,6 +5,7 @@ namespace App\Inventory\Catalog;
 use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
+use App\Models\BatchLine;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -129,6 +130,10 @@ class ProductCatalog
 
             if ($current->hasStock()) {
                 throw new ProductHasStock;
+            }
+
+            if (BatchLine::query()->where('product_id', $current->getKey())->exists()) {
+                throw new ProductHasStock('Sản phẩm đã có Lô nhập không xoá được, chỉ Ngừng bán.');
             }
 
             $current->delete();

@@ -15,6 +15,16 @@ services:
       postgres:
         condition: service_healthy
 
+  # Job kiểm tra Lô nhập. Worker từ chối khởi động và từ chối từng job khi khoá không khớp.
+  queue:
+    image: inventory-app:dev
+    command: php artisan queue:work --tries=1
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:17-alpine
     environment:
