@@ -28,6 +28,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $file_duplicate_count
  * @property int $stock_duplicate_count
  * @property int $total_cost
+ * @property int $reversed_count số Đơn vị hàng đã bị Huỷ nhập
  * @property-read Batch $batch
  * @property-read Product $product
  */
@@ -51,6 +52,7 @@ class BatchLine extends Model
             'file_duplicate_count' => 'integer',
             'stock_duplicate_count' => 'integer',
             'total_cost' => 'integer',
+            'reversed_count' => 'integer',
         ];
     }
 

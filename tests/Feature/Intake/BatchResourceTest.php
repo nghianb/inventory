@@ -16,8 +16,11 @@ use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
 use App\Inventory\Intake\BatchStatus;
+use App\Inventory\Stock\SlotStatus;
+use App\Inventory\Stock\StockUnitStatus;
 use App\Models\Batch;
 use App\Models\Product;
+use App\Models\Slot;
 use App\Models\StockUnit;
 use App\Models\Supplier;
 use Carbon\CarbonImmutable;
@@ -164,6 +167,36 @@ it('Nhập kho bỏ Lô nhập chưa xác nhận từ panel', function () {
 
     expect($batch->fresh()->status)->toBe(BatchStatus::Discarded)
         ->and(Storage::disk('intake')->allFiles())->toBe([]);
+});
+
+it('Quản trị Huỷ nhập từ panel sau khi xem số lượng sẽ huỷ và giữ lại; Nhập kho không thấy nút', function () {
+    $intake = app(BatchIntake::class);
+    $batch = $intake->confirm($this->admin, $intake->submit($this->admin, new BatchDraft($this->supplier, CarbonImmutable::parse('2026-09-15'), [new BatchLineDraft($this->product, 1, "AAAA-BBBB\nCCCC-DDDD")])));
+    // Chưa có Giữ hàng trong module: đặt trạng thái trực tiếp.
+    Slot::whereKey(Slot::orderBy('id')->firstOrFail()->id)->update(['status' => SlotStatus::Reserved]);
+
+    $this->actingAs(staffMember(Role::NhapKho));
+
+    Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])->assertActionHidden('reverse');
+
+    $this->actingAs($this->admin);
+
+    Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
+        ->mountAction('reverse')
+        ->assertMountedActionModalSee('Sẽ Huỷ nhập 1 Đơn vị hàng (1 Slot). Giữ lại 1 Đơn vị hàng')
+        ->setActionData(['target' => $batch->lines[0]->id, 'reason' => 'Nhà cung cấp gửi nhầm'])
+        ->assertMountedActionModalSee('Sẽ Huỷ nhập 1 Đơn vị hàng (1 Slot). Giữ lại 1 Đơn vị hàng')
+        ->callMountedAction()
+        ->assertHasNoActionErrors()
+        ->assertNotified('Đã Huỷ nhập 1 Đơn vị hàng; giữ lại 1 Đơn vị hàng.')
+        ->assertSee('Đã Huỷ nhập');
+
+    expect(StockUnit::where('status', StockUnitStatus::Reversed)->count())->toBe(1)
+        ->and($batch->lines[0]->fresh()->reversed_count)->toBe(1);
+
+    Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
+        ->callAction('reverse', data: ['target' => 'batch'])
+        ->assertNotified('Không còn Đơn vị hàng nào Huỷ nhập được: mọi Đơn vị hàng đã bị Huỷ nhập hoặc có Slot không còn Còn hàng.');
 });
 
 it('panel báo lỗi nghiệp vụ và không tạo Lô nhập khi khoá mã hoá không khớp', function () {

@@ -191,6 +191,7 @@ class BatchIntake
                 sample: $line->preview['sample'] ?? [],
                 ignoredColumns: $line->preview['ignored_columns'] ?? [],
                 totalCost: $line->total_cost,
+                reversedCount: $line->reversed_count,
             ))->values()->all(),
             invoiceTotal: $batch->invoice_total,
             supplementsBatchId: $batch->supplements_batch_id,

@@ -35,6 +35,14 @@ class BatchPolicy
         return $this->roles->allows($user, Role::NhapKho);
     }
 
+    /**
+     * Huỷ nhập: chỉ Quản trị.
+     */
+    public function reverse(User $user, Batch $batch): bool
+    {
+        return $this->roles->allows($user);
+    }
+
     public function update(User $user, Batch $batch): bool
     {
         return false;
