@@ -32,5 +32,9 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="INVENTORY_CONTENT_KEY" value="2:base64:BCVd/gqwBoC1GS5+NwvO8g6FCqUkcbvfamTBkhqbH1M="/>
+        <env name="INVENTORY_CONTENT_PREVIOUS_KEYS" value="1:base64:T5GFObgdym7AKwyt0v4qsJVASSLQFeWrTM9NT+Vr9Zw="/>
+        <env name="INVENTORY_HMAC_KEY" value="1:base64:aG1hYy10ZXN0LWtleS0wMTIzNDU2Nzg5YWJjZGVmISE="/>
+        <env name="INVENTORY_BACKUP_KEY" value="1:base64:mOp+l2RXvX5svyd0IhdZdJnachrGfY3KSqXsSXyR3zU="/>
     </php>
 </phpunit>
