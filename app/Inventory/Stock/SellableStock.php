@@ -2,6 +2,7 @@
 
 namespace App\Inventory\Stock;
 
+use App\Inventory\Warranty\DefectReportStatus;
 use App\Models\Product;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
@@ -46,8 +47,9 @@ class SellableStock
 
     /**
      * Slot thuộc Tồn bán được vào ngày nghiệp vụ `$today`: Slot Còn hàng của Đơn vị hàng Hoạt
-     * động thuộc Sản phẩm chưa Ngừng bán, chưa quá Hạn sử dụng và còn ít nhất Hạn còn lại tối
-     * thiểu ngày. Truy vấn nối `slots`, `stock_units`, `products`.
+     * động, không bị tạm ngừng vì Báo lỗi Chờ xác minh, thuộc Sản phẩm chưa Ngừng bán, chưa quá Hạn
+     * sử dụng và còn ít nhất Hạn còn lại tối thiểu ngày. Truy vấn nối `slots`, `stock_units`,
+     * `products`.
      */
     public static function slots(CarbonImmutable $today): Builder
     {
@@ -65,6 +67,11 @@ class SellableStock
             ->join('products', 'products.id', '=', 'stock_units.product_id')
             ->where('slots.status', SlotStatus::InStock->value)
             ->where('stock_units.status', StockUnitStatus::Active->value)
+            ->whereNotExists(fn (Builder $reports) => $reports
+                ->selectRaw('1')
+                ->from('defect_reports')
+                ->whereColumn('defect_reports.stock_unit_id', 'stock_units.id')
+                ->where('defect_reports.status', DefectReportStatus::Pending->value))
             ->where(fn (Builder $query) => $query
                 ->whereNull('stock_units.expires_on')
                 ->orWhereRaw('stock_units.expires_on >= CAST(? AS date) + products.min_remaining_days', [$today->toDateString()]));

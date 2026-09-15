@@ -113,7 +113,7 @@ Số **Slot** do **Sản phẩm** khai báo tuỳ chọn; khi **Tồn bán đư�
 Của một **Nhà cung cấp**: số **Đơn vị hàng** Lỗi chia cho số Đơn vị hàng đã giao ít nhất một **Slot**. Tử số gồm Lỗi từ **Báo lỗi** có **Phạm vi lỗi** cả Đơn vị hàng và Lỗi do **Đánh dấu Lỗi**, không gồm hàng đã **Khôi phục**. Không gồm **Giao thay** hay Báo lỗi chỉ Slot. Tính theo lứa nhập: tỉ lệ lỗi của một khoảng thời gian xét các Đơn vị hàng có **Lô nhập** xác nhận trong khoảng đó, nên con số của một kỳ cũ còn tăng dần. Dòng bị bỏ vì lỗi định dạng hoặc trùng khi nhập không tính vào Tỉ lệ lỗi.
 
 **Báo lỗi** (Defect report):
-Ghi nhận một **Slot** đã giao (của **Tài khoản** hoặc **Mã dùng một lần**) nhưng không dùng được, do nhân viên tạo trong **Hạn bảo hành**. Có trạng thái Chờ xác minh, Xác nhận hoặc Bác bỏ. Trong lúc Chờ xác minh, các Slot còn trong kho của cùng **Đơn vị hàng** tạm ngừng bán. Khi Xác nhận, người xác minh chọn **Phạm vi lỗi**. Báo lỗi đã Xác nhận có **Kết quả xử lý**: Chờ đổi, Đã đổi hoặc Không đổi.
+Ghi nhận một **Slot** đã giao (của **Tài khoản** hoặc **Mã dùng một lần**) nhưng không dùng được, do nhân viên tạo trong **Hạn bảo hành** (ngoài hạn, hoặc Sản phẩm không có bảo hành, thì chỉ **Quản trị** tạo kèm lý do). Mỗi Slot có nhiều nhất một Báo lỗi Chờ xác minh hoặc Xác nhận; tạo lại được sau Bác bỏ. Có trạng thái Chờ xác minh, Xác nhận hoặc Bác bỏ. Trong lúc Chờ xác minh, các Slot còn trong kho của cùng **Đơn vị hàng** tạm ngừng bán. Khi Xác nhận, người xác minh chọn **Phạm vi lỗi**. Báo lỗi đã Xác nhận có **Kết quả xử lý**: Chờ đổi, Đã đổi hoặc Không đổi.
 _Avoid_: bảo hành (khi nói về một lần khách báo)
 
 **Phạm vi lỗi** (Defect scope):

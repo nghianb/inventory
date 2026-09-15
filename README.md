@@ -55,6 +55,15 @@ Khoá nội dung, khoá HMAC và khoá backup nằm trong `.env`, tách khỏi `
 
 - Chỉ Quản trị, ở chi tiết Đơn vị hàng (cả đơn vị) và bảng Slot (`StockVoid`), lý do Giao nhầm, Lộ nội dung hoặc Ngừng kinh doanh lô kèm ghi chú. Slot Còn hàng hoặc Đã giao → Đã huỷ; Đơn vị hàng Hoạt động → Đã huỷ cùng các Slot Còn hàng, Slot Đã giao giữ nguyên. Lý do và thời điểm lưu ở `void_reason`, `voided_at` (để tính Tổn thất theo lý do); ai và ghi chú nằm trong Sổ biến động kho. Không giải phóng Khoá chống trùng.
 
+## Báo lỗi
+
+- Tạo (Quản trị, Bán hàng) ở bảng Lần giao của Phiếu xuất: từng dòng hoặc chọn nhiều dòng, mỗi Slot một Báo lỗi Chờ xác minh (`DefectReporting::report`), mô tả bắt buộc, ảnh tuỳ chọn: form không lưu file, `DefectReporting` chỉ lưu vào disk `local` (thư mục `defect-reports`, private) sau khi kiểm tra xong và xoá lại nếu transaction lỗi; service `scheduler` chạy `inventory:defect-reports:purge` mỗi giờ để xoá ảnh cũ hơn một giờ không còn Báo lỗi nào trỏ tới. Cả phần tạo đủ hoặc thất bại. Bán hàng chỉ tạo trong Hạn bảo hành (tính cả ngày hết hạn) của lần giao có thời hạn bảo hành khác 0; Quản trị vượt được kèm lý do (`warranty_override_reason`, chỉ lưu cho lần giao ngoài bảo hành).
+- Mỗi Slot tối đa một Báo lỗi Chờ xác minh hoặc Xác nhận (partial unique index `defect_reports_one_open_per_slot`); tạo lại được sau Bác bỏ, form hiện các lần Bác bỏ trước.
+- Trong lúc Chờ xác minh, Slot Còn hàng của cùng Đơn vị hàng không thuộc Tồn bán được (`SellableStock`), nên không được chọn khi xuất; tạo Báo lỗi khoá Đơn vị hàng như Huỷ hàng để phiếu đang chọn Slot của nó giao xong trước. Bác bỏ thì mở bán lại. Slot đang có Báo lỗi Chờ xác minh không Huỷ hàng hay Giao thay được (`StockVoid::pendingDefectReportId`); phải xác minh trước.
+- Trang Báo lỗi (menu Báo lỗi): Xem mã (`ContentReveal::revealDefectReport`, chỉ khi Chờ xác minh, ghi Nhật ký xem mã ngữ cảnh Báo lỗi), Xác nhận hoặc Bác bỏ với ghi chú bắt buộc; người tạo tự xác minh được. Xác nhận chọn Phạm vi lỗi: cả Đơn vị hàng (mặc định; Đơn vị hàng Hoạt động → Lỗi, ghi Sổ biến động kho; Đơn vị hàng Đã huỷ chỉ Xác nhận được chỉ Slot) hoặc chỉ Slot (Đơn vị hàng giữ nguyên).
+- Đơn vị hàng chuyển Lỗi theo Báo lỗi: liệt kê Lần giao bị ảnh hưởng và cho tạo Báo lỗi hàng loạt tự Xác nhận cả Đơn vị hàng (`confirmAffected`, `source_defect_report_id`), cùng quy tắc Hạn bảo hành; modal chỉ liệt kê lần giao còn tạo được Báo lỗi. Chi tiết Đơn vị hàng Lỗi có mục Lần giao bị ảnh hưởng kèm trạng thái Báo lỗi (chỉ Bán hàng và Quản trị thấy vì có thông tin khách). Không tự Đổi hàng.
+- Tab tồn đọng: Báo lỗi Chờ xác minh quá `INVENTORY_DEFECT_BACKLOG_HOURS` (mặc định 24) giờ kể từ lúc tạo.
+
 ## Xem mã
 
 - Nội dung đầy đủ chỉ trả qua module Kho (`ContentReveal`, `BatchIntake::rejectedLines`); mỗi lần xem ghi Nhật ký xem mã (bảng `reveal_log_entries`, chỉ-ghi-thêm, chặn cả bằng trigger) trong cùng transaction, trước khi trả nội dung.

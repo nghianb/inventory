@@ -3,6 +3,7 @@
 namespace App\Inventory\Dispatch;
 
 use App\Inventory\Stock\SlotStatus;
+use App\Inventory\Warranty\DefectReportStatus;
 use App\Models\Delivery;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,6 +14,9 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final readonly class AffectedDelivery
 {
+    /**
+     * @param  ?DefectReportStatus  $defectReportStatus  trạng thái Báo lỗi gần nhất của lần giao
+     */
     public function __construct(
         public int $deliveryId,
         public int $dispatchId,
@@ -21,17 +25,18 @@ final readonly class AffectedDelivery
         public string $channelName,
         public int $slotId,
         public CarbonImmutable $deliveredAt,
+        public ?DefectReportStatus $defectReportStatus = null,
     ) {}
 
     /**
-     * Lần giao còn Đã giao của Đơn vị hàng, trừ một lần giao (lần đang Giao thay).
+     * Lần giao còn Đã giao của Đơn vị hàng, trừ một lần giao (lần đang Giao thay hoặc Báo lỗi gốc).
      *
      * @return list<self>
      */
     public static function forUnit(int $stockUnitId, ?int $exceptDeliveryId = null): array
     {
         return Delivery::query()
-            ->with('dispatchLine.dispatch.salesChannel')
+            ->with(['dispatchLine.dispatch.salesChannel', 'latestDefectReport'])
             ->where('stock_unit_id', $stockUnitId)
             ->when($exceptDeliveryId !== null, fn (Builder $query) => $query->whereKeyNot($exceptDeliveryId))
             ->whereHas('slot', fn (Builder $slots) => $slots->where('status', SlotStatus::Delivered))
@@ -45,8 +50,24 @@ final readonly class AffectedDelivery
                 channelName: $delivery->dispatchLine->dispatch->salesChannel->name,
                 slotId: $delivery->slot_id,
                 deliveredAt: $delivery->delivered_at,
+                defectReportStatus: $delivery->latestDefectReport?->status,
             ))
             ->values()
             ->all();
+    }
+
+    /**
+     * Dạng chữ để liên hệ khách: "Phiếu xuất SP-001 · Shopee · Anh Minh · Slot #3 · giao 15/09/2026 10:00".
+     */
+    public function label(): string
+    {
+        return sprintf(
+            'Phiếu xuất %s · %s · %s · Slot #%d · giao %s',
+            $this->externalRef,
+            $this->channelName,
+            $this->customer ?? 'Không có khách',
+            $this->slotId,
+            $this->deliveredAt->format('d/m/Y H:i'),
+        );
     }
 }

@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 // Lô nhập chưa xác nhận quá 24 giờ: quá hạn xác nhận, xoá nội dung tạm và file upload tạm.
 Schedule::command('inventory:intake:purge')->hourly();
+
+// Ảnh Báo lỗi không còn Báo lỗi nào trỏ tới (tiến trình dừng giữa lúc lưu ảnh và commit).
+Schedule::command('inventory:defect-reports:purge')->hourly();

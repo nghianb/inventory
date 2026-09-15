@@ -5,6 +5,7 @@ namespace App\Models;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * Một lần Giao hàng: trao đúng một Slot theo một Dòng xuất.
@@ -81,6 +82,16 @@ class Delivery extends Model
     public function stockUnit(): BelongsTo
     {
         return $this->belongsTo(StockUnit::class);
+    }
+
+    /**
+     * Báo lỗi gần nhất của lần giao.
+     *
+     * @return HasOne<DefectReport, $this>
+     */
+    public function latestDefectReport(): HasOne
+    {
+        return $this->hasOne(DefectReport::class)->latestOfMany();
     }
 
     /**

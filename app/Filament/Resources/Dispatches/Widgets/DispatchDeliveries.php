@@ -2,18 +2,27 @@
 
 namespace App\Filament\Resources\Dispatches\Widgets;
 
+use App\Filament\Resources\DefectReports\DefectReportResource;
 use App\Filament\Support\InventoryAction;
+use App\Inventory\Access\Role;
+use App\Inventory\Access\RoleGate;
 use App\Inventory\Dispatch\AffectedDelivery;
 use App\Inventory\Dispatch\CorrectionDraft;
 use App\Inventory\Dispatch\CorrectionPreview;
 use App\Inventory\Dispatch\CorrectiveDelivery;
 use App\Inventory\Reveal\ContentReveal;
 use App\Inventory\Stock\SlotStatus;
+use App\Inventory\Warranty\DefectReportDraft;
+use App\Inventory\Warranty\DefectReporting;
+use App\Inventory\Warranty\DefectReportStatus;
+use App\Models\DefectReport;
 use App\Models\Delivery;
 use App\Models\Dispatch;
 use App\Models\DispatchLine;
 use App\Models\Product;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -27,14 +36,18 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
  * Bảng Lần giao trên trang xem Phiếu xuất, nội dung luôn dạng che. Xem mã gọi ContentReveal
  * (Bán hàng trong Hạn bảo hành, quá hạn chỉ Quản trị), mỗi lần ghi Nhật ký xem mã. Giao thay qua
- * modal gọi CorrectiveDelivery, rồi hiện mã lần giao mới như Xem mã. Nội dung chỉ nằm trong tham
+ * modal gọi CorrectiveDelivery, rồi hiện mã lần giao mới như Xem mã. Báo lỗi một hoặc nhiều lần
+ * giao (chọn nhiều dòng) gọi DefectReporting. Nội dung chỉ nằm trong tham
  * số của modal vừa mở: không lưu ở server, nhưng đi trong snapshot Livewire (không mã hoá) tới
  * trình duyệt cho tới khi modal đóng.
  */
@@ -56,7 +69,7 @@ class DispatchDeliveries extends TableWidget
             ->heading('Lần giao')
             ->query(fn (): Builder => Delivery::query()
                 ->whereIn('dispatch_line_id', DispatchLine::query()->where('dispatch_id', $this->dispatchRecord()->id)->select('id'))
-                ->with(['dispatchLine.dispatch', 'dispatchLine.product', 'slot', 'corrects', 'stockUnit.product.contentFields']))
+                ->with(['dispatchLine.dispatch', 'dispatchLine.product', 'slot', 'corrects', 'latestDefectReport', 'stockUnit.product.contentFields']))
             ->defaultSort('id')
             ->paginated(false)
             ->columns([
@@ -90,8 +103,38 @@ class DispatchDeliveries extends TableWidget
                     ->label('Giao thay cho')
                     ->state(fn (Delivery $record): ?string => $record->corrects?->unitLabel())
                     ->placeholder('—'),
+                TextColumn::make('latestDefectReport.status')
+                    ->label('Báo lỗi')
+                    ->badge()
+                    ->formatStateUsing(fn (DefectReportStatus $state): string => $state->label())
+                    ->color(fn (DefectReportStatus $state): string => $state->color())
+                    ->url(fn (Delivery $record): ?string => $record->latestDefectReport === null ? null : DefectReportResource::getUrl('view', ['record' => $record->latestDefectReport]))
+                    ->placeholder('—'),
+            ])
+            ->toolbarActions([
+                BulkAction::make('report')
+                    ->label('Báo lỗi')
+                    ->icon(Heroicon::OutlinedExclamationTriangle)
+                    ->color('danger')
+                    ->modalHeading('Báo lỗi các Slot đã chọn')
+                    ->modalDescription('Mỗi Slot một Báo lỗi Chờ xác minh; trong lúc chờ, Slot còn trong kho của cùng Đơn vị hàng tạm ngừng bán.')
+                    ->modalSubmitActionLabel('Tạo Báo lỗi')
+                    ->schema(fn (Collection $records): array => self::reportSchema(self::selectedDeliveries($records)))
+                    ->visible(fn (RoleGate $roles): bool => $roles->allows(InventoryAction::actor(), Role::BanHang))
+                    ->deselectRecordsAfterCompletion()
+                    ->action(fn (BulkAction $action, Collection $records, array $data, DefectReporting $reports) => self::report($action, $reports, self::selectedDeliveries($records), $data)),
             ])
             ->recordActions([
+                Action::make('report')
+                    ->label('Báo lỗi')
+                    ->icon(Heroicon::OutlinedExclamationTriangle)
+                    ->color('danger')
+                    ->modalHeading(fn (Delivery $record): string => "Báo lỗi Slot #{$record->slot_id}")
+                    ->modalDescription('Trong lúc Chờ xác minh, Slot còn trong kho của cùng Đơn vị hàng tạm ngừng bán.')
+                    ->modalSubmitActionLabel('Tạo Báo lỗi')
+                    ->schema(fn (Delivery $record): array => self::reportSchema([$record]))
+                    ->visible(fn (Delivery $record, DefectReporting $reports): bool => $reports->canReport(InventoryAction::actor(), $record))
+                    ->action(fn (Action $action, Delivery $record, array $data, DefectReporting $reports) => self::report($action, $reports, [$record], $data)),
                 Action::make('reveal')
                     ->label('Xem mã')
                     ->icon(Heroicon::OutlinedEye)
@@ -214,6 +257,84 @@ class DispatchDeliveries extends TableWidget
     }
 
     /**
+     * Form Báo lỗi: các lần Bác bỏ trước của Slot, mô tả bắt buộc, ảnh tuỳ chọn và lý do khi Quản trị
+     * Báo lỗi ngoài Hạn bảo hành.
+     *
+     * @param  list<Delivery>  $deliveries
+     * @return list<mixed>
+     */
+    private static function reportSchema(array $deliveries): array
+    {
+        $actor = InventoryAction::actor();
+        $rejected = app(DefectReporting::class)->rejectedReports($actor, $deliveries);
+
+        return [
+            Text::make(new HtmlString('Các lần Bác bỏ trước:<br>'.$rejected->map(fn (DefectReport $report): string => e(sprintf(
+                'Slot #%d · %s · %s → %s',
+                $report->slot_id,
+                $report->created_at->format('d/m/Y H:i'),
+                $report->description,
+                $report->verification_note,
+            )))->implode('<br>')))
+                ->visible($rejected->isNotEmpty()),
+            Textarea::make('description')
+                ->label('Mô tả lỗi')
+                ->rows(3)
+                ->required(),
+            // Không lưu ở đây: DefectReporting chỉ lưu ảnh khi Báo lỗi tạo thành công.
+            FileUpload::make('screenshot')
+                ->label('Ảnh (tuỳ chọn)')
+                ->image()
+                ->storeFiles(false),
+            Textarea::make('override_reason')
+                ->label('Lý do vượt Hạn bảo hành')
+                ->helperText('Có lần giao ngoài Hạn bảo hành hoặc Sản phẩm không có bảo hành; chỉ Quản trị Báo lỗi được, bắt buộc lý do.')
+                ->rows(2)
+                // Không truyền Vai trò nào: chỉ Quản trị vượt Hạn bảo hành.
+                ->visible(app(RoleGate::class)->allows($actor) && collect($deliveries)->contains(fn (Delivery $delivery): bool => DefectReporting::isOutOfWarranty($delivery))),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, Model>  $records
+     * @return list<Delivery>
+     */
+    private static function selectedDeliveries(Collection $records): array
+    {
+        return $records->map(function (Model $record): Delivery {
+            assert($record instanceof Delivery);
+
+            return $record;
+        })->values()->all();
+    }
+
+    /**
+     * @param  list<Delivery>  $deliveries
+     * @param  array<string, mixed>  $data
+     */
+    private static function report(Action $action, DefectReporting $reports, array $deliveries, array $data): void
+    {
+        $state = $data['screenshot'] ?? null;
+        $screenshot = is_array($state) ? reset($state) : $state;
+        $screenshot = $screenshot instanceof UploadedFile ? $screenshot : null;
+
+        try {
+            $created = InventoryAction::attempt($action, fn () => $reports->report(InventoryAction::actor(), $deliveries, new DefectReportDraft(
+                description: (string) ($data['description'] ?? ''),
+                screenshot: $screenshot,
+                overrideReason: $data['override_reason'] ?? null,
+            )));
+        } finally {
+            // File tạm của Livewire: DefectReporting đã chép sang disk riêng nếu Báo lỗi tạo được.
+            if ($screenshot instanceof TemporaryUploadedFile) {
+                $screenshot->delete();
+            }
+        }
+
+        Notification::make()->success()->title(sprintf('Đã tạo %d Báo lỗi Chờ xác minh.', count($created)))->send();
+    }
+
+    /**
      * @param  list<AffectedDelivery>  $affected
      */
     private static function affectedList(array $affected): HtmlString
@@ -223,14 +344,7 @@ class DispatchDeliveries extends TableWidget
         }
 
         return new HtmlString('Lần giao bị ảnh hưởng: hãy liên hệ khách; hệ thống không tự Báo lỗi hay Đổi hàng.<br>'.implode('<br>', array_map(
-            fn (AffectedDelivery $delivery): string => e(sprintf(
-                'Phiếu xuất %s · %s · %s · Slot #%d · giao %s',
-                $delivery->externalRef,
-                $delivery->channelName,
-                $delivery->customer ?? 'Không có khách',
-                $delivery->slotId,
-                $delivery->deliveredAt->format('d/m/Y H:i'),
-            )),
+            fn (AffectedDelivery $delivery): string => e($delivery->label()),
             $affected,
         )));
     }

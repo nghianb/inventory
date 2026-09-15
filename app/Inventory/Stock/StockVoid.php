@@ -4,6 +4,8 @@ namespace App\Inventory\Stock;
 
 use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\RoleGate;
+use App\Inventory\Warranty\DefectReportStatus;
+use App\Models\DefectReport;
 use App\Models\Slot;
 use App\Models\StockUnit;
 use App\Models\User;
@@ -55,7 +57,7 @@ class StockVoid
      */
     public function canVoidSlot(User $actor, Slot $slot): bool
     {
-        return $this->roles->allows($actor) && self::isVoidable($slot);
+        return $this->roles->allows($actor) && self::isVoidable($slot) && self::pendingDefectReportId($slot->id) === null;
     }
 
     /**
@@ -78,6 +80,11 @@ class StockVoid
 
         if (! self::isVoidable($slot)) {
             throw new InvalidVoid('Chỉ Huỷ hàng được Slot Còn hàng hoặc Đã giao.');
+        }
+
+        // Báo lỗi phải được xác minh trước: huỷ Slot khi còn chờ thì Báo lỗi treo, Đơn vị hàng ngừng bán mãi.
+        if (($reportId = self::pendingDefectReportId($slot->id)) !== null) {
+            throw new InvalidVoid("Slot đang có Báo lỗi Chờ xác minh #{$reportId}; hãy xác minh trước.");
         }
 
         $from = $slot->status;
@@ -123,6 +130,16 @@ class StockVoid
         $note = trim((string) $note);
 
         return "{$subject}: {$reason->label()}".($note === '' ? '' : ": {$note}");
+    }
+
+    /**
+     * Báo lỗi Chờ xác minh của Slot, nếu có. Huỷ hàng (kể cả trong Giao thay) chờ xác minh xong.
+     */
+    public static function pendingDefectReportId(int $slotId): ?int
+    {
+        $id = DefectReport::query()->where('slot_id', $slotId)->where('status', DefectReportStatus::Pending)->value('id');
+
+        return $id === null ? null : (int) $id;
     }
 
     private static function isVoidable(Slot $slot): bool
