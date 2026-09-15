@@ -9,6 +9,9 @@ use App\Inventory\Catalog\ProductType;
 use App\Inventory\Encryption\ContentCrypto;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
+use App\Inventory\Reveal\RevealActor;
+use App\Inventory\Reveal\RevealContext;
+use App\Inventory\Reveal\RevealLog;
 use App\Inventory\Stock\MaskedContent;
 use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Stock\StockLedger;
@@ -48,6 +51,7 @@ class BatchIntake
         private LineClassifier $classifier,
         private PendingContentStore $pending,
         private StockLedger $ledger,
+        private RevealLog $revealLog,
     ) {}
 
     /**
@@ -215,6 +219,13 @@ class BatchIntake
             $this->recordPreview($current);
 
             throw self::stockDuplicatesNeedAcknowledgement((int) $current->lines()->sum('stock_duplicate_count'));
+        } catch (Throwable $exception) {
+            // Dòng bị bỏ ghi ra disk trong transaction: xác nhận thất bại thì không để lại file.
+            foreach (BatchLine::query()->where('batch_id', $batch->getKey())->get() as $line) {
+                $this->pending->forgetRejected($line);
+            }
+
+            throw $exception;
         }
     }
 
@@ -269,6 +280,13 @@ class BatchIntake
                 'confirmed_at' => now(),
             ])->save();
 
+            // Màn kết quả ngay sau xác nhận vẫn tải được dòng bị bỏ khi nội dung tạm đã xoá.
+            foreach ($current->lines as $line) {
+                if (self::hasRejected($line)) {
+                    $this->pending->putRejected($line, $this->rejectedCsv($line));
+                }
+            }
+
             DB::afterCommit(fn () => $this->forgetPending($current));
 
             return $current;
@@ -321,9 +339,146 @@ class BatchIntake
             ->all();
 
         $this->pending->purgeExcept($pendingLineIds, CarbonImmutable::now()->subHour());
+        $this->pending->purgeRejectedBefore(CarbonImmutable::now()->subMinutes(self::rejectedDownloadMinutes()));
         self::purgeUploadsWrittenBefore(self::staleCutoff());
 
         return $expired;
+    }
+
+    /**
+     * Các Dòng nhập có dòng bị bỏ mà nhân viên tải được lúc này; rỗng khi không phải người tạo,
+     * thiếu Vai trò hoặc đã qua màn xem trước và thời hạn ngay sau xác nhận.
+     *
+     * @return Collection<int, BatchLine>
+     */
+    public function downloadableRejectedLines(User $actor, Batch $batch): Collection
+    {
+        if (! $this->roles->allows($actor, Role::NhapKho)
+            || (int) $batch->created_by !== (int) $actor->getKey()
+            || ! self::isRejectedDownloadOpen($batch)) {
+            return new Collection;
+        }
+
+        return $batch->lines->filter(self::hasRejected(...))->values();
+    }
+
+    private static function hasRejected(BatchLine $line): bool
+    {
+        return ($line->preview['rejected'] ?? []) !== [];
+    }
+
+    /**
+     * CSV các dòng bị bỏ của một Dòng nhập, nguyên văn, để gửi lại Nhà cung cấp. Chỉ người tạo
+     * Lô nhập tải được, ở màn xem trước hoặc ngay sau khi xác nhận; mỗi lần tải ghi Nhật ký
+     * xem mã với ngữ cảnh Lô nhập trong cùng transaction, trước khi trả nội dung.
+     *
+     * @throws MissingRole
+     * @throws InvalidBatch
+     */
+    public function rejectedLines(User $actor, BatchLine $line): RejectedLinesExport
+    {
+        $this->roles->authorize($actor, Role::NhapKho);
+
+        return DB::transaction(function () use ($actor, $line): RejectedLinesExport {
+            $line = BatchLine::query()->with(['batch', 'product'])->findOrFail($line->getKey());
+            $batch = $line->batch;
+
+            if ((int) $batch->created_by !== (int) $actor->getKey()) {
+                throw new InvalidBatch('Chỉ người tạo Lô nhập tải được dòng bị bỏ.');
+            }
+
+            if (! self::isRejectedDownloadOpen($batch)) {
+                throw self::rejectedDownloadClosed();
+            }
+
+            if (! self::hasRejected($line)) {
+                throw new InvalidBatch('Dòng nhập không có dòng bị bỏ.');
+            }
+
+            $this->revealLog->record(
+                RevealActor::staff($actor),
+                RevealContext::batch($batch),
+                "Tải dòng bị bỏ của Dòng nhập #{$line->id} \"{$line->product->name}\"",
+            );
+
+            $csv = $batch->status === BatchStatus::Validated
+                ? $this->rejectedCsv($line)
+                : ($this->pending->getRejected($line) ?? throw self::rejectedDownloadClosed());
+
+            return new RejectedLinesExport(
+                sprintf('lo-nhap-%d-%s-dong-bi-bo.csv', $batch->id, preg_replace('/[^A-Za-z0-9_-]+/', '-', $line->product->code)),
+                $csv,
+            );
+        });
+    }
+
+    /**
+     * CSV (UTF-8 có BOM để Excel đọc đúng) các dòng bị bỏ theo kết quả kiểm tra đã ghi: số
+     * dòng, loại, lý do, rồi nguyên văn dòng dán hoặc các ô gốc dưới dòng tiêu đề gốc của file.
+     *
+     * @throws InvalidBatch nội dung tạm đã bị xoá
+     */
+    private function rejectedCsv(BatchLine $line): string
+    {
+        $rejected = $line->preview['rejected'] ?? [];
+        [$header, $rows] = $this->reader->rawRows($this->pending->get($line), $line->source, array_column($rejected, 'line'));
+
+        $handle = fopen('php://temp', 'r+');
+        assert($handle !== false);
+
+        try {
+            fwrite($handle, "\xEF\xBB\xBF");
+            fputcsv($handle, ['Dòng', 'Loại', 'Lý do', ...array_map(self::utf8(...), $header ?? ['Nội dung'])], ',', '"', '');
+
+            foreach ($rejected as $row) {
+                fputcsv($handle, [
+                    (string) $row['line'],
+                    LineClass::from($row['class'])->label(),
+                    $row['reason'],
+                    ...array_map(self::utf8(...), $rows[$row['line']] ?? []),
+                ], ',', '"', '');
+            }
+
+            rewind($handle);
+
+            return (string) stream_get_contents($handle);
+        } finally {
+            fclose($handle);
+        }
+    }
+
+    /**
+     * Dòng lỗi vì không phải UTF-8 vẫn được trả lại, thay byte hỏng để file CSV hợp lệ.
+     */
+    private static function utf8(string $value): string
+    {
+        return mb_scrub($value, 'UTF-8');
+    }
+
+    /**
+     * Lô nhập đang ở màn xem trước, hoặc vừa xác nhận trong thời hạn tải dòng bị bỏ.
+     */
+    private static function isRejectedDownloadOpen(Batch $batch): bool
+    {
+        return match ($batch->status) {
+            BatchStatus::Validated => $batch->created_at !== null && $batch->created_at->gte(self::staleCutoff()),
+            BatchStatus::Confirmed => $batch->confirmed_at !== null
+                && $batch->confirmed_at->gte(CarbonImmutable::now()->subMinutes(self::rejectedDownloadMinutes())),
+            default => false,
+        };
+    }
+
+    private static function rejectedDownloadClosed(): InvalidBatch
+    {
+        return new InvalidBatch(sprintf(
+            'Dòng bị bỏ chỉ tải được ở màn xem trước hoặc ngay sau khi xác nhận (trong %d phút).',
+            self::rejectedDownloadMinutes(),
+        ));
+    }
+
+    private static function rejectedDownloadMinutes(): int
+    {
+        return (int) config('inventory.intake.rejected_download_minutes');
     }
 
     /**

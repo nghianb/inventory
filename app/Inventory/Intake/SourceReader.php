@@ -43,6 +43,49 @@ class SourceReader
     }
 
     /**
+     * Dòng gốc chưa tách theo Trường nội dung, để trả lại nguyên văn (tải dòng bị bỏ): văn bản
+     * dán là cả dòng trong một ô, file là các ô của dòng. Số dòng khớp với {@see read()}.
+     *
+     * @param  list<int>  $lineNumbers  chỉ lấy các dòng này
+     * @return array{?list<string>, array<int, list<string>>} dòng tiêu đề của file (null với văn bản dán), số dòng → ô
+     *
+     * @throws InvalidBatch file không đọc được
+     */
+    public function rawRows(#[SensitiveParameter] string $content, IntakeSource $source, array $lineNumbers): array
+    {
+        $wanted = array_fill_keys($lineNumbers, true);
+        $rows = [];
+
+        if ($source === IntakeSource::Paste) {
+            foreach (preg_split('/\r\n|\n|\r/', $content) ?: [] as $index => $raw) {
+                if (isset($wanted[$index + 1])) {
+                    $rows[$index + 1] = [$raw];
+                }
+            }
+
+            return [null, $rows];
+        }
+
+        $header = null;
+
+        foreach ($source === IntakeSource::Csv ? self::csvRows($content) : self::xlsxRows($content) as $number => $cells) {
+            if ($header === null) {
+                if (implode('', array_map('trim', $cells)) !== '') {
+                    $header = array_values($cells);
+                }
+
+                continue;
+            }
+
+            if (isset($wanted[$number])) {
+                $rows[$number] = array_values($cells);
+            }
+        }
+
+        return [$header, $rows];
+    }
+
+    /**
      * @param  list<ContentField>  $fields
      * @return list<ParsedRow>
      */

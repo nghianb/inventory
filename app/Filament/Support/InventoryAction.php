@@ -8,6 +8,7 @@ use App\Inventory\Catalog\InvalidSupplier;
 use App\Inventory\Catalog\ProductHasStock;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Intake\InvalidBatch;
+use App\Inventory\Reveal\InvalidReveal;
 use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
@@ -64,6 +65,7 @@ final class InventoryAction
             || $exception instanceof MissingRole
             || $exception instanceof ProductHasStock
             || $exception instanceof InvalidBatch
+            || $exception instanceof InvalidReveal
             || $exception instanceof KeyFingerprintMismatch;
     }
 }
