@@ -48,6 +48,9 @@ class SecurityLogEntryResource extends Resource
                 TextColumn::make('email')
                     ->label('Email')
                     ->searchable(),
+                TextColumn::make('actor.name')
+                    ->label('Người thực hiện')
+                    ->placeholder('—'),
                 TextColumn::make('ip_address')
                     ->label('IP'),
             ])

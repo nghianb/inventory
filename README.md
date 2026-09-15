@@ -17,6 +17,16 @@ docker compose up -d
 
 Panel ở <http://localhost:8080/admin>. Mọi nhân viên phải bật 2FA (TOTP) ngay sau lần đăng nhập đầu tiên.
 
+## Khôi phục quyền Quản trị
+
+Khi Quản trị tự khoá mình ngoài hệ thống (bị Khoá nhân viên, mất thiết bị 2FA), người vận hành server chạy:
+
+```bash
+docker compose run --rm app php artisan staff:recover-quan-tri chu@shop.test --unlock --reset-2fa
+```
+
+Chỉ áp dụng cho nhân viên mang Vai trò Quản trị; mỗi thao tác ghi Nhật ký bảo mật.
+
 ## Kiểm tra
 
 ```bash

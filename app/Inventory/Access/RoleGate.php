@@ -6,13 +6,14 @@ use App\Models\User;
 
 /**
  * Chỗ duy nhất module Kho kiểm tra quyền theo Vai trò. Quản trị làm được mọi việc;
- * không có quyền lẻ theo từng nhân viên. Policy của Laravel gọi vào đây.
+ * không có quyền lẻ theo từng nhân viên. Nhân viên bị khoá không làm được gì.
+ * Policy của Laravel gọi vào đây.
  */
 class RoleGate
 {
     public function allows(User $user, Role ...$roles): bool
     {
-        return $user->hasAnyRole([Role::QuanTri, ...$roles]);
+        return ! $user->isDeactivated() && $user->hasAnyRole([Role::QuanTri, ...$roles]);
     }
 
     /**
