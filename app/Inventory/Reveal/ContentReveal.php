@@ -15,7 +15,9 @@ use App\Inventory\Encryption\EncryptedContent;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Stock\SlotStatus;
+use App\Inventory\Warranty\DefectReportStatus;
 use App\Models\ContentField;
+use App\Models\DefectReport;
 use App\Models\Delivery;
 use App\Models\Dispatch;
 use App\Models\Slot;
@@ -53,6 +55,7 @@ class ContentReveal
             RevealContextType::InStock => $this->inStockReason($actor, $reason),
             RevealContextType::Batch => throw new InvalidReveal('Ngữ cảnh Lô nhập chỉ dùng để tải dòng bị bỏ khi nhập.'),
             RevealContextType::Delivery => throw new InvalidReveal('Nội dung lần Giao hàng chỉ xem qua màn kết quả xuất kho hoặc Xem mã của lần giao.'),
+            RevealContextType::DefectReport => throw new InvalidReveal('Nội dung Báo lỗi chỉ xem qua Xem mã của Báo lỗi.'),
         };
 
         $this->fingerprints->verify();
@@ -240,6 +243,45 @@ class ContentReveal
     }
 
     /**
+     * Xem mã để xác minh một Báo lỗi Chờ xác minh, đã ghép Mẫu giao hàng. Bán hàng và Quản trị; mỗi
+     * lần ghi một dòng Nhật ký xem mã ngữ cảnh Báo lỗi.
+     *
+     * @throws MissingRole
+     * @throws InvalidReveal
+     * @throws KeyFingerprintMismatch
+     */
+    public function revealDefectReport(User $actor, DefectReport $report): DeliveredContent
+    {
+        $this->roles->authorize($actor, Role::BanHang);
+        $this->fingerprints->verify();
+
+        return DB::transaction(function () use ($actor, $report): DeliveredContent {
+            // Khoá chia sẻ: Báo lỗi không được xác minh xong giữa lúc kiểm tra và lúc trả nội dung.
+            $current = DefectReport::query()->sharedLock()->findOrFail($report->getKey());
+
+            if ($current->status !== DefectReportStatus::Pending) {
+                throw new InvalidReveal('Chỉ xem mã để xác minh Báo lỗi Chờ xác minh.');
+            }
+
+            $delivery = Delivery::query()
+                ->with(['slot', 'stockUnit.product.contentFields', 'dispatchLine.dispatch'])
+                ->findOrFail($current->delivery_id);
+
+            $this->log->record(RevealActor::staff($actor), RevealContext::defectReport($current), "Xác minh Báo lỗi #{$current->id}", $delivery->slot);
+
+            return $this->deliveredContent($delivery, $delivery->dispatchLine->dispatch);
+        });
+    }
+
+    /**
+     * Để panel ẩn nút xem, không thay cho kiểm tra trong {@see revealDefectReport()}.
+     */
+    public function canRevealDefectReport(User $actor, DefectReport $report): bool
+    {
+        return $this->roles->allows($actor, Role::BanHang) && $report->status === DefectReportStatus::Pending;
+    }
+
+    /**
      * Màn kết quả đã hiện và chưa quá thời hạn tải.
      */
     private static function isResultDownloadOpen(Dispatch $dispatch): bool
@@ -287,31 +329,41 @@ class ContentReveal
         return $deliveries
             ->map(function (Delivery $delivery) use ($dispatch, $staff, $reason): DeliveredContent {
                 $this->log->record($staff, RevealContext::delivery($delivery), $reason, $delivery->slot);
-                $unit = $delivery->stockUnit;
-                $values = $this->decryptedValues($unit);
-                $fields = self::byLabel($unit, $values);
 
-                return new DeliveredContent(
-                    deliveryId: $delivery->id,
-                    productName: $unit->product->name,
-                    stockUnitId: $delivery->stock_unit_id,
-                    slotId: $delivery->slot_id,
-                    fields: $fields,
-                    message: DeliveryTemplate::render(
-                        $unit->product->delivery_template,
-                        $values,
-                        $fields,
-                        $unit->product->name,
-                        $dispatch->external_ref,
-                        $unit->expires_on,
-                        $delivery->warrantyEndsOn(),
-                    ),
-                    expiresOn: $unit->expires_on,
-                    warrantyEndsOn: $delivery->warrantyEndsOn(),
-                );
+                return $this->deliveredContent($delivery, $dispatch);
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * Giải mã và ghép Mẫu giao hàng cho một lần giao. Người gọi đã ghi Nhật ký xem mã trong cùng
+     * transaction.
+     */
+    private function deliveredContent(Delivery $delivery, Dispatch $dispatch): DeliveredContent
+    {
+        $unit = $delivery->stockUnit;
+        $values = $this->decryptedValues($unit);
+        $fields = self::byLabel($unit, $values);
+
+        return new DeliveredContent(
+            deliveryId: $delivery->id,
+            productName: $unit->product->name,
+            stockUnitId: $delivery->stock_unit_id,
+            slotId: $delivery->slot_id,
+            fields: $fields,
+            message: DeliveryTemplate::render(
+                $unit->product->delivery_template,
+                $values,
+                $fields,
+                $unit->product->name,
+                $dispatch->external_ref,
+                $unit->expires_on,
+                $delivery->warrantyEndsOn(),
+            ),
+            expiresOn: $unit->expires_on,
+            warrantyEndsOn: $delivery->warrantyEndsOn(),
+        );
     }
 
     /**

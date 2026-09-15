@@ -17,12 +17,16 @@ enum RevealContextType: string
     /** Một lần Giao hàng: màn kết quả xuất kho, xem lại mã của lần giao. */
     case Delivery = 'delivery';
 
+    /** Xác minh một Báo lỗi Chờ xác minh. */
+    case DefectReport = 'defect-report';
+
     public function label(): string
     {
         return match ($this) {
             self::InStock => 'Quản trị xem hàng Còn hàng',
             self::Batch => 'Lô nhập',
             self::Delivery => 'Giao hàng',
+            self::DefectReport => 'Báo lỗi',
         };
     }
 }

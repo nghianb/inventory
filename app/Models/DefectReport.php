@@ -1,0 +1,118 @@
+<?php
+
+namespace App\Models;
+
+use App\Inventory\Warranty\DefectReporting;
+use App\Inventory\Warranty\DefectReportStatus;
+use App\Inventory\Warranty\DefectScope;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+/**
+ * Báo lỗi: một Slot đã giao nhưng khách báo không dùng được. Chỉ tạo và xác minh qua
+ * {@see DefectReporting}.
+ *
+ * @property int $id
+ * @property int $delivery_id
+ * @property int $slot_id
+ * @property int $stock_unit_id
+ * @property DefectReportStatus $status
+ * @property string $description
+ * @property ?string $screenshot_path
+ * @property ?string $warranty_override_reason
+ * @property ?int $source_defect_report_id Báo lỗi làm Đơn vị hàng chuyển Lỗi, khi đây là Báo lỗi hàng loạt
+ * @property int $created_by
+ * @property ?DefectScope $scope
+ * @property ?string $verification_note
+ * @property ?int $verified_by
+ * @property ?CarbonImmutable $verified_at
+ * @property CarbonImmutable $created_at
+ * @property-read Delivery $delivery
+ * @property-read Slot $slot
+ * @property-read StockUnit $stockUnit
+ * @property-read User $creator
+ * @property-read ?User $verifier
+ * @property-read ?DefectReport $source
+ */
+class DefectReport extends Model
+{
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'delivery_id' => 'integer',
+            'slot_id' => 'integer',
+            'stock_unit_id' => 'integer',
+            'status' => DefectReportStatus::class,
+            'source_defect_report_id' => 'integer',
+            'created_by' => 'integer',
+            'scope' => DefectScope::class,
+            'verified_by' => 'integer',
+            'verified_at' => 'immutable_datetime',
+            'created_at' => 'immutable_datetime',
+        ];
+    }
+
+    /**
+     * Tồn đọng: Chờ xác minh quá số giờ cấu hình (mặc định 24) kể từ lúc tạo.
+     *
+     * @param  Builder<DefectReport>  $query
+     */
+    public function scopeOverdue(Builder $query): void
+    {
+        $query->where('status', DefectReportStatus::Pending)
+            ->where('created_at', '<', now()->subHours((int) config('inventory.defect.backlog_hours')));
+    }
+
+    /**
+     * @return BelongsTo<Delivery, $this>
+     */
+    public function delivery(): BelongsTo
+    {
+        return $this->belongsTo(Delivery::class);
+    }
+
+    /**
+     * @return BelongsTo<Slot, $this>
+     */
+    public function slot(): BelongsTo
+    {
+        return $this->belongsTo(Slot::class);
+    }
+
+    /**
+     * @return BelongsTo<StockUnit, $this>
+     */
+    public function stockUnit(): BelongsTo
+    {
+        return $this->belongsTo(StockUnit::class);
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * @return BelongsTo<User, $this>
+     */
+    public function verifier(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
+    }
+
+    /**
+     * @return BelongsTo<DefectReport, $this>
+     */
+    public function source(): BelongsTo
+    {
+        return $this->belongsTo(DefectReport::class, 'source_defect_report_id');
+    }
+}

@@ -62,4 +62,17 @@ return [
         'corrective_hours' => (int) env('INVENTORY_DISPATCH_CORRECTIVE_HOURS', 24),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Báo lỗi
+    |--------------------------------------------------------------------------
+    |
+    | Báo lỗi Chờ xác minh quá `backlog_hours` giờ kể từ lúc tạo thì vào danh sách tồn đọng.
+    |
+    */
+
+    'defect' => [
+        'backlog_hours' => (int) env('INVENTORY_DEFECT_BACKLOG_HOURS', 24),
+    ],
+
 ];

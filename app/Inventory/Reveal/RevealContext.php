@@ -3,6 +3,7 @@
 namespace App\Inventory\Reveal;
 
 use App\Models\Batch;
+use App\Models\DefectReport;
 use App\Models\Delivery;
 
 /**
@@ -28,5 +29,10 @@ final readonly class RevealContext
     public static function delivery(Delivery $delivery): self
     {
         return new self(RevealContextType::Delivery, $delivery->getKey());
+    }
+
+    public static function defectReport(DefectReport $report): self
+    {
+        return new self(RevealContextType::DefectReport, $report->getKey());
     }
 }
