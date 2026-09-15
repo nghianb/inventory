@@ -6,6 +6,9 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Catalog\InvalidProductConfiguration;
 use App\Inventory\Catalog\InvalidSupplier;
 use App\Inventory\Catalog\ProductHasStock;
+use App\Inventory\Dispatch\InvalidDispatch;
+use App\Inventory\Dispatch\InvalidSalesChannel;
+use App\Inventory\Dispatch\OutOfStock;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Intake\InvalidBatch;
 use App\Inventory\Reveal\InvalidReveal;
@@ -66,6 +69,9 @@ final class InventoryAction
             || $exception instanceof ProductHasStock
             || $exception instanceof InvalidBatch
             || $exception instanceof InvalidReveal
+            || $exception instanceof InvalidSalesChannel
+            || $exception instanceof InvalidDispatch
+            || $exception instanceof OutOfStock
             || $exception instanceof KeyFingerprintMismatch;
     }
 }

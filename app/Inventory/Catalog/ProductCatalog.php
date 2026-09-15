@@ -52,6 +52,12 @@ class ProductCatalog
 
             self::validate($draft, $current);
 
+            // Kênh bán loại API tham chiếu Sản phẩm bằng Mã sản phẩm. Xuất kho khoá chia sẻ hàng
+            // Sản phẩm, nên phiếu đang tạo cũng được tính.
+            if ($draft->code !== $current->code && $current->hasDispatch()) {
+                throw new LockedProductConfiguration('Sản phẩm đã có Phiếu xuất: không đổi được Mã sản phẩm.');
+            }
+
             if ($current->hasStock()) {
                 self::ensureOnlyUnlockedChanges($current, $draft);
             }
