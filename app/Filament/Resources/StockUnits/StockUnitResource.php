@@ -11,10 +11,13 @@ use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
 use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Stock\StockUnitStatus;
+use App\Inventory\Stock\VoidReason;
 use App\Models\Slot;
 use App\Models\StockUnit;
 use BackedEnum;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
@@ -43,6 +46,24 @@ class StockUnitResource extends Resource
     protected static ?string $navigationLabel = 'Đơn vị hàng';
 
     protected static ?string $slug = 'don-vi-hang';
+
+    /**
+     * Form Huỷ hàng dùng chung cho Đơn vị hàng và Slot.
+     *
+     * @return list<mixed>
+     */
+    public static function voidSchema(): array
+    {
+        return [
+            Select::make('reason')
+                ->label('Lý do')
+                ->options(VoidReason::options())
+                ->required(),
+            Textarea::make('note')
+                ->label('Ghi chú')
+                ->rows(2),
+        ];
+    }
 
     public static function infolist(Schema $schema): Schema
     {

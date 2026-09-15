@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Inventory\Catalog\ProductType;
 use App\Inventory\Stock\MaskedContent;
 use App\Inventory\Stock\StockUnitStatus;
+use App\Inventory\Stock\VoidReason;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -29,6 +30,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property ?array<string, string> $content
  * @property ?string $secret_ciphertext
  * @property ?int $secret_key_version
+ * @property ?VoidReason $void_reason lý do Huỷ hàng, khi Đơn vị hàng Đã huỷ
+ * @property ?CarbonImmutable $voided_at
  * @property-read Product $product
  * @property-read BatchLine $batchLine
  * @property-read Collection<int, Slot> $slots
@@ -52,6 +55,8 @@ class StockUnit extends Model
             'holds_dedupe_key' => 'boolean',
             'content' => 'array',
             'secret_key_version' => 'integer',
+            'void_reason' => VoidReason::class,
+            'voided_at' => 'immutable_datetime',
         ];
     }
 

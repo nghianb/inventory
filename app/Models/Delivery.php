@@ -16,9 +16,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $warranty_days thời hạn bảo hành của Sản phẩm tại thời điểm giao
  * @property CarbonImmutable $delivered_at
  * @property ?int $delivered_by
+ * @property ?int $corrects_delivery_id lần giao bị huỷ mà lần giao này Giao thay
  * @property-read DispatchLine $dispatchLine
  * @property-read Slot $slot
  * @property-read StockUnit $stockUnit
+ * @property-read ?Delivery $corrects
  */
 class Delivery extends Model
 {
@@ -34,6 +36,7 @@ class Delivery extends Model
             'warranty_days' => 'integer',
             'delivered_at' => 'immutable_datetime',
             'delivered_by' => 'integer',
+            'corrects_delivery_id' => 'integer',
         ];
     }
 
@@ -78,5 +81,15 @@ class Delivery extends Model
     public function stockUnit(): BelongsTo
     {
         return $this->belongsTo(StockUnit::class);
+    }
+
+    /**
+     * Lần giao bị huỷ mà lần giao này Giao thay.
+     *
+     * @return BelongsTo<Delivery, $this>
+     */
+    public function corrects(): BelongsTo
+    {
+        return $this->belongsTo(Delivery::class, 'corrects_delivery_id');
     }
 }

@@ -412,3 +412,48 @@ it('Giao thêm thiếu hàng thì modal báo thiếu và không thêm gì; phi�
 
     $this->get($url)->assertForbidden();
 });
+
+it('Giao thay từ bảng Lần giao: modal tóm tắt lần giao sẽ bị huỷ và thời gian còn lại, xong thì hiện mã lần giao mới; quá 24 giờ chỉ Quản trị kèm lý do', function () {
+    $dispatch = app(ManualDispatch::class)->create($this->seller, new DispatchDraft($this->shopee, 'SP-001', [new DispatchLineDraft($this->steam, 1)], 'Anh Minh'));
+    $wrong = $dispatch->deliveries()->firstOrFail();
+    $this->actingAs($this->seller);
+    $this->travel(90)->minutes();
+
+    Livewire::test(DispatchDeliveries::class, ['record' => $dispatch])
+        ->mountAction(TestAction::make('correct')->table($wrong))
+        ->assertMountedActionModalSee(['Steam Wallet 100k', $wrong->unitLabel(), 'giao lúc 15/09/2026 10:00', 'Còn 22 giờ 30 phút', 'Nội dung đã gửi cho khách chưa?'])
+        ->assertMountedActionModalDontSee('AAAA-0001')
+        ->setActionData(['content_sent' => 1, 'void_unit' => 1])
+        ->assertMountedActionModalSee('Đơn vị hàng không còn lần giao nào khác.')
+        ->setActionData(['content_sent' => 0, 'void_unit' => 0])
+        ->callMountedAction()
+        ->assertHasNoActionErrors()
+        ->assertActionMounted('revealedDelivery')
+        ->assertMountedActionModalSee('Mã thẻ: AAAA-0002');
+
+    $new = $dispatch->deliveries()->orderByDesc('deliveries.id')->firstOrFail();
+
+    expect(DB::table('slots')->where('id', $wrong->slot_id)->value('status'))->toBe('voided')
+        ->and($new->corrects_delivery_id)->toBe($wrong->id)
+        ->and(RevealLogEntry::sole()->context_id)->toBe($new->id);
+
+    Livewire::test(DispatchDeliveries::class, ['record' => $dispatch])
+        ->assertSee(['Đã huỷ', 'Giao thay cho'])
+        ->assertActionHidden(TestAction::make('correct')->table($wrong))
+        ->assertActionVisible(TestAction::make('correct')->table($new));
+
+    $this->travel(25)->hours();
+
+    Livewire::test(DispatchDeliveries::class, ['record' => $dispatch])
+        ->assertActionHidden(TestAction::make('correct')->table($new));
+
+    $this->actingAs($this->admin);
+
+    Livewire::test(DispatchDeliveries::class, ['record' => $dispatch])
+        ->callAction(TestAction::make('correct')->table($new), data: ['content_sent' => 0])
+        ->assertHasActionErrors(['reason' => 'required'])
+        ->setActionData(['content_sent' => 0, 'reason' => 'Khách báo nhầm mã'])
+        ->callMountedAction()
+        ->assertHasNoActionErrors()
+        ->assertMountedActionModalSee('Mã thẻ: AAAA-0003');
+});

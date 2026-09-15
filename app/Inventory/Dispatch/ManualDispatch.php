@@ -8,9 +8,7 @@ use App\Inventory\Access\RoleGate;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Stock\SellableStock;
-use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Stock\StockLedger;
-use App\Inventory\Stock\StockTransition;
 use App\Models\Dispatch;
 use App\Models\DispatchLine;
 use App\Models\Product;
@@ -24,9 +22,9 @@ use stdClass;
 
 /**
  * Xuất kho thủ công: nhân viên tạo Phiếu xuất cho một đơn, hoặc Giao thêm vào phiếu đã Hoàn tất;
- * hệ thống chọn Slot theo Thứ tự xuất và giao ngay trong một transaction. Cả phần giao đủ hoặc
- * thất bại. Slot được chọn bằng `FOR UPDATE SKIP LOCKED`, nên hai tiến trình xuất cùng lúc không
- * bao giờ chọn trùng Slot.
+ * hệ thống chọn Slot theo Thứ tự xuất ({@see SlotPicker}) và giao ngay trong một transaction. Cả
+ * phần giao đủ hoặc thất bại. Slot được chọn bằng `FOR UPDATE SKIP LOCKED`, nên hai tiến trình xuất
+ * cùng lúc không bao giờ chọn trùng Slot.
  */
 class ManualDispatch
 {
@@ -122,7 +120,7 @@ class ManualDispatch
             $channel = $draft->channel;
             assert($channel !== null);
 
-            [$products, $picks] = self::lockAndPick($draft->lines);
+            [$products, $picks] = SlotPicker::lockAndPick($draft->lines);
             $dispatch = $this->insertDispatch($actor, $channel, $draft);
 
             $this->deliver($actor, $dispatch, $draft->lines, $products, $picks, DispatchLineKind::Sale, "Giao hàng theo Phiếu xuất #{$dispatch->id}");
@@ -158,7 +156,7 @@ class ManualDispatch
                 throw new InvalidDispatch($problems);
             }
 
-            [$products, $picks] = self::lockAndPick($lines);
+            [$products, $picks] = SlotPicker::lockAndPick($lines);
             $lineIds = $this->deliver($actor, $current, $lines, $products, $picks, DispatchLineKind::Additional, "Giao thêm theo Phiếu xuất #{$current->id}");
 
             $current->forceFill([
@@ -181,54 +179,7 @@ class ManualDispatch
     }
 
     /**
-     * Khoá chia sẻ Sản phẩm theo thứ tự id (Quản trị không Ngừng bán hay đổi Mã sản phẩm, thời hạn
-     * bảo hành giữa lúc kiểm tra và lúc giao; hai phiếu cùng Sản phẩm vẫn chạy song song), rồi chọn
-     * và khoá Slot cho mọi dòng. Thiếu hàng ở bất kỳ dòng nào thì không giao gì.
-     *
-     * @param  list<DispatchLineDraft>  $lines  đã qua kiểm tra
-     * @return array{EloquentCollection<int, Product>, array<int, Collection<int, stdClass>>}
-     *
-     * @throws InvalidDispatch
-     * @throws OutOfStock
-     */
-    private static function lockAndPick(array $lines): array
-    {
-        $products = Product::query()
-            ->whereIn('id', array_map(fn (DispatchLineDraft $line): int => (int) $line->product?->getKey(), $lines))
-            ->orderBy('id')
-            ->sharedLock()
-            ->get()
-            ->keyBy('id');
-
-        $discontinued = $products->filter(fn (Product $product): bool => $product->isDiscontinued());
-
-        if ($discontinued->isNotEmpty()) {
-            throw new InvalidDispatch($discontinued->map(fn (Product $product): DispatchProblem => self::discontinued($product))->values()->all());
-        }
-
-        $today = CarbonImmutable::today();
-        $picks = [];
-        $shortages = [];
-
-        foreach ($lines as $index => $line) {
-            $product = $products[(int) $line->product?->getKey()];
-            $picks[$index] = self::pick($product, $line->quantity, $today);
-
-            if ($picks[$index]->count() < $line->quantity) {
-                $shortages[] = new Shortage($product->id, $product->name, $line->quantity, $picks[$index]->count());
-            }
-        }
-
-        if ($shortages !== []) {
-            throw new OutOfStock($shortages);
-        }
-
-        return [$products, $picks];
-    }
-
-    /**
-     * Chèn Dòng xuất và giao các Slot đã khoá: Slot Còn hàng → Đã giao, ghi Giao hàng và Sổ biến
-     * động kho. Người gọi chạy trong transaction.
+     * Chèn Dòng xuất và giao các Slot đã khoá, ghi Sổ biến động kho. Người gọi chạy trong transaction.
      *
      * @param  list<DispatchLineDraft>  $lines
      * @param  EloquentCollection<int, Product>  $products
@@ -254,24 +205,7 @@ class ManualDispatch
             ])->save();
             $lineIds[] = $dispatchLine->id;
 
-            DB::table('slots')
-                ->whereIn('id', $picks[$index]->pluck('id'))
-                ->update(['status' => SlotStatus::Delivered->value, 'updated_at' => $now]);
-
-            DB::table('deliveries')->insert($picks[$index]->map(fn (object $slot): array => [
-                'dispatch_line_id' => $dispatchLine->id,
-                'slot_id' => $slot->id,
-                'stock_unit_id' => $slot->stock_unit_id,
-                'warranty_days' => $product->warranty_days,
-                'delivered_at' => $now,
-                'delivered_by' => $actor->getKey(),
-                'created_at' => $now,
-                'updated_at' => $now,
-            ])->all());
-
-            foreach ($picks[$index] as $slot) {
-                $transitions[] = new StockTransition((int) $slot->stock_unit_id, (int) $slot->id, SlotStatus::InStock, SlotStatus::Delivered);
-            }
+            array_push($transitions, ...SlotPicker::deliver($dispatchLine->id, $product, $picks[$index], $actor, $now));
         }
 
         assert($lineIds !== []);
@@ -279,30 +213,6 @@ class ManualDispatch
         $this->ledger->append($actor, $transitions, $ledgerReason);
 
         return $lineIds;
-    }
-
-    /**
-     * Chọn và khoá Slot theo Thứ tự xuất: Tài khoản đã giao dở trước, rồi Hạn sử dụng gần nhất
-     * (không có hạn xếp sau), rồi hàng nhập trước. Slot đang bị giao dịch khác khoá thì bỏ qua;
-     * Đơn vị hàng bị khoá chia sẻ để không đổi trạng thái trước khi giao xong.
-     *
-     * @return Collection<int, stdClass> các hàng `id`, `stock_unit_id` của Slot đã khoá
-     */
-    private static function pick(Product $product, int $quantity, CarbonImmutable $today): Collection
-    {
-        return SellableStock::slots($today)
-            ->where('stock_units.product_id', $product->id)
-            ->select('slots.id', 'slots.stock_unit_id')
-            ->orderByRaw(
-                'EXISTS (SELECT 1 FROM slots delivered WHERE delivered.stock_unit_id = stock_units.id AND delivered.status = ?) DESC',
-                [SlotStatus::Delivered->value],
-            )
-            ->orderByRaw('stock_units.expires_on ASC NULLS LAST')
-            ->orderBy('stock_units.id')
-            ->orderBy('slots.id')
-            ->limit($quantity)
-            ->lock('FOR UPDATE OF slots SKIP LOCKED FOR SHARE OF stock_units SKIP LOCKED')
-            ->get();
     }
 
     /**
@@ -452,7 +362,7 @@ class ManualDispatch
             $seen[$product->id] = true;
 
             if ($product->isDiscontinued()) {
-                $problems[] = self::discontinued($product);
+                $problems[] = DispatchProblem::discontinued($product);
             }
 
             if ($line->quantity < 1) {
@@ -475,11 +385,6 @@ class ManualDispatch
         }
 
         return $problems;
-    }
-
-    private static function discontinued(Product $product): DispatchProblem
-    {
-        return new DispatchProblem("Sản phẩm \"{$product->name}\" đã Ngừng bán.");
     }
 
     public static function maxSlots(): int
