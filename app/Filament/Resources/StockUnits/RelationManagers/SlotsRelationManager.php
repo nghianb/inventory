@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\StockUnits\RelationManagers;
 
+use App\Filament\Resources\StockUnits\StockUnitResource;
 use App\Filament\Support\InventoryAction;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
@@ -9,10 +10,13 @@ use App\Inventory\Reveal\ContentReveal;
 use App\Inventory\Reveal\RevealActor;
 use App\Inventory\Reveal\RevealContext;
 use App\Inventory\Stock\SlotStatus;
+use App\Inventory\Stock\StockVoid;
+use App\Inventory\Stock\VoidReason;
 use App\Models\Slot;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -83,6 +87,20 @@ class SlotsRelationManager extends RelationManager
                             'slot' => $record->id,
                             'fields' => array_map(fn (string $label, string $value): array => ['label' => $label, 'value' => $value], array_keys($content->fields), $content->fields),
                         ]);
+                    }),
+                Action::make('void')
+                    ->label('Huỷ hàng')
+                    ->icon(Heroicon::OutlinedNoSymbol)
+                    ->color('danger')
+                    ->modalHeading(fn (Slot $record): string => "Huỷ hàng Slot #{$record->id}")
+                    ->modalDescription('Slot chuyển Đã huỷ, không bán hay giao được nữa. Không giải phóng Khoá chống trùng.')
+                    ->modalSubmitActionLabel('Huỷ hàng')
+                    ->schema(StockUnitResource::voidSchema())
+                    ->visible(fn (Slot $record): bool => app(StockVoid::class)->canVoidSlot(InventoryAction::actor(), $record))
+                    ->action(function (Action $action, Slot $record, array $data): void {
+                        InventoryAction::attempt($action, fn () => app(StockVoid::class)->voidSlot(InventoryAction::actor(), $record, VoidReason::from($data['reason']), $data['note'] ?? null));
+
+                        Notification::make()->success()->title("Đã Huỷ hàng Slot #{$record->id}.")->send();
                     }),
             ]);
     }

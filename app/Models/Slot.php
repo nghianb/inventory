@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Inventory\Stock\SlotStatus;
+use App\Inventory\Stock\VoidReason;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -13,6 +15,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $stock_unit_id
  * @property SlotStatus $status
  * @property int $cost Giá vốn Slot: Giá vốn Đơn vị hàng chia đều cho số slot
+ * @property ?VoidReason $void_reason lý do Huỷ hàng, khi Slot Đã huỷ
+ * @property ?CarbonImmutable $voided_at
  * @property-read StockUnit $stockUnit
  */
 class Slot extends Model
@@ -25,6 +29,8 @@ class Slot extends Model
         return [
             'status' => SlotStatus::class,
             'cost' => 'integer',
+            'void_reason' => VoidReason::class,
+            'voided_at' => 'immutable_datetime',
         ];
     }
 
