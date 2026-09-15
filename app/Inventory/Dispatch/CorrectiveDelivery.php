@@ -65,6 +65,7 @@ class CorrectiveDelivery
         return $this->roles->allows($actor, Role::BanHang)
             && $delivery->dispatchLine->dispatch->status === DispatchStatus::Completed
             && $delivery->slot->status === SlotStatus::Delivered
+            && StockVoid::pendingDefectReportId($delivery->slot_id) === null
             && (! self::isLate($delivery) || $this->roles->allows($actor));
     }
 

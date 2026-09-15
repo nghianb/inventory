@@ -4,6 +4,8 @@ use App\Filament\Resources\DefectReports\DefectReportResource;
 use App\Filament\Resources\DefectReports\Pages\ListDefectReports;
 use App\Filament\Resources\DefectReports\Pages\ViewDefectReport;
 use App\Filament\Resources\Dispatches\Widgets\DispatchDeliveries;
+use App\Filament\Resources\StockUnits\Pages\ViewStockUnit;
+use App\Filament\Resources\StockUnits\StockUnitResource;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
@@ -210,4 +212,29 @@ it('danh sách Báo lỗi có tab Chờ xác minh quá 24 giờ; Bán hàng và 
     $this->actingAs(staffMember(Role::NhapKho));
 
     $this->get(DefectReportResource::getUrl('index'))->assertForbidden();
+});
+
+it('Đơn vị hàng Lỗi hiện Lần giao bị ảnh hưởng ở chi tiết Đơn vị hàng kèm trạng thái Báo lỗi; Báo lỗi liên kết sang đó; Nhập kho không thấy khách', function () {
+    $delivery = panelOrder('SP-001', 1, 'Anh Minh')->deliveries()->firstOrFail();
+    $lan = panelOrder('SP-002', 1, 'Chị Lan')->deliveries()->firstOrFail();
+    panelOrder('SP-003', 1, 'Chị Hoa');
+    $reports = app(DefectReporting::class);
+    [$report] = $reports->report($this->seller, [$delivery], new DefectReportDraft('Bị khoá'));
+    $unit = ['record' => $delivery->stock_unit_id];
+    $this->actingAs($this->seller);
+
+    Livewire::test(ViewStockUnit::class, $unit)->assertDontSee('Lần giao bị ảnh hưởng');
+
+    $reports->confirm($this->seller, $report, DefectScope::Unit, 'Bị khoá thật');
+    $reports->confirmAffected($this->seller, $report, [$lan]);
+
+    Livewire::test(ViewStockUnit::class, $unit)
+        ->assertSeeInOrder(['Lần giao bị ảnh hưởng', 'SP-001', 'Anh Minh', 'Xác nhận', 'SP-002', 'Chị Lan', 'Xác nhận', 'SP-003', 'Chị Hoa', 'Chưa có Báo lỗi']);
+
+    Livewire::test(ViewDefectReport::class, ['record' => $report->getRouteKey()])
+        ->assertSeeHtml(StockUnitResource::getUrl('view', $unit));
+
+    $this->actingAs(staffMember(Role::NhapKho));
+
+    Livewire::test(ViewStockUnit::class, $unit)->assertDontSee(['Lần giao bị ảnh hưởng', 'Chị Lan']);
 });

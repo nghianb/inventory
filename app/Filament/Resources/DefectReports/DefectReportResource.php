@@ -5,6 +5,7 @@ namespace App\Filament\Resources\DefectReports;
 use App\Filament\Resources\DefectReports\Pages\ListDefectReports;
 use App\Filament\Resources\DefectReports\Pages\ViewDefectReport;
 use App\Filament\Resources\Dispatches\DispatchResource;
+use App\Filament\Resources\StockUnits\StockUnitResource;
 use App\Inventory\Dispatch\AffectedDelivery;
 use App\Inventory\Warranty\DefectReportStatus;
 use App\Models\DefectReport;
@@ -84,7 +85,9 @@ class DefectReportResource extends Resource
                     TextEntry::make('stockUnit.product.name')->label('Sản phẩm'),
                     TextEntry::make('unit')
                         ->label('Đơn vị hàng')
-                        ->state(fn (DefectReport $record): string => $record->delivery->unitLabel()),
+                        ->state(fn (DefectReport $record): string => $record->delivery->unitLabel())
+                        ->helperText('Đơn vị hàng Lỗi: xem Lần giao bị ảnh hưởng ở chi tiết Đơn vị hàng.')
+                        ->url(fn (DefectReport $record): string => StockUnitResource::getUrl('view', ['record' => $record->stock_unit_id])),
                     TextEntry::make('stockUnit.status')
                         ->label('Trạng thái Đơn vị hàng')
                         ->badge()
@@ -197,21 +200,9 @@ class DefectReportResource extends Resource
         }
 
         return new HtmlString('Lần giao bị ảnh hưởng: hãy liên hệ khách; hệ thống không tự Đổi hàng.<br>'.implode('<br>', array_map(
-            fn (AffectedDelivery $delivery): string => e(self::affectedLabel($delivery)),
+            fn (AffectedDelivery $delivery): string => e($delivery->label()),
             $affected,
         )));
-    }
-
-    public static function affectedLabel(AffectedDelivery $delivery): string
-    {
-        return sprintf(
-            'Phiếu xuất %s · %s · %s · Slot #%d · giao %s',
-            $delivery->externalRef,
-            $delivery->channelName,
-            $delivery->customer ?? 'Không có khách',
-            $delivery->slotId,
-            $delivery->deliveredAt->format('d/m/Y H:i'),
-        );
     }
 
     public static function getPages(): array

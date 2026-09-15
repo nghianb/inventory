@@ -15,6 +15,7 @@ use App\Inventory\Encryption\EncryptedContent;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Stock\SlotStatus;
+use App\Inventory\Warranty\DefectReporting;
 use App\Inventory\Warranty\DefectReportStatus;
 use App\Models\ContentField;
 use App\Models\DefectReport;
@@ -40,6 +41,7 @@ class ContentReveal
         private KeyFingerprints $fingerprints,
         private ContentCrypto $crypto,
         private RevealLog $log,
+        private DefectReporting $reports,
     ) {}
 
     /**
@@ -278,7 +280,7 @@ class ContentReveal
      */
     public function canRevealDefectReport(User $actor, DefectReport $report): bool
     {
-        return $this->roles->allows($actor, Role::BanHang) && $report->status === DefectReportStatus::Pending;
+        return $this->reports->canVerify($actor, $report);
     }
 
     /**

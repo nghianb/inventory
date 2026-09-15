@@ -9,6 +9,8 @@ use App\Inventory\Catalog\ProductDraft;
 use App\Inventory\Catalog\ProductType;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\AffectedDelivery;
+use App\Inventory\Dispatch\CorrectionDraft;
+use App\Inventory\Dispatch\CorrectiveDelivery;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
 use App\Inventory\Dispatch\ManualDispatch;
@@ -21,6 +23,7 @@ use App\Inventory\Intake\BatchLineDraft;
 use App\Inventory\Reveal\ContentReveal;
 use App\Inventory\Reveal\InvalidReveal;
 use App\Inventory\Reveal\RevealContextType;
+use App\Inventory\Stock\InvalidVoid;
 use App\Inventory\Stock\SellableStock;
 use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Stock\StockUnitStatus;
@@ -40,11 +43,13 @@ use App\Models\StockLedgerEntry;
 use App\Models\StockUnit;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RoleSeeder;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
     Storage::fake('intake');
+    Storage::fake('local');
     $this->seed(RoleSeeder::class);
     app(KeyFingerprints::class)->register();
     $this->travelTo(CarbonImmutable::parse('2026-09-15 10:00'));
@@ -111,16 +116,19 @@ it('Bán hàng tạo Báo lỗi từ Phiếu xuất cho nhiều Slot, mỗi Slot
     [$code, $account] = defectDeliveries($dispatch);
     $this->travel(2)->days();
 
-    $created = $this->reports->report($this->seller, [$code, $account], new DefectReportDraft('  Khách báo mã không nạp được  ', screenshotPath: 'defect-reports/anh.png'));
+    $created = $this->reports->report($this->seller, [$code, $account], new DefectReportDraft('  Khách báo mã không nạp được  ', screenshot: UploadedFile::fake()->image('anh.png')));
+    $path = $created[0]->screenshot_path;
 
     expect($created)->toHaveCount(2)
         ->and(DefectReport::orderBy('id')->get()->map(fn (DefectReport $report) => [
             $report->delivery_id, $report->slot_id, $report->stock_unit_id, $report->status, $report->description,
             $report->screenshot_path, $report->created_by, $report->created_at->toDateTimeString(),
         ])->all())->toBe([
-            [$code->id, $code->slot_id, $code->stock_unit_id, DefectReportStatus::Pending, 'Khách báo mã không nạp được', 'defect-reports/anh.png', $this->seller->id, '2026-09-17 10:00:00'],
-            [$account->id, $account->slot_id, $account->stock_unit_id, DefectReportStatus::Pending, 'Khách báo mã không nạp được', 'defect-reports/anh.png', $this->seller->id, '2026-09-17 10:00:00'],
-        ]);
+            [$code->id, $code->slot_id, $code->stock_unit_id, DefectReportStatus::Pending, 'Khách báo mã không nạp được', $path, $this->seller->id, '2026-09-17 10:00:00'],
+            [$account->id, $account->slot_id, $account->stock_unit_id, DefectReportStatus::Pending, 'Khách báo mã không nạp được', $path, $this->seller->id, '2026-09-17 10:00:00'],
+        ])
+        ->and($path)->toStartWith('defect-reports/')
+        ->and(Storage::disk('local')->allFiles('defect-reports'))->toBe([$path]);
 });
 
 it('ngoài Hạn bảo hành hoặc thời hạn bảo hành 0 thì Bán hàng không tạo được Báo lỗi; Quản trị vượt được kèm lý do', function () {
@@ -395,4 +403,52 @@ it('danh sách Báo lỗi Chờ xác minh quá 24 giờ', function () {
     config(['inventory.defect.backlog_hours' => 2]);
 
     expect(DefectReport::query()->overdue()->count())->toBe(2);
+});
+
+it('Slot có Báo lỗi Chờ xác minh không Huỷ hàng hay Giao thay được cho tới khi xác minh', function () {
+    defectStock($this->steam, "SR1\tA-1\nSR2\tA-2");
+    [$delivery] = defectDeliveries(defectOrder('SP-001', [$this->steam->id => 1]));
+    [$report] = $this->reports->report($this->seller, [$delivery], new DefectReportDraft('Mã lỗi'));
+    $corrective = app(CorrectiveDelivery::class);
+    $voids = app(StockVoid::class);
+    $message = "Slot đang có Báo lỗi Chờ xác minh #{$report->id}; hãy xác minh trước.";
+
+    expect($voids->canVoidSlot($this->admin, $delivery->slot))->toBeFalse()
+        ->and($corrective->canCorrect($this->seller, $delivery))->toBeFalse()
+        ->and(fn () => $voids->voidSlot($this->admin, $delivery->slot, VoidReason::WrongDelivery))->toThrow(InvalidVoid::class, $message)
+        ->and(fn () => $corrective->correct($this->seller, $delivery, new CorrectionDraft(null, contentSent: false)))->toThrow(InvalidVoid::class, $message)
+        ->and($delivery->slot->fresh()->status)->toBe(SlotStatus::Delivered)
+        ->and(Delivery::count())->toBe(1);
+
+    $this->reports->reject($this->seller, $report, 'Giao nhầm mã chứ không lỗi');
+
+    expect($voids->canVoidSlot($this->admin, $delivery->slot->fresh()))->toBeTrue()
+        ->and($corrective->correct($this->seller, $delivery, new CorrectionDraft(null, contentSent: false))->corrects_delivery_id)->toBe($delivery->id);
+});
+
+it('ảnh chỉ được lưu khi Báo lỗi tạo thành công', function () {
+    defectStock($this->steam, "SR1\tA-1");
+    [$delivery] = defectDeliveries(defectOrder('SP-001', [$this->steam->id => 1]));
+    $this->reports->report($this->seller, [$delivery], new DefectReportDraft('Lần trước'));
+
+    expect(fn () => $this->reports->report($this->seller, [$delivery], new DefectReportDraft('Lần sau', screenshot: UploadedFile::fake()->image('anh.png'))))
+        ->toThrow(InvalidDefectReport::class)
+        ->and(Storage::disk('local')->allFiles('defect-reports'))->toBe([]);
+});
+
+it('dọn ảnh Báo lỗi không còn Báo lỗi nào trỏ tới sau một giờ', function () {
+    defectStock($this->steam, "SR1\tA-1");
+    [$delivery] = defectDeliveries(defectOrder('SP-001', [$this->steam->id => 1]));
+    [$report] = $this->reports->report($this->seller, [$delivery], new DefectReportDraft('Lỗi', screenshot: UploadedFile::fake()->image('anh.png')));
+    $disk = Storage::disk('local');
+    $disk->put('defect-reports/mo-coi-cu.png', 'x');
+    $this->travel(2)->hours();
+    $disk->put('defect-reports/mo-coi-moi.png', 'x');
+    touch($disk->path('defect-reports/mo-coi-moi.png'), now()->getTimestamp());
+    touch($disk->path('defect-reports/mo-coi-cu.png'), now()->subHours(2)->getTimestamp());
+    touch($disk->path((string) $report->screenshot_path), now()->subHours(2)->getTimestamp());
+
+    $this->artisan('inventory:defect-reports:purge')->expectsOutput('Đã xoá 1 ảnh Báo lỗi không còn dùng.')->assertSuccessful();
+
+    expect($disk->allFiles('defect-reports'))->toEqualCanonicalizing([(string) $report->screenshot_path, 'defect-reports/mo-coi-moi.png']);
 });

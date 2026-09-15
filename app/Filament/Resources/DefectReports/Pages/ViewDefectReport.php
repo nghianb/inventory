@@ -156,7 +156,7 @@ class ViewDefectReport extends ViewRecord
             CheckboxList::make('deliveries')
                 ->label('Lần giao bị ảnh hưởng')
                 ->options(collect($affected)->mapWithKeys(fn (AffectedDelivery $delivery): array => [
-                    (string) $delivery->deliveryId => DefectReportResource::affectedLabel($delivery),
+                    (string) $delivery->deliveryId => $delivery->label(),
                 ])->all())
                 ->required(),
             Textarea::make('override_reason')

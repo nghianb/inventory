@@ -38,8 +38,10 @@ use Filament\Widgets\TableWidget;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
  * Bảng Lần giao trên trang xem Phiếu xuất, nội dung luôn dạng che. Xem mã gọi ContentReveal
@@ -279,12 +281,11 @@ class DispatchDeliveries extends TableWidget
                 ->label('Mô tả lỗi')
                 ->rows(3)
                 ->required(),
+            // Không lưu ở đây: DefectReporting chỉ lưu ảnh khi Báo lỗi tạo thành công.
             FileUpload::make('screenshot')
                 ->label('Ảnh (tuỳ chọn)')
                 ->image()
-                ->disk('local')
-                ->directory('defect-reports')
-                ->visibility('private'),
+                ->storeFiles(false),
             Textarea::make('override_reason')
                 ->label('Lý do vượt Hạn bảo hành')
                 ->helperText('Có lần giao ngoài Hạn bảo hành hoặc Sản phẩm không có bảo hành; chỉ Quản trị Báo lỗi được, bắt buộc lý do.')
@@ -313,11 +314,22 @@ class DispatchDeliveries extends TableWidget
      */
     private static function report(Action $action, DefectReporting $reports, array $deliveries, array $data): void
     {
-        $created = InventoryAction::attempt($action, fn () => $reports->report(InventoryAction::actor(), $deliveries, new DefectReportDraft(
-            description: (string) ($data['description'] ?? ''),
-            screenshotPath: $data['screenshot'] ?? null,
-            overrideReason: $data['override_reason'] ?? null,
-        )));
+        $state = $data['screenshot'] ?? null;
+        $screenshot = is_array($state) ? reset($state) : $state;
+        $screenshot = $screenshot instanceof UploadedFile ? $screenshot : null;
+
+        try {
+            $created = InventoryAction::attempt($action, fn () => $reports->report(InventoryAction::actor(), $deliveries, new DefectReportDraft(
+                description: (string) ($data['description'] ?? ''),
+                screenshot: $screenshot,
+                overrideReason: $data['override_reason'] ?? null,
+            )));
+        } finally {
+            // File tạm của Livewire: DefectReporting đã chép sang disk riêng nếu Báo lỗi tạo được.
+            if ($screenshot instanceof TemporaryUploadedFile) {
+                $screenshot->delete();
+            }
+        }
 
         Notification::make()->success()->title(sprintf('Đã tạo %d Báo lỗi Chờ xác minh.', count($created)))->send();
     }
@@ -332,14 +344,7 @@ class DispatchDeliveries extends TableWidget
         }
 
         return new HtmlString('Lần giao bị ảnh hưởng: hãy liên hệ khách; hệ thống không tự Báo lỗi hay Đổi hàng.<br>'.implode('<br>', array_map(
-            fn (AffectedDelivery $delivery): string => e(sprintf(
-                'Phiếu xuất %s · %s · %s · Slot #%d · giao %s',
-                $delivery->externalRef,
-                $delivery->channelName,
-                $delivery->customer ?? 'Không có khách',
-                $delivery->slotId,
-                $delivery->deliveredAt->format('d/m/Y H:i'),
-            )),
+            fn (AffectedDelivery $delivery): string => e($delivery->label()),
             $affected,
         )));
     }

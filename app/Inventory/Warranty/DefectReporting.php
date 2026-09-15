@@ -19,6 +19,8 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 /**
  * Báo lỗi và xác minh: nhân viên ghi nhận Slot đã giao mà khách báo không dùng được, xác minh rồi
@@ -27,6 +29,11 @@ use Illuminate\Support\Facades\DB;
  */
 class DefectReporting
 {
+    /** Ảnh khách gửi: disk private của app, không phải thư mục public. */
+    public const SCREENSHOT_DISK = 'local';
+
+    public const SCREENSHOT_DIRECTORY = 'defect-reports';
+
     public function __construct(
         private RoleGate $roles,
         private StockLedger $ledger,
@@ -53,16 +60,49 @@ class DefectReporting
             throw new InvalidDefectReport(['Báo lỗi phải có mô tả.']);
         }
 
-        return DB::transaction(function () use ($actor, $deliveries, $draft, $description): array {
-            $current = $this->lockDeliveries($deliveries);
-            $overrideReason = $this->ensureReportable($actor, $current, $draft->overrideReason);
+        $screenshotPath = null;
 
-            return array_map(fn (Delivery $delivery): DefectReport => $this->insert($actor, $current[$delivery->getKey()], $overrideReason, [
-                'status' => DefectReportStatus::Pending,
-                'description' => $description,
-                'screenshot_path' => $draft->screenshotPath,
-            ]), $deliveries);
-        });
+        try {
+            return DB::transaction(function () use ($actor, $deliveries, $draft, $description, &$screenshotPath): array {
+                $current = $this->lockDeliveries($deliveries);
+                $overrideReason = $this->ensureReportable($actor, $current, $draft->overrideReason);
+                // Lưu ảnh sau khi kiểm tra xong; các Báo lỗi cùng lần tạo dùng chung một file.
+                $screenshotPath = $draft->screenshot?->store(self::SCREENSHOT_DIRECTORY, self::SCREENSHOT_DISK) ?: null;
+
+                return array_map(fn (Delivery $delivery): DefectReport => $this->insert($actor, $current[$delivery->getKey()], $overrideReason, [
+                    'status' => DefectReportStatus::Pending,
+                    'description' => $description,
+                    'screenshot_path' => $screenshotPath,
+                ]), $deliveries);
+            });
+        } catch (Throwable $exception) {
+            // Báo lỗi không tạo được thì không để lại ảnh.
+            if ($screenshotPath !== null) {
+                Storage::disk(self::SCREENSHOT_DISK)->delete($screenshotPath);
+            }
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * Xoá ảnh không còn Báo lỗi nào trỏ tới, cũ hơn một giờ: file còn sót khi tiến trình dừng giữa
+     * lúc lưu ảnh và lúc commit. Ảnh mới hơn có thể thuộc Báo lỗi đang tạo dở.
+     *
+     * @return int số ảnh đã xoá
+     */
+    public function purgeOrphanScreenshots(): int
+    {
+        $disk = Storage::disk(self::SCREENSHOT_DISK);
+        $cutoff = now()->subHour()->getTimestamp();
+        $orphans = collect($disk->files(self::SCREENSHOT_DIRECTORY))
+            ->filter(fn (string $path): bool => $disk->lastModified($path) < $cutoff)
+            ->diff(DefectReport::query()->whereNotNull('screenshot_path')->distinct()->pluck('screenshot_path'))
+            ->values();
+
+        $disk->delete($orphans->all());
+
+        return $orphans->count();
     }
 
     /**
@@ -72,7 +112,7 @@ class DefectReporting
     public function canReport(User $actor, Delivery $delivery): bool
     {
         return $this->roles->allows($actor, Role::BanHang)
-            && self::openReportProblem($delivery) === null
+            && self::reportBlocker($delivery) === null
             && (self::warrantyProblem($delivery) === null || $this->roles->allows($actor));
     }
 
@@ -136,7 +176,7 @@ class DefectReporting
                 }
             }
 
-            self::verify($current, $actor, DefectReportStatus::Confirmed, $note, $scope);
+            self::recordVerification($current, $actor, DefectReportStatus::Confirmed, $note, $scope);
         });
     }
 
@@ -152,7 +192,7 @@ class DefectReporting
         $this->roles->authorize($actor, Role::BanHang);
         $note = self::verificationNote($note);
 
-        DB::transaction(fn () => self::verify(self::lockPending($report), $actor, DefectReportStatus::Rejected, $note, null));
+        DB::transaction(fn () => self::recordVerification(self::lockPending($report), $actor, DefectReportStatus::Rejected, $note, null));
     }
 
     /**
@@ -284,7 +324,7 @@ class DefectReporting
         $problems = [];
 
         foreach ($deliveries as $delivery) {
-            $problem = self::openReportProblem($delivery) ?? self::warrantyProblem($delivery);
+            $problem = self::reportBlocker($delivery) ?? self::warrantyProblem($delivery);
 
             if ($problem === null) {
                 continue;
@@ -308,7 +348,7 @@ class DefectReporting
         return $outOfWarranty ? $overrideReason : null;
     }
 
-    private static function openReportProblem(Delivery $delivery): ?ReportProblem
+    private static function reportBlocker(Delivery $delivery): ?ReportProblem
     {
         if ($delivery->slot->status !== SlotStatus::Delivered) {
             return new ReportProblem('Slot không còn Đã giao; không Báo lỗi được.', overridable: false);
@@ -379,7 +419,7 @@ class DefectReporting
         return $current;
     }
 
-    private static function verify(DefectReport $report, User $actor, DefectReportStatus $status, string $note, ?DefectScope $scope): void
+    private static function recordVerification(DefectReport $report, User $actor, DefectReportStatus $status, string $note, ?DefectScope $scope): void
     {
         $report->forceFill([
             'status' => $status,

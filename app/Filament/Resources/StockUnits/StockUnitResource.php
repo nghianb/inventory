@@ -9,6 +9,7 @@ use App\Filament\Resources\StockUnits\RelationManagers\SlotsRelationManager;
 use App\Filament\Support\InventoryAction;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
+use App\Inventory\Dispatch\AffectedDelivery;
 use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Stock\StockUnitStatus;
 use App\Inventory\Stock\VoidReason;
@@ -18,6 +19,8 @@ use BackedEnum;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Infolists\Components\RepeatableEntry\TableColumn;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
@@ -96,6 +99,40 @@ class StockUnitResource extends Resource
                     TextEntry::make('renews_stock_unit_id')->label('Nhập lại Đơn vị hàng')->prefix('#')->placeholder('Không'),
                     TextEntry::make('created_at')->label('Nhập lúc')->dateTime('d/m/Y H:i'),
                 ]),
+            Section::make('Lần giao bị ảnh hưởng')
+                ->description('Đơn vị hàng đang Lỗi: các lần giao còn Đã giao. Hãy liên hệ khách; hệ thống không tự Đổi hàng.')
+                // Có thông tin khách: chỉ Bán hàng và Quản trị.
+                ->visible(fn (StockUnit $record): bool => $record->status === StockUnitStatus::Defective && app(RoleGate::class)->allows(InventoryAction::actor(), Role::BanHang))
+                ->schema([
+                    RepeatableEntry::make('affected_deliveries')
+                        ->hiddenLabel()
+                        ->state(fn (StockUnit $record): array => array_map(fn (AffectedDelivery $delivery): array => [
+                            'dispatch' => $delivery->externalRef,
+                            'channel' => $delivery->channelName,
+                            'customer' => $delivery->customer,
+                            'slot' => "Slot #{$delivery->slotId}",
+                            'delivered_at' => $delivery->deliveredAt->format('d/m/Y H:i'),
+                            'defect_report' => $delivery->defectReportStatus?->label(),
+                        ], AffectedDelivery::forUnit($record->id)))
+                        ->placeholder('Không còn lần giao nào.')
+                        ->table([
+                            TableColumn::make('Phiếu xuất'),
+                            TableColumn::make('Kênh bán'),
+                            TableColumn::make('Khách'),
+                            TableColumn::make('Slot'),
+                            TableColumn::make('Giao lúc'),
+                            TableColumn::make('Báo lỗi'),
+                        ])
+                        ->schema([
+                            TextEntry::make('dispatch'),
+                            TextEntry::make('channel'),
+                            TextEntry::make('customer')->placeholder('Không có khách'),
+                            TextEntry::make('slot'),
+                            TextEntry::make('delivered_at'),
+                            TextEntry::make('defect_report')->badge()->placeholder('Chưa có Báo lỗi'),
+                        ]),
+                ])
+                ->columnSpanFull(),
         ]);
     }
 
