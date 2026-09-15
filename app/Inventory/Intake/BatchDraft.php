@@ -4,6 +4,7 @@ namespace App\Inventory\Intake;
 
 use App\Models\Batch;
 use App\Models\Supplier;
+use App\Models\SupplierClaim;
 use Carbon\CarbonImmutable;
 
 /**
@@ -15,6 +16,7 @@ final readonly class BatchDraft
      * @param  list<BatchLineDraft>  $lines
      * @param  ?int  $invoiceTotal  tổng tiền hoá đơn (VND) để đối chiếu với tổng Giá vốn
      * @param  ?Batch  $supplements  Lô nhập đã xác nhận mà lô này bổ sung
+     * @param  ?SupplierClaim  $supplierClaim  Khiếu nại nhà cung cấp mà lô này là hàng thay thế (Giá vốn 0)
      */
     public function __construct(
         public Supplier $supplier,
@@ -24,5 +26,6 @@ final readonly class BatchDraft
         public ?string $note = null,
         public ?int $invoiceTotal = null,
         public ?Batch $supplements = null,
+        public ?SupplierClaim $supplierClaim = null,
     ) {}
 }

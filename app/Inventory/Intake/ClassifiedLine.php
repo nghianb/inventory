@@ -31,6 +31,24 @@ final readonly class ClassifiedLine
     }
 
     /**
+     * Cùng dòng với Giá vốn 0 (hàng thay thế từ Khiếu nại nhà cung cấp).
+     */
+    public function withoutCost(): self
+    {
+        return new self(
+            $this->lineNumber,
+            $this->class,
+            $this->reason,
+            $this->values,
+            $this->dedupeHash,
+            $this->slots,
+            $this->expiresOn,
+            0,
+            $this->renewsStockUnitId,
+        );
+    }
+
+    /**
      * Dòng hợp lệ nhưng Khoá chống trùng đã có trong kho (lúc kiểm tra hoặc lúc ghi).
      */
     public function asStockDuplicate(): self

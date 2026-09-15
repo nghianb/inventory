@@ -6,6 +6,7 @@ use App\Models\Batch;
 use App\Models\DefectReport;
 use App\Models\Delivery;
 use App\Models\Replacement;
+use App\Models\SupplierClaim;
 
 /**
  * Ngữ cảnh xem mã: bản ghi mà qua đó nội dung đầy đủ được hiển thị hoặc tải về.
@@ -40,5 +41,10 @@ final readonly class RevealContext
     public static function replacement(Replacement $replacement): self
     {
         return new self(RevealContextType::Replacement, $replacement->getKey());
+    }
+
+    public static function supplierClaim(SupplierClaim $claim): self
+    {
+        return new self(RevealContextType::SupplierClaim, $claim->getKey());
     }
 }

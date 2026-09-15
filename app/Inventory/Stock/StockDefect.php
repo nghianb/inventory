@@ -4,6 +4,7 @@ namespace App\Inventory\Stock;
 
 use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\RoleGate;
+use App\Inventory\Claims\SupplierClaims;
 use App\Inventory\Dispatch\AffectedDelivery;
 use App\Models\Slot;
 use App\Models\StockUnit;
@@ -22,6 +23,7 @@ class StockDefect
     public function __construct(
         private RoleGate $roles,
         private StockLedger $ledger,
+        private SupplierClaims $claims,
     ) {}
 
     /**
@@ -76,6 +78,7 @@ class StockDefect
             $this->ledger->append($actor, [
                 new StockTransition($current->id, null, StockUnitStatus::Defective, StockUnitStatus::Active),
             ], "Khôi phục: {$reason}");
+            $this->claims->releaseRestored($current, "Khôi phục Đơn vị hàng: {$reason}");
         });
     }
 

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Batches;
 use App\Filament\Resources\Batches\Pages\CreateBatch;
 use App\Filament\Resources\Batches\Pages\ListBatches;
 use App\Filament\Resources\Batches\Pages\ViewBatch;
+use App\Filament\Resources\SupplierClaims\SupplierClaimResource;
 use App\Filament\Support\InventoryAction;
 use App\Inventory\Catalog\InvalidSupplier;
 use App\Inventory\Catalog\ProductType;
@@ -18,6 +19,7 @@ use App\Models\Batch;
 use App\Models\BatchLine;
 use App\Models\Product;
 use App\Models\Supplier;
+use App\Models\SupplierClaim;
 use BackedEnum;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
@@ -33,6 +35,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
@@ -81,6 +84,7 @@ class BatchResource extends Resource
                     Select::make('supplier_id')
                         ->label('Nhà cung cấp')
                         ->options(fn (): array => Supplier::query()->orderBy('name')->pluck('name', 'id')->all())
+                        ->default(fn (): ?int => filled(request()->query(CreateBatch::CLAIM_QUERY)) ? SupplierClaim::query()->find(request()->query(CreateBatch::CLAIM_QUERY))?->supplier_id : null)
                         ->searchable()
                         ->required()
                         ->createOptionForm([
@@ -122,6 +126,25 @@ class BatchResource extends Resource
                             ->mapWithKeys(fn (Batch $batch): array => [$batch->id => "#{$batch->id} · {$batch->supplier->name} · {$batch->received_on->format('d/m/Y')}"])
                             ->all())
                         ->searchable(),
+                    Select::make('supplier_claim_id')
+                        ->label('Hàng thay thế cho Khiếu nại')
+                        ->helperText('Hàng thay thế từ Khiếu nại nhà cung cấp có Giá vốn 0.')
+                        ->options(fn (): array => SupplierClaim::query()
+                            ->with('supplier')
+                            ->acceptsReplacementGoods()
+                            ->latest('id')
+                            ->limit(200)
+                            ->get()
+                            ->mapWithKeys(fn (SupplierClaim $claim): array => [$claim->id => "#{$claim->id} · {$claim->supplier->name}"])
+                            ->all())
+                        ->default(fn (): ?int => filled(request()->query(CreateBatch::CLAIM_QUERY)) ? (int) request()->query(CreateBatch::CLAIM_QUERY) : null)
+                        ->searchable()
+                        ->live()
+                        ->afterStateUpdated(function (mixed $state, Set $set): void {
+                            if (filled($state)) {
+                                $set('supplier_id', SupplierClaim::query()->find($state)?->supplier_id);
+                            }
+                        }),
                     Textarea::make('note')
                         ->label('Ghi chú')
                         ->helperText('Hàng mua bằng ngoại tệ: ghi tỷ giá đã quy đổi.')
@@ -149,7 +172,9 @@ class BatchResource extends Resource
                         ->suffix('₫')
                         ->integer()
                         ->minValue(0)
-                        ->required(),
+                        ->required()
+                        // Hàng thay thế từ Khiếu nại luôn Giá vốn 0.
+                        ->visible(fn (Get $get): bool => blank($get('../../supplier_claim_id'))),
                     TextInput::make('slots')
                         ->label('Số slot mỗi Tài khoản')
                         ->helperText('Để trống thì theo Sản phẩm; cột slot trong file ghi đè.')
@@ -245,6 +270,12 @@ class BatchResource extends Resource
                         ->label('Bổ sung cho lô')
                         ->prefix('#')
                         ->visible(fn (Batch $record): bool => $record->supplements_batch_id !== null),
+                    TextEntry::make('supplier_claim_id')
+                        ->label('Hàng thay thế cho Khiếu nại')
+                        ->prefix('#')
+                        ->helperText('Giá vốn 0.')
+                        ->url(fn (Batch $record): ?string => $record->supplier_claim_id === null ? null : SupplierClaimResource::getUrl('view', ['record' => $record->supplier_claim_id]))
+                        ->visible(fn (Batch $record): bool => $record->supplier_claim_id !== null),
                     TextEntry::make('total_cost')
                         ->label('Tổng Giá vốn phần nhập được')
                         ->state(fn (Batch $record): string => $money($preview($record)->totalCost()))

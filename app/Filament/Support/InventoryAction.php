@@ -6,6 +6,7 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Catalog\InvalidProductConfiguration;
 use App\Inventory\Catalog\InvalidSupplier;
 use App\Inventory\Catalog\ProductHasStock;
+use App\Inventory\Claims\InvalidSupplierClaim;
 use App\Inventory\Dispatch\InvalidDispatch;
 use App\Inventory\Dispatch\InvalidSalesChannel;
 use App\Inventory\Dispatch\OutOfStock;
@@ -80,6 +81,7 @@ final class InventoryAction
             || $exception instanceof InvalidDefectMarking
             || $exception instanceof InvalidDefectReport
             || $exception instanceof InvalidReplacement
+            || $exception instanceof InvalidSupplierClaim
             || $exception instanceof KeyFingerprintMismatch;
     }
 }

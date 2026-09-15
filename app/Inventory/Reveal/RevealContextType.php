@@ -23,6 +23,9 @@ enum RevealContextType: string
     /** Màn kết quả ngay sau khi Đổi hàng. */
     case Replacement = 'replacement';
 
+    /** Nhập kho xem Đơn vị hàng trong Khiếu nại nhà cung cấp để gửi bằng chứng. */
+    case SupplierClaim = 'supplier-claim';
+
     public function label(): string
     {
         return match ($this) {
@@ -31,6 +34,7 @@ enum RevealContextType: string
             self::Delivery => 'Giao hàng',
             self::DefectReport => 'Báo lỗi',
             self::Replacement => 'Đổi hàng',
+            self::SupplierClaim => 'Khiếu nại nhà cung cấp',
         };
     }
 }
