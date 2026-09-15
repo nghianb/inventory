@@ -7,11 +7,15 @@ use App\Filament\Support\InventoryAction;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchStatus;
 use App\Models\Batch;
+use App\Models\BatchLine;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Collection;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Màn xem trước và kết quả của Lô nhập.
@@ -61,6 +65,31 @@ class ViewBatch extends ViewRecord
 
                     Notification::make()->success()->title('Đã nhập kho phần hợp lệ của Lô nhập.')->send();
                 }),
+            Action::make('downloadRejected')
+                ->label('Tải CSV dòng bị bỏ')
+                ->icon(Heroicon::OutlinedArrowDownTray)
+                ->color('gray')
+                ->modalDescription('Mỗi lần tải được ghi vào Nhật ký xem mã. Chỉ tải được ở màn xem trước hoặc ngay sau khi xác nhận.')
+                ->modalSubmitActionLabel('Tải CSV')
+                ->schema([
+                    Select::make('line')
+                        ->label('Dòng nhập')
+                        ->options(fn (): array => $this->rejectedLines()->mapWithKeys(fn (BatchLine $line): array => [
+                            $line->id => sprintf('%s (%s dòng bị bỏ)', $line->product->name, number_format(count($line->preview['rejected'] ?? []), 0, ',', '.')),
+                        ])->all())
+                        ->default(fn (): ?int => $this->rejectedLines()->count() === 1 ? $this->rejectedLines()->first()?->id : null)
+                        ->selectablePlaceholder(false)
+                        ->required(),
+                ])
+                ->visible(fn (): bool => $this->rejectedLines()->isNotEmpty())
+                ->action(function (Action $action, BatchIntake $intake, array $data): StreamedResponse {
+                    $export = InventoryAction::attempt($action, fn () => $intake->rejectedLines(
+                        InventoryAction::actor(),
+                        $this->rejectedLines()->firstOrFail(fn (BatchLine $line): bool => $line->id === (int) $data['line']),
+                    ));
+
+                    return response()->streamDownload(fn () => print ($export->csv), $export->fileName, ['Content-Type' => 'text/csv; charset=UTF-8']);
+                }),
             Action::make('discard')
                 ->label('Bỏ Lô nhập')
                 ->icon(Heroicon::OutlinedTrash)
@@ -76,6 +105,16 @@ class ViewBatch extends ViewRecord
                     Notification::make()->success()->title('Đã bỏ Lô nhập.')->send();
                 }),
         ];
+    }
+
+    /**
+     * Dòng nhập mà nhân viên đang đăng nhập tải được dòng bị bỏ lúc này.
+     *
+     * @return Collection<int, BatchLine>
+     */
+    private function rejectedLines(): Collection
+    {
+        return app(BatchIntake::class)->downloadableRejectedLines(InventoryAction::actor(), $this->batch());
     }
 
     private function batch(): Batch

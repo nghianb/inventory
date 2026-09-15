@@ -90,6 +90,16 @@ class StockUnit extends Model
     }
 
     /**
+     * Các lần nội dung của Đơn vị hàng bị xem, mới nhất trước.
+     *
+     * @return HasMany<RevealLogEntry, $this>
+     */
+    public function revealLogEntries(): HasMany
+    {
+        return $this->hasMany(RevealLogEntry::class)->latest('id');
+    }
+
+    /**
      * Nội dung theo tên hiển thị Trường nội dung: trường nhạy cảm che hoàn toàn.
      *
      * @return array<string, string>

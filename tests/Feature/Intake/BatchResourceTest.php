@@ -149,7 +149,7 @@ it('Nhập kho tạo nhanh Nhà cung cấp, upload file Tài khoản kèm Dòng 
     expect($batch->fresh()->status)->toBe(BatchStatus::Confirmed)
         ->and(StockUnit::count())->toBe(4)
         ->and(StockUnit::where('kind', ProductType::Account)->sum('slot_count'))->toBe(4)
-        ->and(Storage::disk('intake')->allFiles())->toBe([]);
+        ->and(Storage::disk('intake')->allFiles('batch-lines'))->toBe([]);
 });
 
 it('Nhập kho bỏ Lô nhập chưa xác nhận từ panel', function () {
