@@ -354,3 +354,29 @@ it('chỉ Quản trị xoá được Sản phẩm', function (Role $role) {
     'Nhập kho' => Role::NhapKho,
     'Bán hàng' => Role::BanHang,
 ]);
+
+it('Quản trị soạn Mẫu giao hàng với biến Trường nội dung, Hạn sử dụng, Hạn bảo hành, tên Sản phẩm, mã đơn; để trống thì dùng mẫu mặc định', function () {
+    $admin = staffMember(Role::QuanTri);
+    $template = "Cảm ơn bạn đã mua {{san_pham}} (đơn {{ ma_don }})\nTài khoản: {{username}} / {{password}}\nHạn: {{han_su_dung}} · Bảo hành đến {{han_bao_hanh}}";
+
+    $product = $this->catalog->create($admin, netflixDraft(deliveryTemplate: $template));
+
+    expect($product->fresh()->delivery_template)->toBe($template);
+
+    $this->catalog->update($admin, $product, netflixDraft(deliveryTemplate: "  \n "));
+
+    expect($product->fresh()->delivery_template)->toBeNull();
+});
+
+it('Mẫu giao hàng chỉ dùng được biến đã khai báo', function (ProductDraft $draft, string $message) {
+    expect(fn () => $this->catalog->create(staffMember(Role::QuanTri), $draft))
+        ->toThrow(InvalidProductConfiguration::class, $message);
+
+    expect(Product::count())->toBe(0);
+})->with([
+    'biến không tồn tại' => [fn () => netflixDraft(deliveryTemplate: 'Mã: {{ma_the}} {{user_name}}'), 'Mẫu giao hàng dùng biến không có: {{ma_the}}, {{user_name}}.'],
+    'Trường nội dung trùng tên biến có sẵn' => [fn () => netflixDraft([
+        new ContentFieldDraft('username', 'Tên đăng nhập', dedupeKey: true),
+        new ContentFieldDraft('ma_don', 'Mã đơn gốc'),
+    ]), 'Định danh trường "ma_don" trùng tên biến của Mẫu giao hàng.'],
+]);

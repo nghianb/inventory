@@ -40,7 +40,9 @@ Khoá nội dung, khoá HMAC và khoá backup nằm trong `.env`, tách khỏi `
 - Kênh bán (chỉ Quản trị): loại thủ công, cờ bắt buộc mã đơn ngoài; kênh ngừng dùng thì ẩn, không xoá.
 - Phiếu xuất (Quản trị, Bán hàng): mã đơn ngoài duy nhất trong kênh, bị chiếm khi phiếu được tạo; để trống ở kênh không bắt buộc thì tự sinh `PX-YYYYMMDD-NNNN` (bộ đếm theo ngày ở bảng `dispatch_ref_counters`). Tối đa `INVENTORY_DISPATCH_MAX_SLOTS` (mặc định 1.000) Slot mỗi phiếu.
 - `ManualDispatch` chọn Slot theo Thứ tự xuất bằng `FOR UPDATE SKIP LOCKED` và giao ngay trong một transaction: cả phiếu giao đủ hoặc thất bại, mỗi Slot Còn hàng → Đã giao ghi Sổ biến động kho, mỗi lần Giao hàng giữ thời hạn bảo hành của Sản phẩm lúc giao. Tồn bán được định nghĩa một chỗ ở `SellableStock`.
-- Màn kết quả hiện nội dung đầy đủ đúng một lần cho người tạo phiếu, ghi Nhật ký xem mã ngữ cảnh Giao hàng cho mỗi Slot; Copy chạy ở trình duyệt, không ghi nhật ký. Tải lại trang thì không hiện nội dung nữa.
+- Màn kết quả hiện nội dung đầy đủ đúng một lần cho người tạo phiếu, ghép theo Mẫu giao hàng của Sản phẩm (biến `{{dinh_danh_truong}}`, `{{san_pham}}`, `{{ma_don}}`, `{{han_su_dung}}`, `{{han_bao_hanh}}`; chưa có mẫu thì mỗi trường một dòng "Tên trường: giá trị"), ghi Nhật ký xem mã ngữ cảnh Giao hàng cho mỗi Slot; Copy chạy ở trình duyệt, không ghi nhật ký. Tải lại trang thì không hiện nội dung nữa.
+- Phiếu từ `INVENTORY_DISPATCH_RESULT_MASK_SLOTS` (mặc định 50) Slot trở lên: màn kết quả chỉ hiện bảng dạng che, không Copy từng Slot; Copy tất cả gọi server và ghi Nhật ký xem mã cho mọi Slot.
+- Tải TXT (theo mẫu) và CSV (mỗi Slot một dòng, mỗi Trường nội dung một cột) sinh lúc tải, không lưu trên server; chỉ người tạo phiếu, trong `INVENTORY_DISPATCH_RESULT_DOWNLOAD_MINUTES` (mặc định 30) phút sau khi màn kết quả hiện; mỗi lần tải ghi Nhật ký xem mã cho mọi Slot.
 - Sản phẩm đã có Phiếu xuất không đổi được Mã sản phẩm.
 
 ## Xem mã

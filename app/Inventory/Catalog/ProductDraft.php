@@ -22,6 +22,7 @@ final readonly class ProductDraft
         public int $minRemainingDays = 0,
         public ?int $lowStockThreshold = null,
         public ?Normalization $normalization = null,
+        public ?string $deliveryTemplate = null,
     ) {}
 
     /**

@@ -181,3 +181,31 @@ it('Quản trị khai báo, sửa và ngừng dùng Kênh bán từ panel', func
     expect($facebook->fresh())->name->toBe('Facebook Page')->requires_external_ref->toBeFalse()
         ->and($facebook->fresh()->isHidden())->toBeTrue();
 });
+
+it('màn kết quả từ 50 Slot chỉ hiện bảng dạng che, không Copy từng Slot; Copy tất cả và Tải file ghi Nhật ký xem mã', function () {
+    $intake = app(BatchIntake::class);
+    $intake->confirm($this->admin, $intake->submit($this->admin, new BatchDraft(
+        supplier: app(SupplierDirectory::class)->create($this->admin, 'G2A'),
+        receivedOn: CarbonImmutable::today(),
+        lines: [new BatchLineDraft($this->steam, 95_000, implode("\n", array_map(fn (int $i) => sprintf("BULK%d\tBULK-%04d", $i, $i), range(1, 50))))],
+    )));
+    $dispatch = app(ManualDispatch::class)->create($this->seller, new DispatchDraft($this->zalo, null, [new DispatchLineDraft($this->steam, 50)]));
+    $this->actingAs($this->seller);
+
+    $page = Livewire::test(DispatchResult::class, ['record' => $dispatch->getRouteKey()])
+        ->assertSee('Xuất kho thành công · 50 Slot')
+        ->assertSee('Mã thẻ: ••••••')
+        ->assertDontSee('AAAA-0001')
+        ->assertDontSee('BULK-0001')
+        ->assertDontSeeHtml('clipboard.writeText');
+
+    expect(RevealLogEntry::count())->toBe(0);
+
+    $page->callAction(TestAction::make('copyAll')->schemaComponent('resultActions'))->assertHasNoActionErrors();
+
+    expect(RevealLogEntry::count())->toBe(50);
+
+    $page->callAction(TestAction::make('downloadCSV')->schemaComponent('resultActions'))->assertFileDownloaded("phieu-xuat-{$dispatch->id}.csv");
+
+    expect(RevealLogEntry::count())->toBe(100);
+});
