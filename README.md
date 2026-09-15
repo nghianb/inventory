@@ -48,6 +48,6 @@ docker compose run --rm app vendor/bin/pint
 
 ## Cấu trúc
 
-- `app/Inventory`: module nghiệp vụ Kho (Vai trò, Nhật ký bảo mật...). Filament và API chỉ là adapter mỏng gọi vào đây.
+- `app/Inventory`: module nghiệp vụ Kho (Vai trò, Nhật ký bảo mật, Danh mục Sản phẩm và Nhà cung cấp...). Filament và API chỉ là adapter mỏng gọi vào đây.
 - `app/Filament`: panel quản trị.
 - `database/seeders/RoleSeeder.php`: ba Vai trò Quản trị, Nhập kho, Bán hàng.
