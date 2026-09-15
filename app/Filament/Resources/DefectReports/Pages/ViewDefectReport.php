@@ -3,30 +3,42 @@
 namespace App\Filament\Resources\DefectReports\Pages;
 
 use App\Filament\Resources\DefectReports\DefectReportResource;
+use App\Filament\Resources\Dispatches\DispatchResource;
 use App\Filament\Support\InventoryAction;
 use App\Inventory\Access\RoleGate;
 use App\Inventory\Dispatch\AffectedDelivery;
+use App\Inventory\Dispatch\DeliveryTemplate;
 use App\Inventory\Reveal\ContentReveal;
 use App\Inventory\Warranty\DefectReporting;
 use App\Inventory\Warranty\DefectScope;
+use App\Inventory\Warranty\ReplacementDelivery;
+use App\Inventory\Warranty\ReplacementDraft;
+use App\Inventory\Warranty\ReplacementPreview;
 use App\Models\DefectReport;
 use App\Models\Delivery;
+use App\Models\Product;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Radio;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Text;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
 
 /**
  * Trang xác minh Báo lỗi: Xem mã (ghi Nhật ký xem mã ngữ cảnh Báo lỗi), Xác nhận với Phạm vi lỗi
  * hoặc Bác bỏ, kèm ghi chú. Đơn vị hàng chuyển Lỗi thì liệt kê Lần giao bị ảnh hưởng và cho tạo Báo
- * lỗi hàng loạt tự Xác nhận. Nội dung chỉ nằm trong tham số của modal vừa mở.
+ * lỗi hàng loạt tự Xác nhận. Báo lỗi Chờ đổi thì Đổi hàng (gọi ReplacementDelivery, rồi hiện mã
+ * lần giao mới qua màn kết quả Đổi hàng) hoặc Không đổi. Nội dung chỉ nằm trong tham số của modal
+ * vừa mở.
  */
 class ViewDefectReport extends ViewRecord
 {
@@ -108,6 +120,74 @@ class ViewDefectReport extends ViewRecord
 
                     Notification::make()->success()->title('Đã Bác bỏ Báo lỗi.')->send();
                 }),
+            Action::make('replace')
+                ->label('Đổi hàng')
+                ->icon(Heroicon::OutlinedArrowPathRoundedSquare)
+                ->color('success')
+                ->modalHeading('Đổi hàng')
+                ->modalSubmitActionLabel('Đổi hàng')
+                ->fillForm(fn (): array => ['product_id' => $this->reportRecord()->stockUnit->product_id, 'accept_shorter_expiry' => false])
+                ->schema(fn (): array => $this->replacementSchema())
+                // Bán hàng vẫn mở được modal ở lần đổi thứ 3 để thấy cảnh báo cần Quản trị; nút gửi bị khoá.
+                ->visible(fn (DefectReporting $reports): bool => $reports->canDeclineReplacement(InventoryAction::actor(), $this->reportRecord()))
+                ->modalSubmitAction(fn (Action $submit): Action => $submit->disabled(! app(ReplacementDelivery::class)->canReplace(InventoryAction::actor(), $this->reportRecord())))
+                ->action(function (Action $action, array $data, ReplacementDelivery $replacements, ContentReveal $reveal): void {
+                    $replacement = InventoryAction::attempt($action, fn () => $replacements->replace(InventoryAction::actor(), $this->reportRecord(), new ReplacementDraft(
+                        product: Product::query()->find($data['product_id'] ?? null),
+                        productChangeReason: $data['product_change_reason'] ?? null,
+                        acceptShorterExpiry: (bool) ($data['accept_shorter_expiry'] ?? false),
+                    )));
+                    $this->reportRecord()->refresh();
+
+                    // Báo trước khi xem mã: Đổi hàng đã commit dù bước xem mã có lỗi.
+                    Notification::make()->success()->title('Đã Đổi hàng.')->send();
+                    $content = InventoryAction::attempt($action, fn () => $reveal->revealReplacement(InventoryAction::actor(), $replacement));
+
+                    $this->replaceMountedAction('revealedContent', [
+                        'slot' => $content->slotId,
+                        'message' => (string) $content->message,
+                    ]);
+                }),
+            Action::make('decline')
+                ->label('Không đổi')
+                ->icon(Heroicon::OutlinedNoSymbol)
+                ->color('gray')
+                ->modalHeading('Không đổi')
+                ->modalDescription('Kho không xử lý hoàn tiền. Khách được hoàn tiền ngoài kho thì Giá bán của Dòng xuất cần sửa xuống số tiền shop thực giữ.')
+                ->modalSubmitActionLabel('Đặt Không đổi')
+                ->schema([
+                    Textarea::make('reason')
+                        ->label('Lý do')
+                        ->rows(2)
+                        ->required(),
+                    Checkbox::make('refunded')
+                        ->label('Khách đã được hoàn tiền ngoài kho'),
+                ])
+                ->visible(fn (DefectReporting $reports): bool => $reports->canDeclineReplacement(InventoryAction::actor(), $this->reportRecord()))
+                ->action(function (Action $action, DefectReporting $reports, array $data): void {
+                    $refunded = (bool) ($data['refunded'] ?? false);
+
+                    InventoryAction::attempt($action, fn () => $reports->declineReplacement(InventoryAction::actor(), $this->reportRecord(), (string) $data['reason'], $refunded));
+                    $this->reportRecord()->refresh();
+
+                    if (! $refunded) {
+                        Notification::make()->success()->title('Đã đặt Không đổi.')->send();
+
+                        return;
+                    }
+
+                    // Giá bán sửa qua Sửa phiếu của Phiếu xuất để có lịch sử sửa phiếu.
+                    Notification::make()
+                        ->success()
+                        ->title('Đã đặt Không đổi. Hãy sửa Giá bán của Dòng xuất xuống số tiền shop thực giữ.')
+                        ->actions([
+                            Action::make('openDispatch')
+                                ->label('Mở Phiếu xuất để Sửa phiếu')
+                                ->url(DispatchResource::getUrl('view', ['record' => $this->reportRecord()->delivery->dispatchLine->dispatch_id])),
+                        ])
+                        ->persistent()
+                        ->send();
+                }),
             Action::make('confirmAffected')
                 ->label('Báo lỗi hàng loạt')
                 ->icon(Heroicon::OutlinedQueueList)
@@ -140,6 +220,70 @@ class ViewDefectReport extends ViewRecord
             ])
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Đóng');
+    }
+
+    /**
+     * Form Đổi hàng: tóm tắt Hạn bảo hành kế thừa, lần đổi thứ mấy và Slot sẽ chọn cho Sản phẩm đang
+     * chọn; Sản phẩm khác bắt buộc lý do; không có Slot phủ Hạn bảo hành thì phải chấp nhận Slot hạn
+     * ngắn hơn.
+     *
+     * @return list<mixed>
+     */
+    private function replacementSchema(): array
+    {
+        $report = $this->reportRecord();
+        $productId = $report->stockUnit->product_id;
+        $preview = fn (Get $get): ReplacementPreview => app(ReplacementDelivery::class)->preview(InventoryAction::actor(), $report, Product::query()->find($get('product_id')));
+        $changed = fn (Get $get): bool => (int) $get('product_id') !== $productId;
+
+        return [
+            Text::make(fn (Get $get): HtmlString => self::previewSummary($preview($get))),
+            Select::make('product_id')
+                ->label('Sản phẩm giao ra')
+                ->options(fn (): array => Product::query()
+                    ->where(fn (Builder $query) => $query->onSale()->orWhere('id', $productId))
+                    ->orderBy('name')
+                    ->get()
+                    ->mapWithKeys(fn (Product $product): array => [$product->id => "{$product->code} · {$product->name}"])
+                    ->all())
+                ->searchable()
+                ->required()
+                ->live()
+                ->helperText('Mặc định cùng Sản phẩm với Đơn vị hàng lỗi; Sản phẩm khác bắt buộc lý do.'),
+            Textarea::make('product_change_reason')
+                ->label('Lý do đổi sang Sản phẩm khác')
+                ->rows(2)
+                ->required($changed)
+                ->visible($changed),
+            Checkbox::make('accept_shorter_expiry')
+                ->label('Chấp nhận Slot có Hạn sử dụng ngắn hơn Hạn bảo hành kế thừa')
+                ->accepted()
+                ->visible(fn (Get $get): bool => $preview($get)->coversWarranty === false),
+        ];
+    }
+
+    private static function previewSummary(ReplacementPreview $preview): HtmlString
+    {
+        $slot = match ($preview->coversWarranty) {
+            null => 'Hết hàng: không có Slot nào để Đổi hàng.',
+            true => $preview->candidateExpiresOn === null
+                ? 'Slot sẽ chọn không có Hạn sử dụng.'
+                : 'Slot sẽ chọn có Hạn sử dụng '.$preview->candidateExpiresOn->format(DeliveryTemplate::DATE_FORMAT).'.',
+            false => sprintf(
+                '<strong>Cảnh báo:</strong> không có Slot nào có Hạn sử dụng phủ Hạn bảo hành; Slot hạn dài nhất hết hạn %s.',
+                $preview->candidateExpiresOn?->format(DeliveryTemplate::DATE_FORMAT),
+            ),
+        };
+
+        return new HtmlString(sprintf(
+            'Thay cho <strong>%s</strong> · %s. Hạn bảo hành kế thừa: %s. Lần đổi thứ %d trong chuỗi.%s<br>%s',
+            e($preview->productName),
+            e($preview->unitLabel),
+            $preview->warrantyEndsOn->format(DeliveryTemplate::DATE_FORMAT),
+            $preview->sequence,
+            $preview->requiresApproval ? ' <strong>Cảnh báo:</strong> từ lần đổi thứ '.ReplacementDelivery::APPROVAL_SEQUENCE.' cần Quản trị duyệt.' : '',
+            $slot,
+        ));
     }
 
     /**

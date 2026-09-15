@@ -204,6 +204,53 @@ class DefectReporting
     }
 
     /**
+     * Đặt Kết quả xử lý Không đổi cho Báo lỗi Chờ đổi, lý do bắt buộc. Khách đã được hoàn tiền ngoài
+     * kho thì đánh dấu `$refunded`: Giá bán của Dòng xuất cần sửa xuống số tiền shop thực giữ, qua
+     * sửa Phiếu xuất (có lịch sử). Kết quả xử lý không đổi lại được.
+     *
+     * @throws MissingRole
+     * @throws InvalidDefectReport
+     */
+    public function declineReplacement(User $actor, DefectReport $report, string $reason, bool $refunded): void
+    {
+        $this->roles->authorize($actor, Role::BanHang);
+        $reason = trim($reason);
+
+        if ($reason === '') {
+            throw new InvalidDefectReport(['Không đổi phải nhập lý do.']);
+        }
+
+        DB::transaction(function () use ($actor, $report, $reason, $refunded): void {
+            // Khoá Báo lỗi: Không đổi và Đổi hàng cùng lúc thì bên sau thấy Kết quả xử lý đã đặt.
+            $current = DefectReport::query()->lockForUpdate()->findOrFail($report->getKey());
+
+            if ($current->status !== DefectReportStatus::Confirmed) {
+                throw new InvalidDefectReport(['Chỉ đặt Kết quả xử lý cho Báo lỗi Xác nhận.']);
+            }
+
+            if ($current->resolution !== DefectResolution::AwaitingReplacement) {
+                throw new InvalidDefectReport(["Báo lỗi đã {$current->resolution?->label()}; không đặt Kết quả xử lý được nữa."]);
+            }
+
+            $current->forceFill([
+                'resolution' => DefectResolution::NotReplaced,
+                'resolution_note' => $reason,
+                'refunded' => $refunded,
+                'resolved_by' => $actor->getKey(),
+                'resolved_at' => now(),
+            ])->save();
+        });
+    }
+
+    /**
+     * Để panel ẩn nút Không đổi, không thay cho kiểm tra trong {@see declineReplacement()}.
+     */
+    public function canDeclineReplacement(User $actor, DefectReport $report): bool
+    {
+        return $this->roles->allows($actor, Role::BanHang) && $report->resolution === DefectResolution::AwaitingReplacement;
+    }
+
+    /**
      * Lần giao bị ảnh hưởng của Báo lỗi đã làm Đơn vị hàng chuyển Lỗi: các lần giao khác còn Đã giao
      * của Đơn vị hàng, để liên hệ khách. Rỗng khi Báo lỗi không phải Xác nhận cả Đơn vị hàng.
      *
@@ -280,6 +327,7 @@ class DefectReporting
                 'description' => $current->description,
                 'source_defect_report_id' => $current->id,
                 'scope' => DefectScope::Unit,
+                'resolution' => DefectResolution::AwaitingReplacement,
                 'verification_note' => "Tự Xác nhận theo Báo lỗi #{$current->id}",
                 'verified_by' => $actor->getKey(),
                 'verified_at' => $now,
@@ -424,6 +472,7 @@ class DefectReporting
         $report->forceFill([
             'status' => $status,
             'scope' => $scope,
+            'resolution' => $status === DefectReportStatus::Confirmed ? DefectResolution::AwaitingReplacement : null,
             'verification_note' => $note,
             'verified_by' => $actor->getKey(),
             'verified_at' => now(),

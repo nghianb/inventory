@@ -64,6 +64,14 @@ Khoá nội dung, khoá HMAC và khoá backup nằm trong `.env`, tách khỏi `
 - Đơn vị hàng chuyển Lỗi theo Báo lỗi: liệt kê Lần giao bị ảnh hưởng và cho tạo Báo lỗi hàng loạt tự Xác nhận cả Đơn vị hàng (`confirmAffected`, `source_defect_report_id`), cùng quy tắc Hạn bảo hành; modal chỉ liệt kê lần giao còn tạo được Báo lỗi. Chi tiết Đơn vị hàng Lỗi có mục Lần giao bị ảnh hưởng kèm trạng thái Báo lỗi (chỉ Bán hàng và Quản trị thấy vì có thông tin khách). Không tự Đổi hàng.
 - Tab tồn đọng: Báo lỗi Chờ xác minh quá `INVENTORY_DEFECT_BACKLOG_HOURS` (mặc định 24) giờ kể từ lúc tạo.
 
+## Đổi hàng
+
+- Báo lỗi Xác nhận (kể cả tự Xác nhận hàng loạt) có Kết quả xử lý Chờ đổi (`defect_reports.resolution`); tab Chờ đổi ở danh sách Báo lỗi. Từ Chờ đổi sang Đã đổi (qua Đổi hàng) hoặc Không đổi (`DefectReporting::declineReplacement`, lý do bắt buộc, cờ `refunded` khi khách được hoàn tiền ngoài kho); không đổi lại được. Không đổi kèm hoàn tiền thì panel nhắc sửa Giá bán của Dòng xuất qua Sửa phiếu (có lịch sử sửa phiếu).
+- Đổi hàng ở trang Báo lỗi (`ReplacementDelivery`): khoá Báo lỗi rồi lần giao gốc của chuỗi, chọn Slot (`SlotPicker::replacementCandidates`, kể cả Sản phẩm Ngừng bán nếu cùng Sản phẩm, bỏ qua Đơn vị hàng lỗi) theo Thứ tự xuất nhưng thay Hạn còn lại tối thiểu bằng Hạn sử dụng ≥ Hạn bảo hành kế thừa. Không có Slot phủ đủ thì modal cảnh báo và chỉ đổi khi chấp nhận Slot hạn ngắn hơn (chọn Slot hạn dài nhất; Hạn bảo hành không vượt Hạn sử dụng của Slot đó). Mặc định cùng Sản phẩm; Sản phẩm khác bắt buộc lý do.
+- Lần giao mới vào một Dòng xuất loại Đổi hàng (không có Giá bán) của Phiếu xuất gốc, lưu Hạn bảo hành kế thừa của lần giao gốc (`deliveries.warranty_ends_on`). Bảng `replacements`: Báo lỗi (unique), lần giao gốc của chuỗi và lần đổi thứ mấy (unique theo cặp), lần giao mới, lý do đổi Sản phẩm, chấp nhận hạn ngắn, Chi phí đổi hàng (Giá vốn Slot thay thế) gắn Sản phẩm và Nhà cung cấp của Đơn vị hàng lỗi (kể cả Phạm vi chỉ Slot). Panel không hiện Chi phí đổi hàng hay Nhà cung cấp. Dòng xuất loại Đổi hàng không nhận Giá bán ở Sửa phiếu (`DispatchEditor`), và lần giao Đổi hàng không Giao thay được (sẽ mất Hạn bảo hành kế thừa và vị trí trong chuỗi).
+- Lần đổi 1–2 của chuỗi Bán hàng tự làm; từ lần 3 modal cảnh báo và chỉ Quản trị Đổi hàng được.
+- Xong thì hiện mã Slot mới qua màn kết quả Đổi hàng (`ContentReveal::revealReplacement`): chỉ người vừa Đổi hàng, một lần, ghi Nhật ký xem mã ngữ cảnh Đổi hàng; xem lại sau đó qua Xem mã của lần giao. Bảng Lần giao của Phiếu xuất có cột Đổi hàng cho.
+
 ## Xem mã
 
 - Nội dung đầy đủ chỉ trả qua module Kho (`ContentReveal`, `BatchIntake::rejectedLines`); mỗi lần xem ghi Nhật ký xem mã (bảng `reveal_log_entries`, chỉ-ghi-thêm, chặn cả bằng trigger) trong cùng transaction, trước khi trả nội dung.

@@ -18,10 +18,12 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property CarbonImmutable $delivered_at
  * @property ?int $delivered_by
  * @property ?int $corrects_delivery_id lần giao bị huỷ mà lần giao này Giao thay
+ * @property ?CarbonImmutable $warranty_ends_on Hạn bảo hành kế thừa, khi lần giao là Đổi hàng
  * @property-read DispatchLine $dispatchLine
  * @property-read Slot $slot
  * @property-read StockUnit $stockUnit
  * @property-read ?Delivery $corrects
+ * @property-read ?Replacement $replacement
  */
 class Delivery extends Model
 {
@@ -38,18 +40,30 @@ class Delivery extends Model
             'delivered_at' => 'immutable_datetime',
             'delivered_by' => 'integer',
             'corrects_delivery_id' => 'integer',
+            'warranty_ends_on' => 'immutable_date',
         ];
     }
 
     /**
-     * Hạn bảo hành: ngày giao cộng thời hạn bảo hành đã giữ lúc giao, không quá Hạn sử dụng.
+     * Hạn bảo hành: ngày giao cộng thời hạn bảo hành đã giữ lúc giao (Đổi hàng: Hạn bảo hành kế thừa
+     * của lần giao gốc), không quá Hạn sử dụng.
      */
     public function warrantyEndsOn(): CarbonImmutable
     {
-        $end = $this->delivered_at->startOfDay()->addDays($this->warranty_days);
+        $end = $this->warranty_ends_on ?? $this->delivered_at->startOfDay()->addDays($this->warranty_days);
         $expiresOn = $this->stockUnit->expires_on;
 
         return $expiresOn !== null && $expiresOn->lt($end) ? $expiresOn : $end;
+    }
+
+    /**
+     * Đổi hàng đã giao ra lần giao này.
+     *
+     * @return HasOne<Replacement, $this>
+     */
+    public function replacement(): HasOne
+    {
+        return $this->hasOne(Replacement::class);
     }
 
     /**

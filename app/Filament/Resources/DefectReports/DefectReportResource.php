@@ -8,6 +8,7 @@ use App\Filament\Resources\Dispatches\DispatchResource;
 use App\Filament\Resources\StockUnits\StockUnitResource;
 use App\Inventory\Dispatch\AffectedDelivery;
 use App\Inventory\Warranty\DefectReportStatus;
+use App\Inventory\Warranty\DefectResolution;
 use App\Models\DefectReport;
 use BackedEnum;
 use Filament\Actions\ViewAction;
@@ -114,6 +115,45 @@ class DefectReportResource extends Resource
                     TextEntry::make('verified_at')->label('Xác minh lúc')->dateTime('d/m/Y H:i'),
                     TextEntry::make('verification_note')->label('Ghi chú')->columnSpanFull(),
                 ]),
+            // Không hiện Chi phí đổi hàng hay Nhà cung cấp: Bán hàng không được thấy.
+            Section::make('Kết quả xử lý')
+                ->columns(3)
+                ->visible(fn (DefectReport $record): bool => $record->resolution !== null)
+                ->schema([
+                    TextEntry::make('resolution')
+                        ->label('Kết quả xử lý')
+                        ->badge()
+                        ->formatStateUsing(fn (DefectResolution $state): string => $state->label())
+                        ->color(fn (DefectResolution $state): string => $state->color()),
+                    TextEntry::make('resolver.name')->label('Người xử lý')->placeholder('—'),
+                    TextEntry::make('resolved_at')->label('Xử lý lúc')->dateTime('d/m/Y H:i')->placeholder('—'),
+                    TextEntry::make('resolution_note')
+                        ->label('Lý do Không đổi')
+                        ->visible(fn (DefectReport $record): bool => $record->resolution === DefectResolution::NotReplaced)
+                        ->columnSpanFull(),
+                    TextEntry::make('refunded_note')
+                        ->label('Hoàn tiền ngoài kho')
+                        ->state(fn (DefectReport $record): string => $record->refunded
+                            ? 'Khách đã được hoàn tiền: Giá bán của Dòng xuất cần sửa xuống số tiền shop thực giữ (Sửa phiếu).'
+                            : 'Không')
+                        ->visible(fn (DefectReport $record): bool => $record->resolution === DefectResolution::NotReplaced)
+                        ->columnSpanFull(),
+                    TextEntry::make('replacement_delivery')
+                        ->label('Lần giao Đổi hàng')
+                        ->state(fn (DefectReport $record): ?string => $record->replacement === null ? null : sprintf(
+                            '%s · lần đổi thứ %d trong chuỗi · giao %s',
+                            $record->replacement->delivery->unitLabel(),
+                            $record->replacement->sequence,
+                            $record->replacement->delivery->delivered_at->format('d/m/Y H:i'),
+                        ))
+                        ->url(fn (DefectReport $record): ?string => $record->replacement === null ? null : DispatchResource::getUrl('view', ['record' => $record->delivery->dispatchLine->dispatch_id]))
+                        ->visible(fn (DefectReport $record): bool => $record->replacement !== null)
+                        ->columnSpanFull(),
+                    TextEntry::make('replacement.product_change_reason')
+                        ->label('Lý do đổi sang Sản phẩm khác')
+                        ->visible(fn (DefectReport $record): bool => $record->replacement?->product_change_reason !== null)
+                        ->columnSpanFull(),
+                ]),
             RepeatableEntry::make('slot_history')
                 ->label('Báo lỗi khác của Slot')
                 ->state(fn (DefectReport $record): array => DefectReport::query()
@@ -175,6 +215,12 @@ class DefectReportResource extends Resource
                     ->badge()
                     ->formatStateUsing(fn (DefectReportStatus $state): string => $state->label())
                     ->color(fn (DefectReportStatus $state): string => $state->color()),
+                TextColumn::make('resolution')
+                    ->label('Kết quả xử lý')
+                    ->badge()
+                    ->formatStateUsing(fn (DefectResolution $state): string => $state->label())
+                    ->color(fn (DefectResolution $state): string => $state->color())
+                    ->placeholder('—'),
                 TextColumn::make('creator.name')
                     ->label('Người tạo'),
             ])
