@@ -49,6 +49,14 @@ class Delivery extends Model
     }
 
     /**
+     * Đơn vị hàng và Slot đã giao, dạng chữ: "#12 · Slot #34".
+     */
+    public function unitLabel(): string
+    {
+        return "#{$this->stock_unit_id} · Slot #{$this->slot_id}";
+    }
+
+    /**
      * @return BelongsTo<DispatchLine, $this>
      */
     public function dispatchLine(): BelongsTo

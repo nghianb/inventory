@@ -28,8 +28,6 @@ use stdClass;
  */
 class ManualDispatch
 {
-    private const MAX_REF_LENGTH = 100;
-
     private const GENERATED_REF_ATTEMPTS = 50;
 
     public function __construct(
@@ -205,8 +203,9 @@ class ManualDispatch
     }
 
     /**
-     * Chèn phiếu với ON CONFLICT để hai phiếu cùng mã đơn không làm hỏng transaction: mã nhập tay
-     * đã bị chiếm thì báo trùng, mã tự sinh đã bị chiếm (nhân viên từng gõ đúng mã đó) thì lấy số kế.
+     * Chiếm mã đơn ngoài (ON CONFLICT, không làm hỏng transaction) rồi mới chèn phiếu với id lấy trước:
+     * mã nhập tay đã bị chiếm thì báo trùng, mã tự sinh đã bị chiếm (nhân viên từng gõ hoặc sửa phiếu
+     * sang đúng mã đó) thì lấy số kế.
      *
      * @throws InvalidDispatch
      */
@@ -216,9 +215,20 @@ class ManualDispatch
 
         for ($attempt = 0; $attempt < self::GENERATED_REF_ATTEMPTS; $attempt++) {
             $candidate = $ref ?? self::nextGeneratedRef();
+            $id = (int) DB::selectOne("SELECT nextval(pg_get_serial_sequence('dispatches', 'id')) AS id")->id;
+
+            if (! ExternalRefs::claim($channel->id, $candidate, $id)) {
+                if ($ref !== null) {
+                    throw new InvalidDispatch([ExternalRefs::taken($channel, $ref)]);
+                }
+
+                continue;
+            }
+
             $now = now();
 
-            $inserted = DB::table('dispatches')->insertOrIgnoreReturning([[
+            DB::table('dispatches')->insert([
+                'id' => $id,
                 'sales_channel_id' => $channel->id,
                 'external_ref' => $candidate,
                 'customer' => self::blankToNull($draft->customer),
@@ -228,15 +238,9 @@ class ManualDispatch
                 'completed_at' => $now,
                 'created_at' => $now,
                 'updated_at' => $now,
-            ]], ['id'], ['sales_channel_id', 'external_ref']);
+            ]);
 
-            if ($inserted->isNotEmpty()) {
-                return Dispatch::query()->findOrFail($inserted->first()->id);
-            }
-
-            if ($ref !== null) {
-                throw new InvalidDispatch([self::duplicateRef($channel, $ref)]);
-            }
+            return Dispatch::query()->findOrFail($id);
         }
 
         throw new InvalidDispatch([new DispatchProblem('Không sinh được mã đơn ngoài; hãy nhập mã đơn.')]);
@@ -278,10 +282,8 @@ class ManualDispatch
             $problems[] = new DispatchProblem("Kênh bán \"{$channel->name}\" bắt buộc mã đơn ngoài.");
         }
 
-        if ($ref !== null && mb_strlen($ref) > self::MAX_REF_LENGTH) {
-            $problems[] = new DispatchProblem(sprintf('Mã đơn ngoài dài quá %d ký tự.', self::MAX_REF_LENGTH));
-        } elseif ($channel !== null && $ref !== null && self::existingDispatchId($channel, $ref) !== null) {
-            $problems[] = self::duplicateRef($channel, $ref);
+        if ($ref !== null && ($problem = ExternalRefs::problem($channel, $ref)) !== null) {
+            $problems[] = $problem;
         }
 
         if ($draft->lines === []) {
@@ -336,18 +338,6 @@ class ManualDispatch
         }
 
         return $problems;
-    }
-
-    private static function duplicateRef(SalesChannel $channel, string $ref): DispatchProblem
-    {
-        return new DispatchProblem("Mã đơn ngoài \"{$ref}\" đã có trong Kênh bán \"{$channel->name}\".", self::existingDispatchId($channel, $ref));
-    }
-
-    private static function existingDispatchId(SalesChannel $channel, string $ref): ?int
-    {
-        $id = Dispatch::query()->where('sales_channel_id', $channel->id)->where('external_ref', $ref)->value('id');
-
-        return $id === null ? null : (int) $id;
     }
 
     private static function discontinued(Product $product): DispatchProblem
