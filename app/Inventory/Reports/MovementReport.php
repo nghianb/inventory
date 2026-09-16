@@ -251,8 +251,8 @@ class MovementReport
     /**
      * Tổng Giá bán các Dòng xuất có lần Giao hàng đầu tiên trong khoảng. Giá bán là tổng tiền của cả
      * Dòng xuất, không phải đơn giá, nên mỗi Dòng xuất chỉ tính một lần, vào kỳ nó bắt đầu được
-     * giao. Chỉ Giao bán và Giao thêm: Đổi hàng và Giao thay không có Giá bán, và lọc thẳng theo loại
-     * chứ không tin mỗi `sale_price IS NULL`, vì Sửa phiếu từng ghi được Giá bán vào dòng Giao thay.
+     * giao. Chỉ Giao bán và Giao thêm: Đổi hàng và Giao thay không có Giá bán — ràng buộc
+     * `dispatch_lines_sale_price_kind` giữ điều đó ở tầng DB, đây lọc theo loại cho đúng ý.
      */
     private static function sales(MovementReportFilter $filter): QueryBuilder
     {
