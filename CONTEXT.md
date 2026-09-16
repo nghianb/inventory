@@ -96,6 +96,12 @@ _Avoid_: lãi (khi không rõ gộp hay ròng)
 **Tổn thất** (Loss):
 **Giá vốn** của **Slot** rời vòng đời bán mà không thu tiền, tính theo thời điểm phát sinh: Tổn thất hàng Lỗi (Slot còn trong kho khi **Đơn vị hàng** chuyển Lỗi, mất đi nếu **Khôi phục**), Tổn thất **Huỷ hàng** (theo lý do) và Tổn thất hết hạn (Slot Còn hàng quá **Hạn sử dụng**). Mỗi Slot chỉ tính tổn thất một lần. Hàng bị **Huỷ nhập** không phải tổn thất.
 
+**Điều chỉnh** (Adjustment):
+Phần làm mỏng lãi mà không đi qua một lần bán nào, tính theo thời điểm phát sinh và gắn với **Sản phẩm** cùng **Nhà cung cấp** của **Đơn vị hàng**: **Chi phí đổi hàng**, **Tổn thất** (hàng Lỗi, **Huỷ hàng** theo từng lý do, hết hạn), trừ đi bồi hoàn tiền từ **Khiếu nại nhà cung cấp**. **Lãi ròng kho** = **Lãi gộp** − Điều chỉnh. Âm được khi trong kỳ đòi được nhiều hơn phần đã mất.
+
+**Lỗ ròng** (Net supplier loss):
+Phần shop mất vì hàng của một **Nhà cung cấp**, sau khi trừ tiền đã đòi được: **Tổn thất** hàng Lỗi cộng **Chi phí đổi hàng**, trừ bồi hoàn tiền. Hẹp hơn **Điều chỉnh**: Tổn thất **Huỷ hàng** và Tổn thất hết hạn là chuyện của shop nên không tính cho Nhà cung cấp. Bồi hoàn bằng hàng không trừ vào đây vì hàng thay thế đã có **Giá vốn** 0.
+
 **Lãi ròng kho** (Net stock profit):
 **Lãi gộp** trừ **Chi phí đổi hàng** và **Tổn thất**, cộng bồi hoàn tiền từ **Khiếu nại nhà cung cấp** (tính theo ngày giải quyết). Chỉ là lãi của hàng hoá, không gồm chi phí vận hành của shop. Luôn tính lại theo dữ liệu hiện tại, nên con số của một kỳ cũ có thể đổi.
 
@@ -216,3 +222,9 @@ Quản trị ghi lại một lần **Giao hàng** đã thực sự xảy ra như
 - **Đơn vị hàng** Lỗi chưa giao Slot nào (thường do **Đánh dấu Lỗi** khi nhà cung cấp thu hồi hoặc phát hiện hỏng trong kho) có thuộc tử số **Tỉ lệ lỗi** không. Đã chốt: có, vì tử số là số Đơn vị hàng Lỗi của lứa nhập chứ không riêng hàng đã đến tay khách; bỏ ra thì nhà cung cấp bị bắt lỗi hết trong kho lại hiện 0%. Hệ quả: tử số không phải tập con của mẫu số nên tỉ lệ vượt 100% được khi phần lớn lứa còn trong kho, và cột 'Lỗi trong kho' là phần tử số chưa giao chứ không phải cột nằm ngoài tỉ lệ.
 - Dòng bị bỏ vì lỗi định dạng hoặc trùng khi nhập cũng nói lên chất lượng của **Nhà cung cấp**, nhưng chưa từng thành **Đơn vị hàng**. Đã chốt: để ở cột riêng (Dòng lỗi/trùng khi nhập), ngoài cả tử số lẫn mẫu số của Tỉ lệ lỗi.
 - Dòng tổng của một **Nhà cung cấp** có thể hiểu là trung bình **Tỉ lệ lỗi** các **Sản phẩm**. Đã chốt: cộng số **Đơn vị hàng** của mọi Sản phẩm rồi mới chia, để Sản phẩm bán nhiều có trọng số đúng.
+- **Lãi gộp** của một kỳ có thể hiểu theo từng lần **Giao hàng**, nhưng **Giá bán** là tổng tiền của cả **Dòng xuất** chứ không phải đơn giá. Đã chốt: đơn vị tính lãi là Dòng xuất; cả Giá bán lẫn **Giá vốn** của một dòng rơi vào kỳ có lần Giao hàng đầu tiên của dòng, nên Doanh thu trừ Giá vốn hàng bán luôn đúng bằng Lãi gộp của kỳ, không có phần lãi nào bị cắt đôi giữa hai kỳ.
+- Slot giao bù của một **Giao thay** sang **Sản phẩm** khác nằm ở một Dòng xuất loại Giao thay không có Giá bán, nên dễ bị tính thành Giá vốn của Sản phẩm kia. Đã chốt: báo cáo Lãi/lỗ quy Giá vốn ấy về **Dòng xuất gốc**, cùng chỗ với Giá bán đã thu; nếu không, Sản phẩm gốc có doanh thu không kèm Giá vốn còn Sản phẩm kia có Giá vốn không kèm doanh thu.
+- **Dòng xuất** chưa ghi Giá bán có thể bị coi là bán với giá 0, làm Lãi gộp âm giả. Đã chốt: chúng đứng ngoài doanh thu và Lãi gộp, gom vào một dòng 'Chưa có Giá bán' (số **Slot** + Giá vốn) để nhân viên đi điền nốt; Dòng xuất loại **Đổi hàng** và **Giao thay** không vào đó vì theo thiết kế chúng không có Giá bán.
+- Lọc **Nhà cung cấp** trên báo cáo Lãi/lỗ gặp đúng vấn đề của báo cáo Nhập/xuất: một Dòng xuất có thể gồm Slot của nhiều Nhà cung cấp. Đã chốt: khác báo cáo Nhập/xuất (ẩn hẳn cột Giá bán), báo cáo Lãi/lỗ **chia đều Giá bán theo Slot**, vì ở đây bỏ doanh thu đi thì Lãi gộp của Nhà cung cấp mất nghĩa hoàn toàn, còn chia theo Slot vẫn là một phép quy đổi nói được.
+- Hàng thay thế từ **Khiếu nại nhà cung cấp** có thể bị coi là một khoản bồi hoàn trừ vào lỗ. Đã chốt: trong báo cáo lỗ theo Nhà cung cấp nó chỉ là cột tham khảo (đếm **Đơn vị hàng**), không trừ vào lỗ ròng, vì hàng ấy vào kho với **Giá vốn** 0 nên đã tự phản ánh khi bán; trừ thêm lần nữa là tính hai lần.
+- Lỗ "của một **Nhà cung cấp**" có thể hiểu là mọi **Tổn thất** của hàng họ giao. Đã chốt: chỉ gồm **Giá vốn** hàng Lỗi và **Chi phí đổi hàng**; Tổn thất **Huỷ hàng** (giao nhầm, lộ nội dung, ngừng kinh doanh lô) và Tổn thất hết hạn là chuyện của shop, tính cho Nhà cung cấp là đổ oan.
