@@ -2,6 +2,7 @@
 
 namespace App\Inventory\Stock;
 
+use App\Inventory\Catalog\UnknownProductCode;
 use App\Inventory\Warranty\DefectReportStatus;
 use App\Models\Product;
 use Carbon\CarbonImmutable;
@@ -10,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Tồn bán được: Slot Còn hàng giao được ngay. Một định nghĩa dùng chung cho form xuất kho,
- * Thứ tự xuất, báo cáo Tồn kho và cảnh báo sắp hết (StockReport), và (sau này) API kiểm tra tồn.
+ * Thứ tự xuất, báo cáo Tồn kho và cảnh báo sắp hết (StockReport), và API kiểm tra tồn của website.
  */
 class SellableStock
 {
@@ -26,6 +27,32 @@ class SellableStock
     public function counts(array $productIds): array
     {
         return self::countByProduct(self::slots(CarbonImmutable::today()), $productIds);
+    }
+
+    /**
+     * Tồn bán được theo Mã sản phẩm — cách Kênh bán loại API tham chiếu Sản phẩm. Sản phẩm Ngừng bán
+     * trả 0 vì không thuộc Tồn bán được.
+     *
+     * @param  list<string>  $codes
+     * @return array<string, int> số Slot bán được theo Mã sản phẩm
+     *
+     * @throws UnknownProductCode
+     */
+    public function countsByCode(array $codes): array
+    {
+        $products = Product::query()->whereIn('code', $codes)->get()->keyBy('code');
+        $unknown = array_values(array_diff($codes, $products->keys()->all()));
+
+        if ($unknown !== []) {
+            throw new UnknownProductCode($unknown);
+        }
+
+        $counts = $this->counts($products->map(fn (Product $product): int => (int) $product->getKey())->values()->all());
+
+        return array_combine($codes, array_map(
+            fn (string $code): int => $counts[(int) $products[$code]->getKey()],
+            $codes,
+        ));
     }
 
     public function level(Product $product): StockLevel

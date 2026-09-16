@@ -64,6 +64,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | API xuất kho cho website
+    |--------------------------------------------------------------------------
+    |
+    | Hạn Giữ hàng mặc định của một Kênh bán loại API mới (phút); mỗi kênh đặt riêng được.
+    | Rate limit tính theo từng Khoá API, mỗi phút, để khoá bị lộ không rút sạch kho ngay.
+    |
+    */
+
+    'api' => [
+        'hold_minutes' => (int) env('INVENTORY_API_HOLD_MINUTES', 15),
+        'rate_limit_per_minute' => (int) env('INVENTORY_API_RATE_LIMIT', 60),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Báo lỗi
     |--------------------------------------------------------------------------
     |

@@ -20,8 +20,31 @@ final class MaskedContent
      */
     public static function of(Collection $fields, array $plainValues): array
     {
+        return self::map($fields, $plainValues, fn (ContentField $field): string => $field->label);
+    }
+
+    /**
+     * Như {@see of()} nhưng theo định danh Trường nội dung, cho nơi cần khoá ổn định.
+     *
+     * @param  Collection<int, ContentField>  $fields
+     * @param  array<string, string>  $plainValues
+     * @return array<string, string>
+     */
+    public static function byKey(Collection $fields, array $plainValues): array
+    {
+        return self::map($fields, $plainValues, fn (ContentField $field): string => $field->key);
+    }
+
+    /**
+     * @param  Collection<int, ContentField>  $fields
+     * @param  array<string, string>  $plainValues
+     * @param  callable(ContentField): string  $keyBy
+     * @return array<string, string>
+     */
+    private static function map(Collection $fields, array $plainValues, callable $keyBy): array
+    {
         return $fields->mapWithKeys(fn (ContentField $field): array => [
-            $field->label => $field->sensitive ? self::MASK : ($plainValues[$field->key] ?? ''),
+            $keyBy($field) => $field->sensitive ? self::MASK : ($plainValues[$field->key] ?? ''),
         ])->all();
     }
 }

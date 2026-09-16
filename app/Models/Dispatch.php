@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Inventory\Dispatch\ApiDispatch;
 use App\Inventory\Dispatch\DispatchStatus;
 use App\Inventory\Dispatch\ManualDispatch;
 use Carbon\CarbonImmutable;
@@ -13,7 +14,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 /**
- * Phiếu xuất: một đơn cần giao từ một Kênh bán. Chỉ tạo qua {@see ManualDispatch}.
+ * Phiếu xuất: một đơn cần giao từ một Kênh bán. Chỉ tạo qua {@see ManualDispatch} (nhân viên) hoặc
+ * {@see ApiDispatch} (website gọi bằng Khoá API); đúng một trong hai tác nhân có giá trị.
  *
  * @property int $id
  * @property int $sales_channel_id
@@ -21,14 +23,16 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
  * @property ?string $customer
  * @property ?string $note
  * @property DispatchStatus $status
- * @property int $created_by
+ * @property ?int $created_by nhân viên tạo phiếu; null khi phiếu đến từ API
+ * @property ?int $created_by_api_key_id Khoá API tạo phiếu; null khi nhân viên tạo trong panel
  * @property ?CarbonImmutable $completed_at
  * @property ?CarbonImmutable $result_revealed_at
- * @property int $result_by nhân viên của lần xuất kho gần nhất (tạo phiếu hoặc Giao thêm), người duy nhất xem được màn kết quả
+ * @property ?int $result_by nhân viên của lần xuất kho gần nhất (tạo phiếu hoặc Giao thêm), người duy nhất xem được màn kết quả; null khi phiếu đến từ API
  * @property ?int $result_from_line_id Dòng xuất đầu tiên của lần Giao thêm gần nhất; null khi màn kết quả là của lần tạo phiếu
  * @property ?CarbonImmutable $created_at
  * @property-read SalesChannel $salesChannel
- * @property-read User $creator
+ * @property-read ?User $creator
+ * @property-read ?ApiKey $createdByApiKey
  * @property-read Collection<int, DispatchLine> $lines
  * @property-read Collection<int, Delivery> $deliveries
  */
@@ -43,6 +47,7 @@ class Dispatch extends Model
             'sales_channel_id' => 'integer',
             'status' => DispatchStatus::class,
             'created_by' => 'integer',
+            'created_by_api_key_id' => 'integer',
             'completed_at' => 'immutable_datetime',
             'result_revealed_at' => 'immutable_datetime',
             'result_by' => 'integer',
@@ -64,6 +69,24 @@ class Dispatch extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * @return BelongsTo<ApiKey, $this>
+     */
+    public function createdByApiKey(): BelongsTo
+    {
+        return $this->belongsTo(ApiKey::class, 'created_by_api_key_id');
+    }
+
+    /**
+     * "Ai" tạo phiếu, dạng chữ: tên nhân viên, hoặc Khoá API của Kênh bán loại API.
+     */
+    public function creatorLabel(): string
+    {
+        return $this->created_by !== null
+            ? (string) $this->creator?->name
+            : (string) $this->createdByApiKey?->describe();
     }
 
     /**

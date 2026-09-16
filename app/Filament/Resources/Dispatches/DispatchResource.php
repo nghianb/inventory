@@ -10,6 +10,7 @@ use App\Filament\Resources\Dispatches\Widgets\DispatchDeliveries;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
 use App\Inventory\Dispatch\DispatchStatus;
+use App\Inventory\Dispatch\SalesChannelType;
 use App\Inventory\Stock\SellableStock;
 use App\Models\Dispatch;
 use App\Models\DispatchLine;
@@ -84,8 +85,10 @@ class DispatchResource extends Resource
                 ->schema([
                     Select::make('sales_channel_id')
                         ->label('Kênh bán')
+                        // Kênh API nhận đơn qua API chứ không qua form này; phiếu cũ của kênh ấy
+                        // vẫn Giao thêm được nên lúc đó không lọc.
                         ->options(fn (mixed $livewire): array => SalesChannel::query()
-                            ->when(! $additional($livewire), fn (Builder $query) => $query->usable())
+                            ->when(! $additional($livewire), fn (Builder $query) => $query->usable()->where('type', SalesChannelType::Manual))
                             ->orderBy('name')
                             ->pluck('name', 'id')
                             ->all())
@@ -177,7 +180,9 @@ class DispatchResource extends Resource
                         ->state(fn (Dispatch $record): ?string => self::money($record->totalSalePrice()))
                         ->placeholder('Chưa có Giá bán'),
                     TextEntry::make('note')->label('Ghi chú')->placeholder('Không có')->columnSpan(2),
-                    TextEntry::make('creator.name')->label('Người tạo'),
+                    TextEntry::make('creator_label')
+                        ->label('Người tạo')
+                        ->state(fn (Dispatch $record): string => $record->creatorLabel()),
                     TextEntry::make('created_at')->label('Tạo lúc')->dateTime('d/m/Y H:i'),
                 ]),
             RepeatableEntry::make('line_rows')
@@ -240,7 +245,7 @@ class DispatchResource extends Resource
     {
         return $table
             ->defaultSort('id', 'desc')
-            ->modifyQueryUsing(fn (Builder $query) => $query->with(['salesChannel', 'creator'])->withCount('deliveries'))
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['salesChannel', 'creator', 'createdByApiKey'])->withCount('deliveries'))
             ->columns([
                 TextColumn::make('id')
                     ->label('#'),
@@ -260,8 +265,9 @@ class DispatchResource extends Resource
                     ->color(fn (DispatchStatus $state): string => $state->color()),
                 TextColumn::make('deliveries_count')
                     ->label('Slot'),
-                TextColumn::make('creator.name')
-                    ->label('Người tạo'),
+                TextColumn::make('creator_label')
+                    ->label('Người tạo')
+                    ->state(fn (Dispatch $record): string => $record->creatorLabel()),
                 TextColumn::make('created_at')
                     ->label('Tạo lúc')
                     ->dateTime('d/m/Y H:i')

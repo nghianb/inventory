@@ -1,7 +1,14 @@
 <?php
 
 use App\Inventory\Access\Role;
+use App\Inventory\Intake\BatchDraft;
+use App\Inventory\Intake\BatchIntake;
+use App\Inventory\Intake\BatchLineDraft;
+use App\Inventory\Intake\ExpiryRule;
+use App\Models\Batch;
+use App\Models\Product;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -19,4 +26,19 @@ pest()->extend(TestCase::class)
 function staffMember(Role ...$roles): User
 {
     return tap(User::factory()->withTwoFactor()->create())->assignRole($roles);
+}
+
+/**
+ * Nhập và xác nhận một Lô nhập một Dòng nhập vào kho, để test có hàng mà giao. Cần `$this->admin`
+ * (Quản trị hoặc Nhập kho) và `$this->supplier` trong beforeEach.
+ */
+function stockUp(Product $product, string $content, ?ExpiryRule $expiry = null): Batch
+{
+    $intake = app(BatchIntake::class);
+
+    return $intake->confirm(test()->admin, $intake->submit(test()->admin, new BatchDraft(
+        supplier: test()->supplier,
+        receivedOn: CarbonImmutable::today(),
+        lines: [new BatchLineDraft($product, 100_000, $content, expiry: $expiry)],
+    )));
 }
