@@ -100,7 +100,7 @@ _Avoid_: lãi (khi không rõ gộp hay ròng)
 **Lãi gộp** trừ **Chi phí đổi hàng** và **Tổn thất**, cộng bồi hoàn tiền từ **Khiếu nại nhà cung cấp** (tính theo ngày giải quyết). Chỉ là lãi của hàng hoá, không gồm chi phí vận hành của shop. Luôn tính lại theo dữ liệu hiện tại, nên con số của một kỳ cũ có thể đổi.
 
 **Tồn lỗi** (Defective stock):
-Các **Slot** Còn hàng của **Đơn vị hàng** Lỗi: vẫn nằm trong kho nhưng không bán được, tách khỏi **Tồn bán được** trong báo cáo và cảnh báo sắp hết. Đã tính Tổn thất hàng Lỗi nên không **Huỷ hàng** được; muốn huỷ thì **Khôi phục** trước.
+Các **Slot** Còn hàng của **Đơn vị hàng** Lỗi: vẫn nằm trong kho nhưng không bán được, tách khỏi **Tồn bán được** trong báo cáo và cảnh báo sắp hết. Đã tính Tổn thất hàng Lỗi nên không **Huỷ hàng** được và không cộng vào giá trị tồn của báo cáo Tồn kho (hiện thành Giá vốn Tồn lỗi riêng); muốn huỷ thì **Khôi phục** trước.
 
 **Tồn bán được** (Sellable stock):
 Các **Slot** Còn hàng giao được ngay: thuộc **Đơn vị hàng** Hoạt động, không bị tạm ngừng vì **Báo lỗi** Chờ xác minh, chưa quá **Hạn sử dụng** và đạt **Hạn còn lại tối thiểu**. Slot Đã giữ không thuộc Tồn bán được. Đơn vị đếm tồn kho là Slot.
@@ -202,7 +202,8 @@ Quản trị ghi lại một lần **Giao hàng** đã thực sự xảy ra như
 - "nhà cung cấp thu hồi" và "hỏng trong kho" từng là lý do **Huỷ hàng**, khiến hàng lỗi không vào tỉ lệ lỗi. Đã chốt: đó là **Đánh dấu Lỗi**; Huỷ hàng chỉ dành cho lý do không phải lỗi hàng.
 - "audit log" từng dùng chung cho mọi thứ được ghi lại. Đã chốt: tách thành **Nhật ký xem mã** (ai thấy mã nào), **Nhật ký bảo mật** (ai vào hệ thống, ai đổi quyền của ai), **Sổ biến động kho** (chuyển trạng thái) và lịch sử sửa **Phiếu xuất**.
 - "tỉ lệ lỗi tháng X" có thể hiểu là số hàng chuyển Lỗi trong tháng chia số hàng giao trong tháng. Đã chốt: **Tỉ lệ lỗi** tính theo lứa nhập, tử số và mẫu số trên cùng một tập Đơn vị hàng.
-- "tồn kho" từng gộp cả Slot đang giữ và hàng không bán được. Đã chốt: cảnh báo và con số chính dùng **Tồn bán được**; Slot Đã giữ, tạm ngừng, không đạt hạn tối thiểu và **Tồn lỗi** hiện tách riêng.
+- "tồn kho" từng gộp cả Slot đang giữ và hàng không bán được. Đã chốt: cảnh báo và con số chính dùng **Tồn bán được**; Slot Đã giữ, tạm ngừng, không đạt hạn tối thiểu, **Tồn lỗi** và Slot còn dùng được của **Sản phẩm** **Ngừng bán** hiện tách riêng.
+- "giá trị tồn" từng hiểu là tổng **Giá vốn** của mọi **Slot** còn trong kho. Đã chốt: không gồm **Tồn lỗi**, vì Giá vốn đó đã là **Tổn thất** hàng Lỗi; Tồn lỗi có cột Giá vốn riêng.
 - "lãi/lỗ" có thể hiểu là chỉ Giá bán trừ Giá vốn hàng đã giao. Đã chốt: tách **Lãi gộp** và **Lãi ròng kho**; hàng lỗi, huỷ, hết hạn và Chi phí đổi hàng chỉ trừ vào Lãi ròng kho.
 - "khoá" dùng cho nhiều thứ khác nhau. Đã chốt: **Khoá API** (bí mật của kênh), **Khoá chống trùng** (trường nội dung), **Khoá nhân viên** (chặn đăng nhập); còn khoá mã hoá của kho chỉ **Người vận hành server** đụng tới và luôn nói rõ là "khoá mã hoá".
 - Đổi thời hạn bảo hành của **Sản phẩm** có thể hiểu là đổi cả **Hạn bảo hành** của các lần giao cũ. Đã chốt: không; Hạn bảo hành theo thời hạn bảo hành tại thời điểm **Giao hàng**, nên Sản phẩm vẫn đổi được thời hạn bảo hành khi đã có hàng.

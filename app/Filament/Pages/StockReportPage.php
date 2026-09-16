@@ -102,8 +102,11 @@ class StockReportPage extends Page implements HasTable
                     ->tooltip('Báo lỗi Chờ xác minh'),
                 $count('below_min_slots', 'Không đạt Hạn còn lại tối thiểu'),
                 $count('defective_slots', 'Tồn lỗi'),
+                $count('discontinued_slots', 'Ngừng bán còn lại')
+                    ->tooltip('Chỉ còn dùng cho Đổi hàng và Giao thay'),
                 $count('stock_unit_count', 'Đơn vị hàng'),
                 $money('stock_value', 'Giá trị tồn'),
+                $money('defective_value', 'Giá vốn Tồn lỗi'),
                 $count('expiring_slots', 'Hết hạn')
                     ->label(fn (): string => "Hết hạn trong {$this->reportFilter()->expiringWithinDays} ngày"),
                 $money('expiring_cost', 'Giá vốn sắp mất'),

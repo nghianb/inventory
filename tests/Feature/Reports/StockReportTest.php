@@ -122,8 +122,10 @@ function stockRows(array $rows): array
         'paused' => $row->paused,
         'belowMinRemaining' => $row->belowMinRemaining,
         'defective' => $row->defective,
+        'discontinuedSlots' => $row->discontinuedSlots,
         'stockUnits' => $row->stockUnits,
         'stockValue' => $row->stockValue,
+        'defectiveValue' => $row->defectiveValue,
         'expiringSlots' => $row->expiringSlots,
         'expiringCost' => $row->expiringCost,
         'lowStock' => $row->lowStock,
@@ -138,9 +140,11 @@ it('mỗi Sản phẩm một dòng, đếm theo Slot từng cột, kèm số Đ�
             'paused' => 2,
             'belowMinRemaining' => 3,
             'defective' => 3,
+            'discontinuedSlots' => 0,
             'stockUnits' => 4,
-            // a 3 Slot, b 3, d 3 × 30.000; g 2 × 20.000.
-            'stockValue' => 310_000,
+            // a 3 Slot, b 3 × 30.000; g 2 × 20.000. Tồn lỗi (d) tách sang defectiveValue.
+            'stockValue' => 220_000,
+            'defectiveValue' => 90_000,
             // b 3 Slot hết hạn trong 3 ngày, g 2 Slot trong 6 ngày; Tồn lỗi đã tính Tổn thất nên không vào.
             'expiringSlots' => 5,
             'expiringCost' => 130_000,
@@ -152,8 +156,10 @@ it('mỗi Sản phẩm một dòng, đếm theo Slot từng cột, kèm số Đ�
             'paused' => 0,
             'belowMinRemaining' => 0,
             'defective' => 0,
+            'discontinuedSlots' => 0,
             'stockUnits' => 1,
             'stockValue' => 100_000,
+            'defectiveValue' => 0,
             'expiringSlots' => 0,
             'expiringCost' => 0,
             'lowStock' => false,
@@ -179,7 +185,9 @@ it('Slot quá Hạn sử dụng không còn là tồn; Hết hạn trong N ngày
         'paused' => 2,
         'belowMinRemaining' => 0,
         'stockUnits' => 3,
-        'stockValue' => 220_000,
+        // a 3 × 30.000, g 2 × 20.000; Tồn lỗi (d) không vào giá trị tồn.
+        'stockValue' => 130_000,
+        'defectiveValue' => 90_000,
         'expiringSlots' => 0,
         'expiringCost' => 0,
     ])
@@ -221,8 +229,10 @@ it('lọc theo Nhà cung cấp chỉ đếm hàng của Nhà cung cấp đó', f
             'paused' => 2,
             'belowMinRemaining' => 0,
             'defective' => 0,
+            'discontinuedSlots' => 0,
             'stockUnits' => 1,
             'stockValue' => 40_000,
+            'defectiveValue' => 0,
             'expiringSlots' => 2,
             'expiringCost' => 40_000,
             'lowStock' => true,
@@ -235,7 +245,7 @@ it('lọc theo Nhà cung cấp chỉ đếm hàng của Nhà cung cấp đó', f
         ->and($this->report->rows($this->stocker, new StockReportFilter(supplierId: $this->g2a->id, lowStockOnly: true)))->toBe([]);
 });
 
-it('Sản phẩm Ngừng bán không có Tồn bán được; Slot còn giao được của nó vẫn vào Đơn vị hàng và giá trị tồn', function () {
+it('Sản phẩm Ngừng bán không có Tồn bán được; Slot còn giao được của nó vào cột Ngừng bán còn lại', function () {
     app(ProductCatalog::class)->discontinue($this->admin, $this->steam);
 
     expect(stockRows($this->report->rows($this->admin, new StockReportFilter(productIds: [$this->steam->id]))))->toBe([
@@ -245,8 +255,10 @@ it('Sản phẩm Ngừng bán không có Tồn bán được; Slot còn giao đ�
             'paused' => 0,
             'belowMinRemaining' => 0,
             'defective' => 0,
+            'discontinuedSlots' => 1,
             'stockUnits' => 1,
             'stockValue' => 100_000,
+            'defectiveValue' => 0,
             'expiringSlots' => 0,
             'expiringCost' => 0,
             'lowStock' => false,
@@ -303,12 +315,12 @@ it('xuất CSV áp cột theo vai trò, không ghi Nhật ký xem mã hay Nhật
 
     expect($admin[0])->toBe([
         'Mã sản phẩm', 'Sản phẩm', 'Trạng thái', 'Tồn bán được', 'Ngưỡng sắp hết', 'Sắp hết', 'Đã giữ',
-        'Tạm ngừng', 'Không đạt Hạn còn lại tối thiểu', 'Tồn lỗi', 'Đơn vị hàng', 'Giá trị tồn',
-        'Hết hạn trong 3 ngày', 'Giá vốn sắp mất',
+        'Tạm ngừng', 'Không đạt Hạn còn lại tối thiểu', 'Tồn lỗi', 'Ngừng bán còn lại', 'Đơn vị hàng',
+        'Giá trị tồn', 'Giá vốn Tồn lỗi', 'Hết hạn trong 3 ngày', 'Giá vốn sắp mất',
     ])
-        ->and($admin[1])->toBe(['NETFLIX-1M', 'Netflix 1 tháng', 'Đang bán', '2', '5', 'Có', '1', '2', '3', '3', '4', '310000', '3', '90000'])
-        ->and($seller[0])->not->toContain('Giá trị tồn', 'Giá vốn sắp mất')
-        ->and($seller[1])->toBe(['NETFLIX-1M', 'Netflix 1 tháng', 'Đang bán', '2', '5', 'Có', '1', '2', '3', '3', '4', '3'])
+        ->and($admin[1])->toBe(['NETFLIX-1M', 'Netflix 1 tháng', 'Đang bán', '2', '5', 'Có', '1', '2', '3', '3', '0', '4', '220000', '90000', '3', '90000'])
+        ->and($seller[0])->not->toContain('Giá trị tồn', 'Giá vốn Tồn lỗi', 'Giá vốn sắp mất')
+        ->and($seller[1])->toBe(['NETFLIX-1M', 'Netflix 1 tháng', 'Đang bán', '2', '5', 'Có', '1', '2', '3', '3', '0', '4', '3'])
         ->and(RevealLogEntry::count())->toBe($reveals)
         ->and(SecurityLogEntry::count())->toBe($security);
 });
@@ -331,5 +343,5 @@ it('xuất XLSX cùng cột với CSV', function () {
 
     expect($export->fileName)->toBe('bao-cao-ton-kho-2026-09-15.xlsx')
         ->and($rows[0])->toBe(array_values($this->report->columns($this->seller, new StockReportFilter)))
-        ->and($rows[2])->toBe(['STEAM-100K', 'Steam 100K', 'Đang bán', 1, '', 'Không', 0, 0, 0, 0, 1, 0]);
+        ->and($rows[2])->toBe(['STEAM-100K', 'Steam 100K', 'Đang bán', 1, '', 'Không', 0, 0, 0, 0, 0, 1, 0]);
 });

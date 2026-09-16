@@ -16,8 +16,10 @@ final readonly class StockReportRow
      * @param  int  $paused  Slot tạm ngừng vì Báo lỗi Chờ xác minh
      * @param  int  $belowMinRemaining  Slot chưa quá Hạn sử dụng nhưng không đạt Hạn còn lại tối thiểu
      * @param  int  $defective  Tồn lỗi
+     * @param  int  $discontinuedSlots  Slot đạt Hạn còn lại tối thiểu của Sản phẩm Ngừng bán
      * @param  int  $stockUnits  số Đơn vị hàng có Slot tồn
-     * @param  int  $stockValue  tổng Giá vốn Slot tồn
+     * @param  int  $stockValue  tổng Giá vốn Slot tồn, không gồm Tồn lỗi
+     * @param  int  $defectiveValue  tổng Giá vốn Tồn lỗi (đã tính Tổn thất hàng Lỗi)
      * @param  int  $expiringSlots  Slot Còn hàng của Đơn vị hàng Hoạt động hết hạn trong N ngày
      * @param  int  $expiringCost  Giá vốn sắp mất của các Slot đó
      */
@@ -32,8 +34,10 @@ final readonly class StockReportRow
         public int $paused,
         public int $belowMinRemaining,
         public int $defective,
+        public int $discontinuedSlots,
         public int $stockUnits,
         public int $stockValue,
+        public int $defectiveValue,
         public int $expiringSlots,
         public int $expiringCost,
         public bool $lowStock,
@@ -57,8 +61,10 @@ final readonly class StockReportRow
             paused: $count('paused_slots'),
             belowMinRemaining: $count('below_min_slots'),
             defective: $count('defective_slots'),
+            discontinuedSlots: $count('discontinued_slots'),
             stockUnits: $count('stock_unit_count'),
             stockValue: $count('stock_value'),
+            defectiveValue: $count('defective_value'),
             expiringSlots: $count('expiring_slots'),
             expiringCost: $count('expiring_cost'),
             lowStock: (bool) $product->getAttribute('low_stock'),
@@ -81,8 +87,10 @@ final readonly class StockReportRow
             'paused_slots' => $this->paused,
             'below_min_slots' => $this->belowMinRemaining,
             'defective_slots' => $this->defective,
+            'discontinued_slots' => $this->discontinuedSlots,
             'stock_unit_count' => $this->stockUnits,
             'stock_value' => $this->stockValue,
+            'defective_value' => $this->defectiveValue,
             'expiring_slots' => $this->expiringSlots,
             'expiring_cost' => $this->expiringCost,
             default => throw new InvalidArgumentException("Báo cáo Tồn kho không có cột {$column}."),
