@@ -19,13 +19,16 @@ use stdClass;
  *
  * Tính theo lứa nhập: tập xét là Đơn vị hàng có Lô nhập xác nhận trong khoảng, nên tử số và mẫu số
  * luôn trên cùng một tập và con số của một kỳ cũ còn tăng dần khi hàng đã bán lộ lỗi. Mẫu số là Đơn vị
- * hàng đã giao ít nhất một Slot; tử số là phần đang Lỗi trong đó, gồm Lỗi từ Báo lỗi Phạm vi cả Đơn vị
- * hàng và từ Đánh dấu Lỗi. Hàng đã Khôi phục không còn Lỗi nên rời tử số; Báo lỗi chỉ Slot không đổi
- * trạng thái Đơn vị hàng nên không vào tử số; Giao thay không đi qua Báo lỗi và Slot giao nhầm chỉ bị
- * Huỷ hàng, nên lần giao đã bị Giao thay cũng không tính là đã giao.
+ * hàng đã giao ít nhất một Slot; tử số là mọi Đơn vị hàng của lứa đang Lỗi, gồm Lỗi từ Báo lỗi Phạm vi
+ * cả Đơn vị hàng và từ Đánh dấu Lỗi, **kể cả hàng chưa giao Slot nào**: hàng nhà cung cấp thu hồi hay
+ * hỏng trong kho vẫn là hàng họ giao sai, bỏ ra thì nhà cung cấp bị bắt lỗi hết trong kho lại hiện 0%.
+ * Vì thế tử số không phải tập con của mẫu số và tỉ lệ có thể vượt 100% khi phần lớn lứa còn trong kho.
+ * Hàng đã Khôi phục không còn Lỗi nên rời tử số; Báo lỗi chỉ Slot không đổi trạng thái Đơn vị hàng nên
+ * không vào tử số; Giao thay không đi qua Báo lỗi và Slot giao nhầm chỉ bị Huỷ hàng, nên lần giao đã bị
+ * Giao thay cũng không tính là đã giao.
  *
- * Hai cột đứng ngoài Tỉ lệ lỗi: 'Dòng lỗi/trùng khi nhập' là chất lượng file Nhà cung cấp gửi (dòng bị
- * bỏ chưa từng thành hàng), 'Lỗi trong kho' là Đơn vị hàng Lỗi chưa giao Slot nào.
+ * Cột 'Lỗi trong kho' tách riêng phần tử số chưa giao Slot nào. Chỉ 'Dòng lỗi/trùng khi nhập' đứng
+ * ngoài cả tử số lẫn mẫu số: đó là chất lượng file Nhà cung cấp gửi, các dòng ấy chưa từng thành hàng.
  *
  * Chỉ Quản trị và Nhập kho. Xem hay xuất báo cáo không ghi nhật ký.
  */
@@ -109,7 +112,7 @@ class DefectRateReport
     private static function aggregates(DefectRateReportFilter $filter): QueryBuilder
     {
         return DB::query()
-            ->fromSub(self::lines($filter), 'lines')
+            ->fromSub(self::intakeLines($filter), 'lines')
             ->leftJoinSub(self::units($filter), 'units', fn (JoinClause $join) => $join
                 ->on('units.supplier_id', '=', 'lines.supplier_id')
                 ->on('units.product_id', '=', 'lines.product_id'))
@@ -130,7 +133,7 @@ class DefectRateReport
      * Lứa nhập của khoảng: Dòng nhập của Lô nhập xác nhận trong khoảng, kèm số dòng bị bỏ vì lỗi định
      * dạng hoặc trùng. Các dòng đó chưa từng thành Đơn vị hàng nên không vào Tỉ lệ lỗi.
      */
-    private static function lines(DefectRateReportFilter $filter): QueryBuilder
+    private static function intakeLines(DefectRateReportFilter $filter): QueryBuilder
     {
         return self::ofBatchesIn($filter, DB::table('batch_lines'))
             ->groupBy('batches.supplier_id', 'batch_lines.product_id')
@@ -139,7 +142,8 @@ class DefectRateReport
     }
 
     /**
-     * Đơn vị hàng của lứa nhập, chia theo đã giao hay chưa và có đang Lỗi hay không. Hàng Huỷ nhập bị
+     * Đơn vị hàng của lứa nhập, chia theo đã giao hay chưa và có đang Lỗi hay không. Tử số đếm mọi
+     * Đơn vị hàng Lỗi, còn 'Lỗi trong kho' chỉ là phần chưa giao của chính tử số đó. Hàng Huỷ nhập bị
      * loại hẳn: coi như chưa từng vào kho.
      */
     private static function units(DefectRateReportFilter $filter): QueryBuilder
@@ -155,7 +159,7 @@ class DefectRateReport
             ->select('batches.supplier_id', 'stock_units.product_id')
             ->selectRaw('COUNT(*) AS intake_units')
             ->selectRaw("COUNT(*) FILTER (WHERE {$delivered}) AS delivered_units")
-            ->selectRaw("COUNT(*) FILTER (WHERE {$delivered} AND {$defective}) AS defective_units")
+            ->selectRaw("COUNT(*) FILTER (WHERE {$defective}) AS defective_units")
             ->selectRaw("COUNT(*) FILTER (WHERE NOT {$delivered} AND {$defective}) AS defective_in_stock_units");
     }
 

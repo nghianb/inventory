@@ -15,8 +15,8 @@ final readonly class DefectRateReportRow
      * @param  ?int  $productId  rỗng thì đây là dòng tổng của Nhà cung cấp
      * @param  int  $intakeUnits  Đơn vị hàng nhập trong kỳ, không tính hàng đã Huỷ nhập
      * @param  int  $deliveredUnits  trong đó đã giao ít nhất một Slot: mẫu số của Tỉ lệ lỗi
-     * @param  int  $defectiveUnits  trong số đã giao, Đơn vị hàng đang Lỗi: tử số của Tỉ lệ lỗi
-     * @param  int  $defectiveInStockUnits  Đơn vị hàng Lỗi chưa giao Slot nào; tham khảo, ngoài Tỉ lệ lỗi
+     * @param  int  $defectiveUnits  Đơn vị hàng đang Lỗi, kể cả chưa giao Slot nào: tử số của Tỉ lệ lỗi
+     * @param  int  $defectiveInStockUnits  phần của tử số chưa giao Slot nào: lỗi phát hiện khi hàng còn trong kho
      * @param  int  $rejectedLines  số dòng bị bỏ vì lỗi định dạng hoặc trùng khi nhập: chất lượng file nhập
      */
     public function __construct(
@@ -83,7 +83,8 @@ final readonly class DefectRateReportRow
     }
 
     /**
-     * Tỉ lệ lỗi, hoặc rỗng khi chưa giao Đơn vị hàng nào của lứa nhập: chưa có gì để so sánh.
+     * Tỉ lệ lỗi, hoặc rỗng khi chưa giao Đơn vị hàng nào của lứa nhập: không chia được cho 0, và hàng
+     * Lỗi lúc đó đã nằm hết ở cột 'Lỗi trong kho'. Vượt 1.0 được, vì tử số đếm cả hàng Lỗi chưa giao.
      */
     public function defectRate(): ?float
     {
@@ -120,7 +121,7 @@ final readonly class DefectRateReportRow
     /**
      * Tỉ lệ dạng chữ; chưa giao Đơn vị hàng nào thì để trống chứ không hiện 0%.
      */
-    public static function percentage(?float $rate): string
+    private static function percentage(?float $rate): string
     {
         return $rate === null ? '' : number_format($rate * 100, 1, ',', '.').'%';
     }

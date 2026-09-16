@@ -30,8 +30,10 @@ use Livewire\Attributes\Url;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
- * Báo cáo Tỉ lệ lỗi theo Nhà cung cấp. Adapter mỏng: số liệu, quyền và cột nằm ở DefectRateReport;
- * bộ lọc của bảng chỉ giữ trạng thái để dựng DefectRateReportFilter. Bảng không chạy trên truy vấn
+ * Báo cáo Tỉ lệ lỗi theo Nhà cung cấp. Adapter mỏng: số liệu, quyền và giá trị từng ô nằm ở
+ * DefectRateReport; giá trị luôn lấy qua DefectRateReportRow::cell() để màn hình và file xuất không
+ * lệch nhau, còn nhãn cột lặp lại ở đây như các trang báo cáo khác vì mọi cột đều luôn hiện.
+ * Bộ lọc của bảng chỉ giữ trạng thái để dựng DefectRateReportFilter. Bảng không chạy trên truy vấn
  * Eloquent mà trên các dòng của báo cáo, vì mỗi dòng là một Nhà cung cấp × Sản phẩm và sau mỗi Nhà
  * cung cấp còn có dòng tổng; cũng vì thế bảng không phân trang và không sắp xếp lại được: đổi thứ tự
  * thì dòng tổng rời khỏi khối của nó. Bộ lọc nằm trên URL để chia sẻ được một kỳ báo cáo.
@@ -87,13 +89,14 @@ class DefectRateReportPage extends Page implements HasTable
                 $count('delivered_units', 'Đã giao')
                     ->tooltip('Đơn vị hàng đã giao ít nhất một Slot: mẫu số của Tỉ lệ lỗi'),
                 $count('defective_units', 'Đơn vị hàng Lỗi')
-                    ->tooltip('Trong số đã giao, Đơn vị hàng đang Lỗi: tử số của Tỉ lệ lỗi'),
+                    ->tooltip('Đơn vị hàng đang Lỗi, kể cả chưa giao Slot nào: tử số của Tỉ lệ lỗi'),
                 TextColumn::make('defect_rate')
                     ->label('Tỉ lệ lỗi')
                     ->alignEnd()
-                    ->placeholder('Chưa giao'),
+                    ->placeholder('Chưa giao')
+                    ->tooltip('Vượt 100% khi phần lớn lứa nhập còn trong kho, vì tử số đếm cả hàng Lỗi chưa giao'),
                 $count('defective_in_stock_units', 'Lỗi trong kho')
-                    ->tooltip('Đơn vị hàng Lỗi chưa giao Slot nào; tham khảo, không vào Tỉ lệ lỗi'),
+                    ->tooltip('Phần của tử số chưa giao Slot nào: lỗi phát hiện khi hàng còn trong kho'),
                 $count('rejected_lines', 'Dòng lỗi/trùng khi nhập')
                     ->tooltip('Chất lượng file Nhà cung cấp gửi: dòng bị bỏ chưa từng thành hàng nên không vào Tỉ lệ lỗi'),
             ]))
@@ -134,25 +137,21 @@ class DefectRateReportPage extends Page implements HasTable
     }
 
     /**
-     * Các dòng báo cáo dưới dạng bản ghi của bảng, khoá là khoá dòng của báo cáo. Dòng tổng của một
-     * Nhà cung cấp để trống Sản phẩm và ghi 'Tổng' ở cột Mã sản phẩm.
+     * Các dòng báo cáo dưới dạng bản ghi của bảng, khoá là khoá dòng của báo cáo. Mỗi ô lấy qua
+     * cell() theo đúng khoá cột của báo cáo, nên bảng và file xuất luôn hiện cùng một con số; dòng
+     * tổng của một Nhà cung cấp để trống Sản phẩm và ghi 'Tổng' ở cột Mã sản phẩm.
      *
      * @return Collection<string, array<string, mixed>>
      */
     private function records(): Collection
     {
+        $report = app(DefectRateReport::class);
+        $columns = array_keys($report->columns());
+
         /** @var Collection<string, array<string, mixed>> $records */
-        $records = collect(app(DefectRateReport::class)->rows(InventoryAction::actor(), $this->reportFilter()))
+        $records = collect($report->rows(InventoryAction::actor(), $this->reportFilter()))
             ->mapWithKeys(fn (DefectRateReportRow $row): array => [$row->key() => [
-                'supplier' => $row->supplierName,
-                'code' => $row->cell('code'),
-                'name' => $row->name,
-                'intake_units' => $row->intakeUnits,
-                'delivered_units' => $row->deliveredUnits,
-                'defective_units' => $row->defectiveUnits,
-                'defect_rate' => DefectRateReportRow::percentage($row->defectRate()),
-                'defective_in_stock_units' => $row->defectiveInStockUnits,
-                'rejected_lines' => $row->rejectedLines,
+                ...array_combine($columns, array_map($row->cell(...), $columns)),
                 'is_total' => $row->isTotal(),
             ]]);
 

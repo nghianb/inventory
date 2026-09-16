@@ -234,7 +234,7 @@ it('Giao thay không phải hàng lỗi, và lần giao bị Giao thay không t�
         ->toMatchArray(['intakeUnits' => 2, 'deliveredUnits' => 1, 'defectiveUnits' => 0, 'rate' => 0.0]);
 });
 
-it("'Lỗi trong kho' là Đơn vị hàng Lỗi chưa giao Slot nào, không vào Tỉ lệ lỗi", function () {
+it("hàng Lỗi chưa giao vẫn vào tử số; 'Lỗi trong kho' tách riêng phần đó và tỉ lệ vượt được 100%", function () {
     defectRateSell($this->netflix, 3);
     app(StockDefect::class)->markDefective($this->admin, $this->a, 'Nhà cung cấp thu hồi');
     app(StockDefect::class)->markDefective($this->admin, $this->b, 'Hỏng trong kho');
@@ -242,13 +242,26 @@ it("'Lỗi trong kho' là Đơn vị hàng Lỗi chưa giao Slot nào, không v�
     expect(defectRateRows($this->report->rows($this->admin, septemberDefectRange()))['Kinguin · NETFLIX-1M'])
         ->toMatchArray([
             'deliveredUnits' => 1,
-            'defectiveUnits' => 1,
+            // Cả a (đã giao) và b (còn trong kho) đều là hàng Lỗi nhà cung cấp đã giao cho shop.
+            'defectiveUnits' => 2,
             'defectiveInStockUnits' => 1,
-            'rate' => 1.0,
+            'rate' => 2.0,
         ]);
 });
 
-it("cột 'chất lượng file nhập' đếm dòng lỗi và trùng, không gộp vào Tỉ lệ lỗi", function () {
+it('chưa giao Đơn vị hàng nào thì tỉ lệ để trống, dù lứa nhập đã có hàng Lỗi trong kho', function () {
+    app(StockDefect::class)->markDefective($this->admin, $this->g, 'Nhà cung cấp thu hồi');
+
+    expect(defectRateRows($this->report->rows($this->admin, septemberDefectRange()))['G2A · NETFLIX-1M'])
+        ->toMatchArray([
+            'deliveredUnits' => 0,
+            'defectiveUnits' => 1,
+            'defectiveInStockUnits' => 1,
+            'rate' => null,
+        ]);
+});
+
+it('cột Dòng lỗi/trùng khi nhập đếm dòng bị bỏ, không gộp vào Tỉ lệ lỗi', function () {
     // Một dòng hợp lệ, một dòng trùng trong file, một dòng sai định dạng email.
     defectRateImport($this->kinguin, [
         new BatchLineDraft($this->netflix, 90_000, "q@shop.test\tpw-q\nq@shop.test\tpw-q2\nkhong-phai-email\tpw-x"),
