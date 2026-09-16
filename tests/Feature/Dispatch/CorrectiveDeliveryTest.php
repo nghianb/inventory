@@ -12,6 +12,8 @@ use App\Inventory\Dispatch\AffectedDelivery;
 use App\Inventory\Dispatch\CorrectionDraft;
 use App\Inventory\Dispatch\CorrectiveDelivery;
 use App\Inventory\Dispatch\DispatchDraft;
+use App\Inventory\Dispatch\DispatchEdit;
+use App\Inventory\Dispatch\DispatchEditor;
 use App\Inventory\Dispatch\DispatchLineDraft;
 use App\Inventory\Dispatch\DispatchLineKind;
 use App\Inventory\Dispatch\DispatchStatus;
@@ -294,6 +296,19 @@ it('Giao thay báo lỗi và không đổi gì', function (Closure $arrange, str
     }, InvalidDispatch::class, 'Chỉ Giao thay được trên Phiếu xuất Hoàn tất.'],
     'Nhập kho' => [fn () => [staffMember(Role::NhapKho), new CorrectionDraft(null, contentSent: false)], MissingRole::class, ''],
 ]);
+
+it('Sửa phiếu không đặt được Giá bán cho Dòng xuất loại Giao thay; để trống vẫn lưu được', function () {
+    correctionStock($this->steam, "SR1\tA-1");
+    correctionStock($this->netflix, "a@shop.test\tpw-a");
+    $dispatch = correctionOrder('SP-001', $this->steam, 100_000);
+    $new = $this->corrective->correct($this->seller, soleDelivery($dispatch), new CorrectionDraft(product: $this->netflix, contentSent: false));
+    $editor = app(DispatchEditor::class);
+
+    expect(fn () => $editor->edit($this->seller, $dispatch, new DispatchEdit('SP-001', null, null, [$new->dispatch_line_id => 50_000])))
+        ->toThrow(InvalidDispatch::class, 'Dòng xuất loại Giao thay không có Giá bán.')
+        ->and($new->dispatchLine->fresh()->sale_price)->toBeNull()
+        ->and($editor->edit($this->seller, $dispatch, new DispatchEdit('SP-001', null, null, [$new->dispatch_line_id => null]))->id)->toBe($dispatch->id);
+});
 
 it('lần giao đã được Giao thay thì không Giao thay lại được; lần giao mới thì được', function () {
     correctionStock($this->steam, "SR1\tA-1\nSR2\tA-2\nSR3\tA-3");

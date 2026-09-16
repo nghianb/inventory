@@ -251,7 +251,8 @@ class MovementReport
     /**
      * Tổng Giá bán các Dòng xuất có lần Giao hàng đầu tiên trong khoảng. Giá bán là tổng tiền của cả
      * Dòng xuất, không phải đơn giá, nên mỗi Dòng xuất chỉ tính một lần, vào kỳ nó bắt đầu được
-     * giao. Dòng xuất loại Đổi hàng và Giao thay không có Giá bán.
+     * giao. Chỉ Giao bán và Giao thêm: Đổi hàng và Giao thay không có Giá bán, và lọc thẳng theo loại
+     * chứ không tin mỗi `sale_price IS NULL`, vì Sửa phiếu từng ghi được Giá bán vào dòng Giao thay.
      */
     private static function sales(MovementReportFilter $filter): QueryBuilder
     {
@@ -262,6 +263,7 @@ class MovementReport
 
         return DB::table('dispatch_lines')
             ->joinSub($firstDelivery, 'first_delivery', 'first_delivery.dispatch_line_id', '=', 'dispatch_lines.id')
+            ->whereIn('dispatch_lines.kind', [DispatchLineKind::Sale->value, DispatchLineKind::Additional->value])
             ->whereNotNull('dispatch_lines.sale_price')
             ->where('first_delivery.first_delivered_at', '>=', $filter->startsAt())
             ->where('first_delivery.first_delivered_at', '<', $filter->endsBefore())

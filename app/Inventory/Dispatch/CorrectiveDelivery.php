@@ -158,7 +158,7 @@ class CorrectiveDelivery
     }
 
     /**
-     * Dòng xuất loại Giao thay cho Sản phẩm khác: một Slot, chưa có Giá bán (sửa được ở Sửa phiếu).
+     * Dòng xuất loại Giao thay cho Sản phẩm khác: một Slot, không có Giá bán — kể cả ở Sửa phiếu.
      */
     private function insertCorrectiveLine(Dispatch $dispatch, int $productId): int
     {
