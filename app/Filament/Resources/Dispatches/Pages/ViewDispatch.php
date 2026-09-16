@@ -6,7 +6,6 @@ use App\Filament\Resources\Dispatches\DispatchResource;
 use App\Filament\Support\InventoryAction;
 use App\Inventory\Dispatch\DispatchEdit;
 use App\Inventory\Dispatch\DispatchEditor;
-use App\Inventory\Dispatch\DispatchLineKind;
 use App\Inventory\Dispatch\ExternalRefs;
 use App\Inventory\Dispatch\ManualDispatch;
 use App\Models\Dispatch;
@@ -66,8 +65,7 @@ class ViewDispatch extends ViewRecord
                             ->suffix('₫')
                             ->integer()
                             ->minValue(0)
-                            // Dòng xuất loại Đổi hàng không có Giá bán: Chi phí đổi hàng không vào Lãi gộp.
-                            ->hidden($line->kind === DispatchLineKind::Replacement))->all()),
+                            ->hidden(! $line->kind->allowsSalePrice()))->all()),
                 ])
                 ->visible(fn (DispatchEditor $editor): bool => $editor->canEdit(InventoryAction::actor(), $this->dispatchRecord()))
                 ->action(function (Action $action, DispatchEditor $editor, array $data): void {

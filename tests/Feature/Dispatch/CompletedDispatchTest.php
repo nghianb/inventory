@@ -13,6 +13,7 @@ use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchEdit;
 use App\Inventory\Dispatch\DispatchEditor;
 use App\Inventory\Dispatch\DispatchLineDraft;
+use App\Inventory\Dispatch\DispatchLineKind;
 use App\Inventory\Dispatch\DispatchProblem;
 use App\Inventory\Dispatch\DispatchStatus;
 use App\Inventory\Dispatch\InvalidDispatch;
@@ -228,6 +229,18 @@ it('sửa phiếu vẫn kiểm tra mã đơn ngoài trùng trong Kênh bán, kh�
         ->toThrow(InvalidDispatch::class, 'Chỉ sửa được Phiếu xuất Hoàn tất.')
         ->and(DispatchRevision::count())->toBe(1)
         ->and($first->fresh()->customer)->toBeNull();
+});
+
+it('sửa phiếu vẫn đặt được Giá bán cho Dòng xuất loại Giao thêm', function () {
+    completedStock($this->steam, "SR1\tAAAA-0001\nSR2\tAAAA-0002");
+    $dispatch = completedDispatch([[$this->steam, 1, 100_000]], ref: 'ZL-001');
+    $additional = $this->manual->addLines($this->seller, $dispatch, [new DispatchLineDraft($this->steam, 1)])
+        ->lines()->reorder()->orderByDesc('id')->firstOrFail();
+
+    $edited = app(DispatchEditor::class)->edit($this->seller, $dispatch, new DispatchEdit('ZL-001', null, null, [$additional->id => 90_000]));
+
+    expect($additional->kind)->toBe(DispatchLineKind::Additional)
+        ->and($edited->lines->pluck('sale_price')->all())->toBe([100_000, 90_000]);
 });
 
 it('mã đơn ngoài cũ vẫn bị chiếm sau khi sửa: tạo phiếu mới hay sửa phiếu khác sang mã cũ đều báo trùng kèm phiếu từng giữ; chính phiếu đó đổi lại được', function () {

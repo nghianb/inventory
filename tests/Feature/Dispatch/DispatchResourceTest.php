@@ -303,6 +303,37 @@ it('Sửa phiếu Hoàn tất bằng modal ghi Lịch sử sửa phiếu; mã đ
         ->assertActionHidden('edit');
 });
 
+it('Sửa phiếu không hiện ô Giá bán cho Dòng xuất loại Giao thay, và dọn Giá bán cũ đã lỡ ghi vào dòng đó', function () {
+    $dispatch = app(ManualDispatch::class)->create($this->seller, new DispatchDraft($this->shopee, 'SP-010', [new DispatchLineDraft($this->steam, 1, 100_000)]));
+    $sale = $dispatch->lines->sole();
+    // Giá bán này chưa từng hợp lệ: Sửa phiếu từng ghi được vào Dòng xuất loại Giao thay.
+    $corrective = new DispatchLine;
+    $corrective->forceFill([
+        'dispatch_id' => $dispatch->id,
+        'product_id' => $this->steam->id,
+        'kind' => DispatchLineKind::Corrective,
+        'quantity' => 1,
+        'sale_price' => 70_000,
+    ])->save();
+    $this->actingAs($this->seller);
+
+    Livewire::test(ViewDispatch::class, ['record' => $dispatch->getRouteKey()])
+        ->mountAction('edit')
+        ->assertSchemaComponentVisible("sale_prices.line_{$sale->id}")
+        ->assertSchemaComponentHidden("sale_prices.line_{$corrective->id}");
+
+    Livewire::test(ViewDispatch::class, ['record' => $dispatch->getRouteKey()])
+        ->callAction('edit', data: ['external_ref' => 'SP-010', 'sale_prices' => ["line_{$sale->id}" => 120_000]])
+        ->assertHasNoActionErrors()
+        ->assertNotified('Đã sửa Phiếu xuất.');
+
+    expect($sale->fresh()->sale_price)->toBe(120_000)
+        ->and($corrective->fresh()->sale_price)->toBeNull()
+        ->and(DispatchRevision::where('dispatch_line_id', $corrective->id)->get()
+            ->map(fn (DispatchRevision $revision) => [$revision->old_value, $revision->new_value])->all())
+        ->toBe([['70000', null]]);
+});
+
 it('tìm Phiếu xuất theo mã đơn ngoài, khách, Kênh bán, người tạo, khoảng ngày và trường không nhạy cảm', function () {
     $manual = app(ManualDispatch::class);
     $first = $manual->create($this->seller, new DispatchDraft($this->shopee, 'SP-001', [new DispatchLineDraft($this->steam, 1)], 'Anh Minh'));
