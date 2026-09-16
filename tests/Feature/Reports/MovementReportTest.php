@@ -14,7 +14,6 @@ use App\Inventory\Dispatch\CorrectionDraft;
 use App\Inventory\Dispatch\CorrectiveDelivery;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
-use App\Inventory\Dispatch\DispatchLineKind;
 use App\Inventory\Dispatch\ManualDispatch;
 use App\Inventory\Dispatch\SalesChannelDirectory;
 use App\Inventory\Dispatch\SalesChannelDraft;
@@ -253,19 +252,6 @@ it('tổng Giá bán theo Dòng xuất có lần Giao hàng đầu trong khoản
             'soldSlots' => 0,
             'saleTotal' => 0,
         ]);
-});
-
-it('Giá bán lỡ ghi vào Dòng xuất loại Giao thay không vào cột Giá bán', function () {
-    $dispatch = movementSell($this->shopee, 'SP-1', $this->netflix, 1, 500_000);
-    // Sửa phiếu từng ghi được Giá bán vào dòng Giao thay. Dựng lại trạng thái dữ liệu cũ ấy: báo cáo
-    // phải lọc theo loại Dòng xuất chứ không tin mỗi Giá bán để trống.
-    $dispatch->lines()->sole()->forceFill(['kind' => DispatchLineKind::Corrective])->save();
-
-    expect(movementRows($this->report->rows($this->admin, septemberRange()))['NETFLIX-1M'])->toMatchArray([
-        'saleTotal' => 0,
-        'soldSlots' => 0,
-        'correctiveSlots' => 1,
-    ]);
 });
 
 it('Huỷ hàng và Chuyển Tồn lỗi đếm Slot rời vòng đời bán trong khoảng', function () {

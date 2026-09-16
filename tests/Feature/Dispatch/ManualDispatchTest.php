@@ -45,6 +45,7 @@ use App\Models\Slot;
 use App\Models\StockLedgerEntry;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RoleSeeder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -562,3 +563,25 @@ it('chỉ người vừa xuất kho Copy tất cả và tải file được, t�
         ->and(fn () => $reveal->copyAllDispatchResult($this->seller, $dispatch))->toThrow(InvalidReveal::class, $closed)
         ->and(RevealLogEntry::count())->toBe($logged + 2);
 });
+
+it('DB chặn Giá bán trên Dòng xuất loại Đổi hàng và Giao thay, kể cả đường ghi không qua Sửa phiếu', function (DispatchLineKind $kind) {
+    dispatchStock($this->steam, "SR1\tAAAA-0001");
+    $dispatch = $this->manual->create($this->seller, dispatchOrder($this->shopee, [[$this->steam, 1, 190_000]], ref: 'SP-001'));
+    $line = $dispatch->lines()->sole();
+
+    // Savepoint riêng để lỗi không làm hỏng transaction của RefreshDatabase.
+    expect(fn () => DB::transaction(fn () => DB::table('dispatch_lines')->where('id', $line->id)->update(['kind' => $kind->value])))
+        ->toThrow(QueryException::class, 'dispatch_lines_sale_price_kind')
+        ->and(fn () => DB::transaction(fn () => DB::table('dispatch_lines')->insert([
+            'dispatch_id' => $dispatch->id,
+            'product_id' => $this->steam->id,
+            'kind' => $kind->value,
+            'quantity' => 1,
+            'sale_price' => 190_000,
+        ])))
+        ->toThrow(QueryException::class, 'dispatch_lines_sale_price_kind')
+        ->and($line->fresh())->sale_price->toBe(190_000)->kind->toBe(DispatchLineKind::Sale);
+})->with([
+    'Giao thay' => DispatchLineKind::Corrective,
+    'Đổi hàng' => DispatchLineKind::Replacement,
+]);

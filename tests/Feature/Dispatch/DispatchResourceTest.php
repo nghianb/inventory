@@ -303,17 +303,17 @@ it('Sửa phiếu Hoàn tất bằng modal ghi Lịch sử sửa phiếu; mã đ
         ->assertActionHidden('edit');
 });
 
-it('Sửa phiếu không hiện ô Giá bán cho Dòng xuất loại Giao thay, và dọn Giá bán cũ đã lỡ ghi vào dòng đó', function () {
+it('Sửa phiếu không hiện ô Giá bán cho Dòng xuất loại Giao thay', function () {
     $dispatch = app(ManualDispatch::class)->create($this->seller, new DispatchDraft($this->shopee, 'SP-010', [new DispatchLineDraft($this->steam, 1, 100_000)]));
     $sale = $dispatch->lines->sole();
-    // Giá bán này chưa từng hợp lệ: Sửa phiếu từng ghi được vào Dòng xuất loại Giao thay.
+    // Dựng thẳng dòng Giao thay: ở đây chỉ cần một dòng loại ấy để xem form, không cần cả một lần
+    // Giao thay sang Sản phẩm khác. Giá bán để trống vì DB không cho dòng này có Giá bán.
     $corrective = new DispatchLine;
     $corrective->forceFill([
         'dispatch_id' => $dispatch->id,
         'product_id' => $this->steam->id,
         'kind' => DispatchLineKind::Corrective,
         'quantity' => 1,
-        'sale_price' => 70_000,
     ])->save();
     $this->actingAs($this->seller);
 
@@ -329,9 +329,8 @@ it('Sửa phiếu không hiện ô Giá bán cho Dòng xuất loại Giao thay, 
 
     expect($sale->fresh()->sale_price)->toBe(120_000)
         ->and($corrective->fresh()->sale_price)->toBeNull()
-        ->and(DispatchRevision::where('dispatch_line_id', $corrective->id)->get()
-            ->map(fn (DispatchRevision $revision) => [$revision->old_value, $revision->new_value])->all())
-        ->toBe([['70000', null]]);
+        // Ô ẩn thì Sửa phiếu không đụng tới dòng ấy: không có dòng lịch sử nào cho nó.
+        ->and(DispatchRevision::where('dispatch_line_id', $corrective->id)->count())->toBe(0);
 });
 
 it('tìm Phiếu xuất theo mã đơn ngoài, khách, Kênh bán, người tạo, khoảng ngày và trường không nhạy cảm', function () {
