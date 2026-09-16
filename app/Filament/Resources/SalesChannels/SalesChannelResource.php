@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\SalesChannels;
 
+use App\Filament\Resources\ApiKeys\ApiKeyResource;
 use App\Filament\Resources\SalesChannels\Pages\ManageSalesChannels;
 use App\Filament\Support\InventoryAction;
 use App\Inventory\Dispatch\SalesChannelDirectory;
@@ -11,10 +12,12 @@ use App\Models\SalesChannel;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
@@ -23,6 +26,8 @@ use Filament\Tables\Table;
 
 /**
  * Kênh bán trong panel, chỉ Quản trị. Adapter mỏng: mọi thao tác gọi SalesChannelDirectory.
+ * Kênh loại API có thêm hạn Giữ hàng và cờ bắt buộc Giá bán; Khoá API của kênh quản lý ở
+ * {@see ApiKeyResource}.
  */
 class SalesChannelResource extends Resource
 {
@@ -42,16 +47,41 @@ class SalesChannelResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
+        $isApi = fn (Get $get): bool => $get('type') === SalesChannelType::Api->value;
+
         return $schema->components([
             TextInput::make('name')
                 ->label('Tên')
-                ->helperText('Ví dụ Shopee, Facebook, Zalo.')
+                ->helperText('Ví dụ Shopee, Facebook, Zalo, Website.')
                 ->required()
                 ->maxLength(255),
+            Select::make('type')
+                ->label('Loại')
+                ->options(fn (): array => collect(SalesChannelType::cases())
+                    ->mapWithKeys(fn (SalesChannelType $type): array => [$type->value => $type->label()])
+                    ->all())
+                ->default(SalesChannelType::Manual->value)
+                ->selectablePlaceholder(false)
+                ->live()
+                ->helperText('Kênh API: website gọi vào kho bằng Khoá API, nhân viên không tạo Phiếu xuất tay. Đã có Phiếu xuất hoặc Khoá API thì không đổi loại được.'),
             Toggle::make('requires_external_ref')
                 ->label('Bắt buộc mã đơn ngoài')
-                ->helperText('Không bắt buộc thì nhân viên để trống sẽ được tự sinh mã PX-YYYYMMDD-NNNN.')
+                ->helperText('Không bắt buộc thì nhân viên để trống sẽ được tự sinh mã PX-YYYYMMDD-NNNN. Đơn qua API luôn phải có mã đơn.')
                 ->default(false),
+            TextInput::make('hold_minutes')
+                ->label('Hạn Giữ hàng (phút)')
+                ->integer()
+                ->minValue(1)
+                ->maxValue(1_440)
+                ->required()
+                ->default(fn (): int => (int) config('inventory.api.hold_minutes'))
+                ->helperText('Do kho quy định, website không tự đặt.')
+                ->visible($isApi),
+            Toggle::make('requires_sale_price')
+                ->label('Bắt buộc Giá bán')
+                ->default(true)
+                ->helperText('Tắt thì đơn web không có Giá bán vẫn vào được, nhưng báo cáo Lãi/lỗ sẽ thiếu doanh thu của các đơn ấy.')
+                ->visible($isApi),
         ]);
     }
 
@@ -71,6 +101,14 @@ class SalesChannelResource extends Resource
                 IconColumn::make('requires_external_ref')
                     ->label('Bắt buộc mã đơn')
                     ->boolean(),
+                TextColumn::make('hold_minutes')
+                    ->label('Hạn Giữ hàng')
+                    ->state(fn (SalesChannel $record): ?string => $record->isApi() ? "{$record->hold_minutes} phút" : null)
+                    ->placeholder('—'),
+                IconColumn::make('requires_sale_price')
+                    ->label('Bắt buộc Giá bán')
+                    ->boolean()
+                    ->visible(fn (): bool => SalesChannel::query()->where('type', SalesChannelType::Api)->exists()),
                 TextColumn::make('hidden_at')
                     ->label('Trạng thái')
                     ->badge()
@@ -88,7 +126,7 @@ class SalesChannelResource extends Resource
                     ->icon(Heroicon::OutlinedEyeSlash)
                     ->color('warning')
                     ->requiresConfirmation()
-                    ->modalDescription('Kênh bán bị ẩn khỏi form tạo Phiếu xuất; Phiếu xuất cũ giữ nguyên.')
+                    ->modalDescription('Kênh bán bị ẩn khỏi form tạo Phiếu xuất và Khoá API của kênh hết gọi vào kho được; Phiếu xuất cũ giữ nguyên.')
                     ->visible(fn (SalesChannel $record): bool => ! $record->isHidden() && InventoryAction::actor()->can('update', $record))
                     ->action(function (Action $action, SalesChannel $record, SalesChannelDirectory $channels): void {
                         InventoryAction::attempt($action, fn () => $channels->hide(InventoryAction::actor(), $record));
@@ -122,7 +160,11 @@ class SalesChannelResource extends Resource
     {
         return new SalesChannelDraft(
             name: (string) $data['name'],
+            type: SalesChannelType::from((string) ($data['type'] ?? SalesChannelType::Manual->value)),
             requiresExternalRef: (bool) ($data['requires_external_ref'] ?? false),
+            // Trường của kênh API không hiện với kênh thủ công: để module lấy mặc định.
+            holdMinutes: filled($data['hold_minutes'] ?? null) ? (int) $data['hold_minutes'] : null,
+            requiresSalePrice: isset($data['requires_sale_price']) ? (bool) $data['requires_sale_price'] : null,
         );
     }
 }

@@ -21,6 +21,7 @@ use App\Inventory\Dispatch\ManualDispatch;
 use App\Inventory\Dispatch\OutOfStock;
 use App\Inventory\Dispatch\SalesChannelDirectory;
 use App\Inventory\Dispatch\SalesChannelDraft;
+use App\Inventory\Dispatch\SalesChannelType;
 use App\Inventory\Dispatch\Shortage;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
@@ -217,6 +218,11 @@ it('báo lỗi kiểm tra và không tạo Phiếu xuất', function (Closure $d
 
         return dispatchOrder(test()->zalo, [[test()->steam, 1]]);
     }, 'Sản phẩm "Steam Wallet 100k" đã Ngừng bán.'],
+    'Kênh bán loại API' => [function () {
+        $website = app(SalesChannelDirectory::class)->create(test()->admin, new SalesChannelDraft('Website', SalesChannelType::Api));
+
+        return dispatchOrder($website, [[test()->steam, 1]], ref: 'WEB-1');
+    }, 'Kênh bán "Website" là kênh API; đơn của kênh này chỉ vào kho qua API.'],
 ]);
 
 it('giới hạn Slot mỗi Phiếu xuất mặc định 1.000', function () {
@@ -242,8 +248,8 @@ it('thiếu hàng thì báo từng dòng cần bao nhiêu, còn bao nhiêu; khô
     $draft = dispatchOrder($this->shopee, [[$this->steam, 3], [$this->netflix, 5]], ref: 'SP-9');
 
     expect($this->manual->shortages($this->seller, $draft->lines))->toEqual([
-        new Shortage($this->steam->id, 'Steam Wallet 100k', needed: 3, available: 1),
-        new Shortage($this->netflix->id, 'Netflix 1 tháng', needed: 5, available: 4),
+        new Shortage($this->steam->id, 'STEAM-100K', 'Steam Wallet 100k', needed: 3, available: 1),
+        new Shortage($this->netflix->id, 'NETFLIX-1M', 'Netflix 1 tháng', needed: 5, available: 4),
     ]);
 
     try {
@@ -300,7 +306,7 @@ it('bỏ qua Slot không đạt Hạn còn lại tối thiểu, quá Hạn sử 
 
     expect(app(SellableStock::class)->count($garena))->toBe(2)
         ->and($this->manual->shortages($this->seller, dispatchOrder($this->zalo, [[$garena, 3]])->lines))
-        ->toEqual([new Shortage($garena->id, 'Garena 50k', needed: 3, available: 2)])
+        ->toEqual([new Shortage($garena->id, 'GARENA-50K', 'Garena 50k', needed: 3, available: 2)])
         ->and(deliveredValues($this->manual->create($this->seller, dispatchOrder($this->zalo, [[$garena, 2]])), 'serial'))
         ->toBe(['CON3NGAY', 'KHONGHAN']);
 });

@@ -53,7 +53,7 @@ final class SlotPicker
             $picks[$index] = self::pick($product, $line->quantity, $today, $exceptUnitIds, $allowDiscontinued);
 
             if ($picks[$index]->count() < $line->quantity) {
-                $shortages[] = new Shortage($product->id, $product->name, $line->quantity, $picks[$index]->count());
+                $shortages[] = new Shortage($product->id, $product->code, $product->name, $line->quantity, $picks[$index]->count());
             }
         }
 
@@ -79,7 +79,7 @@ final class SlotPicker
         $locked = self::lockProducts([(int) $product->getKey()], $allowDiscontinued)->firstOrFail();
 
         return self::replacementCandidates($locked, CarbonImmutable::today(), $coverUntil, $exceptUnitIds)->lock(self::SKIP_LOCKED_FOR_DELIVERY)->first()
-            ?? throw new OutOfStock([new Shortage($locked->id, $locked->name, 1, 0)]);
+            ?? throw new OutOfStock([new Shortage($locked->id, $locked->code, $locked->name, 1, 0)]);
     }
 
     /**
@@ -118,9 +118,10 @@ final class SlotPicker
      * @param  Collection<int, stdClass>  $slots  các hàng `id`, `stock_unit_id` từ {@see lockAndPick()}
      * @param  ?int  $correctsDeliveryId  lần giao bị huỷ mà các Slot này Giao thay
      * @param  ?Delivery  $inheritsWarrantyFrom  Đổi hàng: lần giao gốc có Hạn bảo hành (và thời hạn bảo hành, để biết lần giao có bảo hành không) được kế thừa
+     * @param  ?User  $actor  null khi lần giao đến từ API: "ai" của lần xuất là Khoá API, ghi ở Phiếu xuất và Sổ biến động kho
      * @return list<StockTransition> để người gọi ghi Sổ biến động kho
      */
-    public static function deliver(int $dispatchLineId, Product $product, Collection $slots, User $actor, CarbonInterface $now, ?int $correctsDeliveryId = null, ?Delivery $inheritsWarrantyFrom = null): array
+    public static function deliver(int $dispatchLineId, Product $product, Collection $slots, ?User $actor, CarbonInterface $now, ?int $correctsDeliveryId = null, ?Delivery $inheritsWarrantyFrom = null): array
     {
         DB::table('slots')
             ->whereIn('id', $slots->pluck('id'))
@@ -134,7 +135,7 @@ final class SlotPicker
             'warranty_ends_on' => $inheritsWarrantyFrom?->warrantyEndsOn()->toDateString(),
             'corrects_delivery_id' => $correctsDeliveryId,
             'delivered_at' => $now,
-            'delivered_by' => $actor->getKey(),
+            'delivered_by' => $actor?->getKey(),
             'created_at' => $now,
             'updated_at' => $now,
         ])->all());

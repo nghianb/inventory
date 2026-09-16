@@ -7,6 +7,7 @@ use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
 use App\Inventory\Dispatch\DeliveredContent;
 use App\Inventory\Dispatch\DeliveryTemplate;
+use App\Inventory\Dispatch\DispatchLineKind;
 use App\Inventory\Dispatch\DispatchResultContent;
 use App\Inventory\Dispatch\DispatchResultExport;
 use App\Inventory\Dispatch\DispatchResultFormat;
@@ -14,10 +15,12 @@ use App\Inventory\Encryption\ContentCrypto;
 use App\Inventory\Encryption\EncryptedContent;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
+use App\Inventory\Stock\MaskedContent;
 use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Stock\StockUnitStatus;
 use App\Inventory\Warranty\DefectReporting;
 use App\Inventory\Warranty\DefectReportStatus;
+use App\Models\ApiKey;
 use App\Models\ContentField;
 use App\Models\DefectReport;
 use App\Models\Delivery;
@@ -123,16 +126,18 @@ class ContentReveal
                 return new DispatchResultContent(true, $deliveries->map(fn (Delivery $delivery): DeliveredContent => new DeliveredContent(
                     deliveryId: $delivery->id,
                     productName: $delivery->stockUnit->product->name,
+                    productCode: $delivery->stockUnit->product->code,
                     stockUnitId: $delivery->stock_unit_id,
                     slotId: $delivery->slot_id,
                     fields: $delivery->stockUnit->maskedContent(),
+                    values: MaskedContent::byKey($delivery->stockUnit->product->contentFields, $delivery->stockUnit->content ?? []),
                     message: null,
                     expiresOn: $delivery->stockUnit->expires_on,
                     warrantyEndsOn: $delivery->warrantyEndsOn(),
                 ))->values()->all());
             }
 
-            return new DispatchResultContent(false, $this->revealDeliveries($actor, $current, $deliveries, "Màn kết quả Phiếu xuất #{$current->id}"));
+            return new DispatchResultContent(false, $this->revealDeliveries(RevealActor::staff($actor), $current, $deliveries, "Màn kết quả Phiếu xuất #{$current->id}"));
         });
     }
 
@@ -200,7 +205,7 @@ class ContentReveal
                 throw new InvalidReveal("Chỉ lấy được nội dung từ màn kết quả, trong {$minutes} phút sau khi màn kết quả hiện.");
             }
 
-            return $build($this->revealDeliveries($actor, $current, self::resultDeliveries($current), $reason));
+            return $build($this->revealDeliveries(RevealActor::staff($actor), $current, self::resultDeliveries($current), $reason));
         });
     }
 
@@ -234,7 +239,43 @@ class ContentReveal
 
             $dispatch = $current->dispatchLine->dispatch;
 
-            return $this->revealDeliveries($actor, $dispatch, $deliveries, "Xem mã Phiếu xuất #{$dispatch->id}")[0];
+            return $this->revealDeliveries(RevealActor::staff($actor), $dispatch, $deliveries, "Xem mã Phiếu xuất #{$dispatch->id}")[0];
+        });
+    }
+
+    /**
+     * Nội dung các Slot đã giao của một Phiếu xuất qua API, đã ghép Mẫu giao hàng, cho website hiển
+     * thị theo cách của nó. Tác nhân là Khoá API chứ không phải nhân viên: quyền đã kiểm ở tầng HTTP
+     * khi xác thực khoá, nên ở đây không có Vai trò nào để kiểm. Mỗi Slot ghi một dòng Nhật ký xem
+     * mã ngữ cảnh Giao hàng, kể cả khi website gửi lại một mã đơn đã có.
+     *
+     * Chỉ các Dòng xuất loại Giao bán: phần nhân viên Giao thêm, Giao thay hay Đổi hàng sau đó không
+     * thuộc đơn website đã gửi. Và chỉ các lần giao còn trong Hạn bảo hành: hết hạn thì website gửi
+     * lại mã đơn cũ chỉ nhận được thông tin phiếu, như nhân viên hết Xem mã được ở panel.
+     *
+     * @return list<DeliveredContent> theo thứ tự giao
+     *
+     * @throws KeyFingerprintMismatch
+     */
+    public function revealApiDispatch(ApiKey $key, Dispatch $dispatch): array
+    {
+        $this->fingerprints->verify();
+
+        return DB::transaction(function () use ($key, $dispatch): array {
+            $today = CarbonImmutable::today();
+            $deliveries = $dispatch->deliveries()
+                ->where('dispatch_lines.kind', DispatchLineKind::Sale->value)
+                ->orderBy('deliveries.id')
+                ->with(['slot', 'stockUnit.product.contentFields'])
+                ->get()
+                ->filter(fn (Delivery $delivery): bool => ! $today->gt($delivery->warrantyEndsOn()));
+
+            return $this->revealDeliveries(
+                RevealActor::apiKey((int) $key->getKey()),
+                $dispatch,
+                $deliveries,
+                "Đơn qua API theo Phiếu xuất #{$dispatch->id}",
+            );
         });
     }
 
@@ -416,13 +457,11 @@ class ContentReveal
      * @param  EloquentCollection<int, Delivery>  $deliveries
      * @return list<DeliveredContent>
      */
-    private function revealDeliveries(User $actor, Dispatch $dispatch, EloquentCollection $deliveries, string $reason): array
+    private function revealDeliveries(RevealActor $actor, Dispatch $dispatch, EloquentCollection $deliveries, string $reason): array
     {
-        $staff = RevealActor::staff($actor);
-
         return $deliveries
-            ->map(function (Delivery $delivery) use ($dispatch, $staff, $reason): DeliveredContent {
-                $this->log->record($staff, RevealContext::delivery($delivery), $reason, $delivery->slot);
+            ->map(function (Delivery $delivery) use ($dispatch, $actor, $reason): DeliveredContent {
+                $this->log->record($actor, RevealContext::delivery($delivery), $reason, $delivery->slot);
 
                 return $this->deliveredContent($delivery, $dispatch);
             })
@@ -443,9 +482,11 @@ class ContentReveal
         return new DeliveredContent(
             deliveryId: $delivery->id,
             productName: $unit->product->name,
+            productCode: $unit->product->code,
             stockUnitId: $delivery->stock_unit_id,
             slotId: $delivery->slot_id,
             fields: $fields,
+            values: $values,
             message: DeliveryTemplate::render(
                 $unit->product->delivery_template,
                 $values,

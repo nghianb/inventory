@@ -2,6 +2,7 @@
 
 namespace App\Inventory\Stock;
 
+use App\Models\ApiKey;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -15,8 +16,9 @@ class StockLedger
 
     /**
      * @param  list<StockTransition>  $transitions
+     * @param  ?ApiKey  $apiKey  tác nhân khi lần chuyển trạng thái đến từ API xuất kho, thay cho nhân viên
      */
-    public function append(?User $actor, array $transitions, ?string $reason = null): void
+    public function append(?User $actor, array $transitions, ?string $reason = null, ?ApiKey $apiKey = null): void
     {
         $now = now();
 
@@ -28,6 +30,7 @@ class StockLedger
                 'to_status' => $transition->to->value,
                 'reason' => $reason,
                 'actor_id' => $actor?->getKey(),
+                'api_key_id' => $apiKey?->getKey(),
                 'occurred_at' => $now,
             ], $chunk));
         }

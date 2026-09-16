@@ -181,7 +181,7 @@ it('Giao thêm thiếu hàng thì không thêm gì; phiếu cũ giữ nguyên, k
     $lines = additionalLines([[$this->steam, 1], [$this->netflix, 2]]);
 
     expect($this->manual->shortages($this->otherSeller, $lines))
-        ->toEqual([new Shortage($this->netflix->id, 'Netflix 1 tháng', needed: 2, available: 1)]);
+        ->toEqual([new Shortage($this->netflix->id, 'NETFLIX-1M', 'Netflix 1 tháng', needed: 2, available: 1)]);
 
     expect(fn () => $this->manual->addLines($this->otherSeller, $dispatch, $lines))
         ->toThrow(OutOfStock::class, 'Không đủ hàng, không giao gì: "Netflix 1 tháng" cần 2, còn 1.')

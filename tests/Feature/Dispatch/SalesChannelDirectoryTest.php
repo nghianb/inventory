@@ -2,6 +2,7 @@
 
 use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
+use App\Inventory\Api\ApiKeys;
 use App\Inventory\Dispatch\InvalidSalesChannel;
 use App\Inventory\Dispatch\SalesChannelDirectory;
 use App\Inventory\Dispatch\SalesChannelDraft;
@@ -55,6 +56,46 @@ it('tên Kênh bán bắt buộc và duy nhất, không phân biệt hoa thườ
     $this->channels->update($this->admin, $zalo, new SalesChannelDraft('Zalo OA', requiresExternalRef: true));
 
     expect($zalo->fresh())->name->toBe('Zalo OA')->requires_external_ref->toBeTrue();
+});
+
+it('Kênh bán loại API mặc định giữ hàng 15 phút và bắt buộc Giá bán; kênh thủ công thì không', function () {
+    $website = $this->channels->create($this->admin, new SalesChannelDraft('Website', SalesChannelType::Api, requiresExternalRef: true));
+    $shopee = $this->channels->create($this->admin, new SalesChannelDraft('Shopee'));
+
+    expect($website->fresh())
+        ->type->toBe(SalesChannelType::Api)
+        ->hold_minutes->toBe(15)
+        ->requires_sale_price->toBeTrue()
+        ->and($website->fresh()->isApi())->toBeTrue()
+        ->and($shopee->fresh())
+        ->requires_sale_price->toBeFalse()
+        ->and($shopee->fresh()->isApi())->toBeFalse();
+
+    $this->channels->update($this->admin, $website, new SalesChannelDraft('Website', SalesChannelType::Api, holdMinutes: 30, requiresSalePrice: false));
+
+    expect($website->fresh())->hold_minutes->toBe(30)->requires_sale_price->toBeFalse();
+});
+
+it('hạn Giữ hàng phải từ 1 đến 1.440 phút', function (int $minutes) {
+    expect(fn () => $this->channels->create($this->admin, new SalesChannelDraft('Website', SalesChannelType::Api, holdMinutes: $minutes)))
+        ->toThrow(InvalidSalesChannel::class, 'Hạn Giữ hàng phải từ 1 đến 1.440 phút.')
+        ->and(SalesChannel::count())->toBe(0);
+})->with(['không giữ' => [0], 'âm' => [-5], 'quá một ngày' => [1_441]]);
+
+it('không đổi loại Kênh bán khi kênh đã có Khoá API', function () {
+    $website = $this->channels->create($this->admin, new SalesChannelDraft('Website', SalesChannelType::Api));
+
+    // Chưa có gì thì đổi loại được.
+    $this->channels->update($this->admin, $website, new SalesChannelDraft('Website'));
+
+    expect($website->fresh()->type)->toBe(SalesChannelType::Manual);
+
+    $this->channels->update($this->admin, $website, new SalesChannelDraft('Website', SalesChannelType::Api));
+    app(ApiKeys::class)->issue($this->admin, $website->fresh());
+
+    expect(fn () => $this->channels->update($this->admin, $website->fresh(), new SalesChannelDraft('Website')))
+        ->toThrow(InvalidSalesChannel::class, 'Kênh bán "Website" đã có Phiếu xuất hoặc Khoá API nên không đổi loại được.')
+        ->and($website->fresh()->type)->toBe(SalesChannelType::Api);
 });
 
 it('Kênh bán ngừng dùng thì ẩn khỏi danh sách kênh dùng được, không bị xoá, hiện lại được', function () {

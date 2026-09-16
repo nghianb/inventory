@@ -3,6 +3,7 @@
 namespace App\Filament\Support;
 
 use App\Inventory\Access\MissingRole;
+use App\Inventory\Api\InvalidApiKey;
 use App\Inventory\Catalog\InvalidProductConfiguration;
 use App\Inventory\Catalog\InvalidSupplier;
 use App\Inventory\Catalog\ProductHasStock;
@@ -82,6 +83,7 @@ final class InventoryAction
             || $exception instanceof InvalidDefectReport
             || $exception instanceof InvalidReplacement
             || $exception instanceof InvalidSupplierClaim
+            || $exception instanceof InvalidApiKey
             || $exception instanceof KeyFingerprintMismatch;
     }
 }
