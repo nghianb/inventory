@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Tồn bán được: Slot Còn hàng giao được ngay. Một định nghĩa dùng chung cho form xuất kho,
- * Thứ tự xuất và (sau này) API kiểm tra tồn, báo cáo, cảnh báo sắp hết.
+ * Thứ tự xuất, báo cáo Tồn kho và cảnh báo sắp hết (StockReport), và (sau này) API kiểm tra tồn.
  */
 class SellableStock
 {
@@ -111,6 +111,17 @@ class SellableStock
     }
 
     /**
+     * `stock_unit_id` của Đơn vị hàng tạm ngừng bán vì có Báo lỗi Chờ xác minh; một Đơn vị hàng có
+     * thể lặp lại (mỗi Slot một Báo lỗi).
+     */
+    public static function pausedUnits(): Builder
+    {
+        return DB::table('defect_reports')
+            ->select('defect_reports.stock_unit_id')
+            ->where('defect_reports.status', DefectReportStatus::Pending->value);
+    }
+
+    /**
      * Slot Còn hàng của Đơn vị hàng Hoạt động, không bị tạm ngừng vì Báo lỗi Chờ xác minh.
      */
     private static function inStockOfActiveUnits(): Builder
@@ -120,10 +131,6 @@ class SellableStock
             ->join('products', 'products.id', '=', 'stock_units.product_id')
             ->where('slots.status', SlotStatus::InStock->value)
             ->where('stock_units.status', StockUnitStatus::Active->value)
-            ->whereNotExists(fn (Builder $reports) => $reports
-                ->selectRaw('1')
-                ->from('defect_reports')
-                ->whereColumn('defect_reports.stock_unit_id', 'stock_units.id')
-                ->where('defect_reports.status', DefectReportStatus::Pending->value));
+            ->whereNotExists(self::pausedUnits()->whereColumn('defect_reports.stock_unit_id', 'stock_units.id'));
     }
 }
