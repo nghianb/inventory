@@ -265,6 +265,30 @@ class ProductCatalog
             }
         }
 
+        // Nội dung giao khách và dạng che đánh chỉ mục theo tên hiển thị, còn cột file nhập khớp
+        // theo định danh hoặc tên hiển thị: hai trường cùng tên thì một trường bị ghi đè.
+        $keyOf = [];
+        $labelOf = [];
+
+        foreach ($draft->fields as $field) {
+            $keyOf[ContentFieldName::normalize($field->key)] = $field->key;
+        }
+
+        foreach ($draft->fields as $field) {
+            $label = trim($field->label);
+            $name = ContentFieldName::normalize($label);
+
+            if (isset($labelOf[$name])) {
+                $fail("Tên hiển thị trường \"{$labelOf[$name]}\" bị trùng.");
+            }
+
+            if (isset($keyOf[$name]) && $keyOf[$name] !== $field->key) {
+                $fail("Tên hiển thị trường \"{$label}\" trùng định danh trường \"{$keyOf[$name]}\".");
+            }
+
+            $labelOf[$name] = $label;
+        }
+
         if (count(array_filter($draft->fields, fn (ContentFieldDraft $field): bool => $field->dedupeKey)) !== 1) {
             $fail('Phải chọn đúng một Trường nội dung làm Khoá chống trùng.');
         }

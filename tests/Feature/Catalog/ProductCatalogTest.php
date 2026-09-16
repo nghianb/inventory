@@ -143,6 +143,34 @@ it('Mã sản phẩm là duy nhất', function () {
     expect(Product::count())->toBe(1);
 });
 
+it('Định danh và tên hiển thị Trường nội dung dùng chung một không gian tên', function (ProductDraft $draft, string $message) {
+    expect(fn () => $this->catalog->create(staffMember(Role::QuanTri), $draft))
+        ->toThrow(InvalidProductConfiguration::class, $message);
+
+    expect(Product::count())->toBe(0);
+})->with([
+    'hai trường trùng tên hiển thị' => [fn () => netflixDraft([
+        new ContentFieldDraft('serial', 'Mã', dedupeKey: true),
+        new ContentFieldDraft('card_code', '  mã  '),
+    ]), 'Tên hiển thị trường "Mã" bị trùng.'],
+    'tên hiển thị trùng định danh trường khác' => [fn () => netflixDraft([
+        new ContentFieldDraft('serial', 'Mã', dedupeKey: true),
+        new ContentFieldDraft('card_code', ' Serial '),
+    ]), 'Tên hiển thị trường "Serial" trùng định danh trường "serial".'],
+]);
+
+it('Trường nội dung đặt tên hiển thị trùng định danh của chính nó vẫn hợp lệ', function () {
+    $product = $this->catalog->create(staffMember(Role::QuanTri), netflixDraft([
+        new ContentFieldDraft('serial', 'Serial', sensitive: false),
+        new ContentFieldDraft('card_code', 'Mã thẻ', dedupeKey: true),
+    ], type: ProductType::OneTimeCode, defaultSlots: 1));
+
+    expect($product->fresh()->contentFields->pluck('label', 'key')->all())->toBe([
+        'serial' => 'Serial',
+        'card_code' => 'Mã thẻ',
+    ]);
+});
+
 it('Quản trị sửa mọi cấu hình của Sản phẩm chưa có hàng', function () {
     $admin = staffMember(Role::QuanTri);
     $product = $this->catalog->create($admin, netflixDraft());
@@ -251,6 +279,33 @@ it('Sản phẩm đã có hàng vẫn đổi được tên hiển thị, thêm t
             'recovery_email' => 'Email khôi phục',
         ]);
 });
+
+it('Sản phẩm đã có hàng không đổi tên hiển thị hay thêm trường thành trùng tên', function (ProductDraft $draft, string $message) {
+    $admin = staffMember(Role::QuanTri);
+    $product = withStock($this->catalog->create($admin, netflixDraft()));
+
+    expect(fn () => $this->catalog->update($admin, $product, $draft))
+        ->toThrow(InvalidProductConfiguration::class, $message);
+
+    expect($product->fresh()->contentFields->pluck('label', 'key')->all())->toBe([
+        'username' => 'Tên đăng nhập',
+        'password' => 'Mật khẩu',
+    ]);
+})->with([
+    'đổi tên hiển thị thành trùng' => [fn () => netflixDraft([
+        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
+        new ContentFieldDraft('password', 'tên đăng nhập'),
+    ]), 'Tên hiển thị trường "Tên đăng nhập" bị trùng.'],
+    'thêm trường tuỳ chọn trùng tên' => [fn () => netflixDraft([
+        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
+        new ContentFieldDraft('password', 'Mật khẩu'),
+        new ContentFieldDraft('recovery_email', ' Tên đăng nhập ', required: false),
+    ]), 'Tên hiển thị trường "Tên đăng nhập" bị trùng.'],
+    'đổi tên hiển thị thành trùng định danh trường khác' => [fn () => netflixDraft([
+        new ContentFieldDraft('username', 'Password', ContentFieldType::Email, dedupeKey: true),
+        new ContentFieldDraft('password', 'Mật khẩu'),
+    ]), 'Tên hiển thị trường "Password" trùng định danh trường "password".'],
+]);
 
 it('Sản phẩm đã có hàng khoá Trường nội dung, Khoá chống trùng, cờ nhạy cảm và tuỳ chọn chuẩn hoá', function (ProductDraft $draft) {
     $admin = staffMember(Role::QuanTri);

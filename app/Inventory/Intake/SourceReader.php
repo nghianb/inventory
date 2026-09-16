@@ -2,6 +2,7 @@
 
 namespace App\Inventory\Intake;
 
+use App\Inventory\Catalog\ContentFieldName;
 use App\Models\ContentField;
 use App\Models\Product;
 use DateTimeInterface;
@@ -197,8 +198,8 @@ class SourceReader
         $byName = [];
 
         foreach ($fields as $field) {
-            $byName[self::columnName($field->label)] = $field->key;
-            $byName[self::columnName($field->key)] = $field->key;
+            $byName[ContentFieldName::normalize($field->label)] = $field->key;
+            $byName[ContentFieldName::normalize($field->key)] = $field->key;
         }
 
         $columns = [];
@@ -206,7 +207,7 @@ class SourceReader
         $taken = [];
 
         foreach ($cells as $index => $title) {
-            $name = self::columnName($title);
+            $name = ContentFieldName::normalize($title);
 
             if ($name === '') {
                 continue;
@@ -239,11 +240,6 @@ class SourceReader
         }
 
         return [$columns, $ignored];
-    }
-
-    private static function columnName(string $title): string
-    {
-        return mb_strtolower(trim($title));
     }
 
     /**

@@ -21,7 +21,7 @@ Một thứ cụ thể nằm trong kho: một **Mã dùng một lần** hoặc m
 _Avoid_: item, hàng (khi nói chung chung)
 
 **Trường nội dung** (Content field):
-Một phần nội dung của **Đơn vị hàng** do **Sản phẩm** khai báo, ví dụ Serial và Mã thẻ của thẻ nạp, hay username và password của **Tài khoản**. Mỗi trường có cờ nhạy cảm, mặc định bật: trường nhạy cảm được mã hoá và che hoàn toàn; trường không nhạy cảm (ví dụ Serial thẻ nạp) hiển thị và tìm kiếm được. Một trường được chọn làm **Khoá chống trùng**. Khi Sản phẩm đã có hàng, chỉ được thêm trường tuỳ chọn hoặc đổi tên hiển thị.
+Một phần nội dung của **Đơn vị hàng** do **Sản phẩm** khai báo, ví dụ Serial và Mã thẻ của thẻ nạp, hay username và password của **Tài khoản**. Mỗi trường có cờ nhạy cảm, mặc định bật: trường nhạy cảm được mã hoá và che hoàn toàn; trường không nhạy cảm (ví dụ Serial thẻ nạp) hiển thị và tìm kiếm được. Một trường được chọn làm **Khoá chống trùng**. Định danh và tên hiển thị dùng chung một không gian tên duy nhất trong một Sản phẩm (so sau khi trim, không phân biệt hoa thường), vì nội dung giao khách và dạng che đánh chỉ mục theo tên hiển thị, còn cột file nhập khớp theo định danh hoặc tên hiển thị. Khi Sản phẩm đã có hàng, chỉ được thêm trường tuỳ chọn hoặc đổi tên hiển thị.
 
 **Khoá chống trùng** (Dedupe key):
 **Trường nội dung** dùng để phát hiện một **Đơn vị hàng** bị nhập hai lần. Với **Tài khoản** là định danh đăng nhập, không phải mật khẩu. Mã dùng một lần là duy nhất toàn kho mãi mãi, trừ khi bị **Huỷ nhập**; một Tài khoản được nhập lại khi Đơn vị hàng cũ đã bị **Huỷ hàng** hoặc quá **Hạn sử dụng**, và Đơn vị hàng mới liên kết với cái cũ.
