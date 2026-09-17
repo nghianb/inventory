@@ -7,6 +7,7 @@ use App\Filament\Resources\Dispatches\Pages\DispatchResult;
 use App\Filament\Resources\Dispatches\Pages\ListDispatches;
 use App\Filament\Resources\Dispatches\Pages\ViewDispatch;
 use App\Filament\Resources\Dispatches\Widgets\DispatchDeliveries;
+use App\Filament\Resources\Dispatches\Widgets\DispatchRevealLogEntries;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
 use App\Inventory\Dispatch\DispatchStatus;
@@ -234,6 +235,11 @@ class DispatchResource extends Resource
             Livewire::make(DispatchDeliveries::class, fn (Dispatch $record): array => ['record' => $record])
                 ->key('deliveries')
                 ->columnSpanFull(),
+            // Chỉ Quản trị: widget tự chặn ở mount, ẩn ở đây để vai trò khác không thấy cả tiêu đề.
+            Livewire::make(DispatchRevealLogEntries::class, fn (Dispatch $record): array => ['record' => $record])
+                ->key('reveal-log-entries')
+                ->visible(fn (): bool => DispatchRevealLogEntries::canView())
+                ->columnSpanFull(),
             Section::make('Lịch sử sửa phiếu')
                 ->description('Ai sửa, khi nào, giá trị cũ → mới. Tách khỏi Sổ biến động kho.')
                 ->schema([
@@ -329,13 +335,14 @@ class DispatchResource extends Resource
     }
 
     /**
-     * Đăng ký widget thành component Livewire; bảng Lần giao nhúng vào infolist bằng Livewire::make
-     * vẫn cần đăng ký để các request sau của nó (Xem mã) tìm được class.
+     * Đăng ký widget thành component Livewire; các bảng nhúng vào infolist bằng Livewire::make vẫn
+     * cần đăng ký để các request sau của chúng (Xem mã, phân trang) tìm được class.
      */
     public static function getWidgets(): array
     {
         return [
             DispatchDeliveries::class,
+            DispatchRevealLogEntries::class,
         ];
     }
 
