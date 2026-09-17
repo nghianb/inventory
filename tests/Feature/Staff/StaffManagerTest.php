@@ -6,6 +6,7 @@ use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
 use App\Inventory\Security\SecurityEvent;
 use App\Inventory\Staff\LastActiveQuanTri;
+use App\Inventory\Staff\QuanTriAlreadyExists;
 use App\Inventory\Staff\StaffManager;
 use App\Models\SecurityLogEntry;
 use App\Models\User;
@@ -19,6 +20,42 @@ beforeEach(function () {
     $this->seed(RoleSeeder::class);
     $this->staff = app(StaffManager::class);
 });
+
+it('tạo Quản trị đầu tiên của kho từ server và ghi Nhật ký bảo mật', function () {
+    $owner = $this->staff->createFirstQuanTri('Chủ shop', 'chu@shop.test', 'mat-khau-ban-dau');
+
+    expect($owner->fresh())
+        ->name->toBe('Chủ shop')
+        ->email->toBe('chu@shop.test')
+        ->and($owner->fresh()->isDeactivated())->toBeFalse()
+        ->and(Hash::check('mat-khau-ban-dau', $owner->fresh()->password))->toBeTrue()
+        ->and($owner->hasRole(Role::QuanTri))->toBeTrue();
+
+    $entry = SecurityLogEntry::where('event', SecurityEvent::StaffCreated)->sole();
+
+    expect($entry)
+        ->user_id->toBe($owner->id)
+        ->actor_id->toBeNull()
+        ->details->toBe(['via' => 'artisan', 'roles' => ['quan-tri']])
+        ->and(json_encode($entry->toArray()))->not->toContain('mat-khau-ban-dau');
+});
+
+it('từ chối tạo Quản trị đầu tiên khi kho đã có Quản trị', function (bool $locked) {
+    $existing = staffMember(Role::QuanTri);
+
+    if ($locked) {
+        $existing->forceFill(['deactivated_at' => now()])->save();
+    }
+
+    expect(fn () => $this->staff->createFirstQuanTri('Chủ shop', 'chu@shop.test', 'mat-khau-ban-dau'))
+        ->toThrow(QuanTriAlreadyExists::class);
+
+    expect(User::where('email', 'chu@shop.test')->exists())->toBeFalse()
+        ->and(SecurityLogEntry::where('event', SecurityEvent::StaffCreated)->exists())->toBeFalse();
+})->with([
+    'Quản trị đang hoạt động' => false,
+    'Quản trị bị khoá' => true,
+]);
 
 it('Quản trị tạo nhân viên kèm Vai trò và ghi Nhật ký bảo mật', function () {
     $admin = staffMember(Role::QuanTri);

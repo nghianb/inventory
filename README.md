@@ -16,8 +16,11 @@ for k in CONTENT HMAC BACKUP; do
 done
 docker compose run --rm app php artisan migrate --seed
 docker compose run --rm app php artisan inventory:keys:register
+docker compose run --rm app php artisan staff:create-first-quan-tri
 docker compose up -d
 ```
+
+`staff:create-first-quan-tri` hỏi tên, email và mật khẩu ban đầu ngay trên terminal, nên mật khẩu không nằm lại trong lịch sử shell. Lệnh chạy được đúng một lần: kho đã có Quản trị (kể cả Quản trị đang bị Khoá nhân viên) thì nó từ chối, vì từ đó Quản trị tự tạo nhân viên ở trang Nhân viên.
 
 Panel ở <http://localhost:8080/admin>. Mọi nhân viên phải bật 2FA (TOTP) ngay sau lần đăng nhập đầu tiên.
 
