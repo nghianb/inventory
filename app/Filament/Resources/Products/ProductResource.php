@@ -17,6 +17,7 @@ use App\Inventory\Encryption\Normalization;
 use App\Models\ContentField;
 use App\Models\Product;
 use BackedEnum;
+use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
@@ -69,7 +70,10 @@ class ProductResource extends Resource
         $hasStock = fn (Get $get): bool => (bool) $get('has_stock');
         $fieldLocked = fn (Get $get): bool => (bool) $get('../../has_stock') && (bool) $get('persisted');
 
-        return $schema->components([
+        // Một mạch cuộn: mỗi khối một card chiếm trọn bề ngang. Phải tự khai cột vì trang
+        // resource ép lưới 2 cột khi form không khai (CreateRecord và EditRecord::defaultForm),
+        // làm card Thông tin chỉ ăn nửa bề ngang.
+        return $schema->columns(1)->components([
             Hidden::make('has_stock')->default(false),
             Hidden::make('has_dispatch')->default(false),
             // Hai mốc khoá khác nhau và không trùng nhau: một Sản phẩm có thể đã có hàng mà chưa
@@ -85,8 +89,7 @@ class ProductResource extends Resource
                     $get('has_dispatch')
                         ? ProductCatalog::DISPATCH_LOCKS_CODE
                         : null,
-                ])->filter()->implode(' '))
-                ->columnSpanFull(),
+                ])->filter()->implode(' ')),
             Section::make('Thông tin')
                 ->columns(2)
                 ->schema([
@@ -148,59 +151,11 @@ class ProductResource extends Resource
                         ->minValue(0),
                 ]),
             // Trường nội dung là việc chính khi khai một Sản phẩm nên leo lên ngay dưới Thông tin;
-            // hai khối dưới có mặc định dùng được ngay nên thu gọn sẵn.
-            Repeater::make('fields')
-                ->label('Trường nội dung')
-                ->helperText('Sản phẩm đã có hàng chỉ thêm được trường tuỳ chọn hoặc đổi tên hiển thị.')
-                ->minItems(1)
-                ->defaultItems(1)
-                ->reorderable(false)
-                ->deletable(fn (Get $get): bool => ! $get('has_stock'))
-                ->columns(4)
-                ->columnSpanFull()
-                ->schema([
-                    Hidden::make('persisted')->default(false),
-                    TextInput::make('key')
-                        ->label('Định danh')
-                        ->helperText('Chữ thường không dấu, ví dụ username.')
-                        ->required()
-                        ->maxLength(64)
-                        ->disabled($fieldLocked)
-                        ->dehydrated(),
-                    TextInput::make('label')
-                        ->label('Tên hiển thị')
-                        ->required()
-                        ->maxLength(255),
-                    Select::make('type')
-                        ->label('Kiểu')
-                        ->options(collect(ContentFieldType::cases())->mapWithKeys(fn (ContentFieldType $type): array => [$type->value => $type->label()])->all())
-                        ->default(ContentFieldType::Text->value)
-                        ->required()
-                        ->disabled($fieldLocked)
-                        ->dehydrated(),
-                    TextInput::make('pattern')
-                        ->label('Regex')
-                        ->helperText('Tuỳ chọn, phải khớp toàn bộ giá trị.')
-                        ->maxLength(255)
-                        ->disabled($fieldLocked)
-                        ->dehydrated(),
-                    Toggle::make('required')
-                        ->label('Bắt buộc')
-                        ->default(true)
-                        ->disabled($fieldLocked)
-                        ->dehydrated(),
-                    Toggle::make('sensitive')
-                        ->label('Nhạy cảm')
-                        ->helperText('Mã hoá và che hoàn toàn.')
-                        ->default(true)
-                        ->disabled($fieldLocked)
-                        ->dehydrated(),
-                    Toggle::make('dedupe_key')
-                        ->label('Khoá chống trùng')
-                        ->default(false)
-                        ->disabled(fn (Get $get): bool => (bool) $get('../../has_stock'))
-                        ->dehydrated(),
-                ]),
+            // hai khối dưới có mặc định dùng được ngay nên bị đẩy xuống đáy và thu gọn sẵn.
+            Section::make('Trường nội dung')
+                ->key('content-fields')
+                ->description('Nội dung của mỗi Đơn vị hàng thuộc Sản phẩm này.')
+                ->schema([self::contentFields($fieldLocked)]),
             Section::make('Chuẩn hoá Khoá chống trùng')
                 ->key('normalization')
                 ->description('Áp khi so trùng; nội dung giao khách vẫn là chuỗi gốc.')
@@ -236,9 +191,68 @@ class ProductResource extends Resource
                             ...DeliveryTemplate::BUILT_IN,
                         ])->filter()->map(fn (string $name): string => "{{{$name}}}")->implode(', ').'. Hạn sử dụng, Hạn bảo hành hiện dạng ngày/tháng/năm; mã đơn là mã đơn ngoài của Phiếu xuất.')
                         ->placeholder("Cảm ơn bạn đã mua {{san_pham}} (đơn {{ma_don}})\nTài khoản: {{username}}\nBảo hành đến {{han_bao_hanh}}"),
-                ])
-                ->columnSpanFull(),
+                ]),
         ]);
+    }
+
+    /**
+     * Repeater Trường nội dung: 4 cột mỗi dòng, nhãn ẩn vì card bao ngoài đã mang tên khối.
+     *
+     * @param  Closure(Get): bool  $fieldLocked  trường đã lưu của Sản phẩm đã có hàng
+     */
+    private static function contentFields(Closure $fieldLocked): Repeater
+    {
+        return Repeater::make('fields')
+            ->hiddenLabel()
+            ->helperText('Sản phẩm đã có hàng chỉ thêm được trường tuỳ chọn hoặc đổi tên hiển thị.')
+            ->minItems(1)
+            ->defaultItems(1)
+            ->reorderable(false)
+            ->deletable(fn (Get $get): bool => ! $get('has_stock'))
+            ->columns(4)
+            ->schema([
+                Hidden::make('persisted')->default(false),
+                TextInput::make('key')
+                    ->label('Định danh')
+                    ->helperText('Chữ thường không dấu, ví dụ username.')
+                    ->required()
+                    ->maxLength(64)
+                    ->disabled($fieldLocked)
+                    ->dehydrated(),
+                TextInput::make('label')
+                    ->label('Tên hiển thị')
+                    ->required()
+                    ->maxLength(255),
+                Select::make('type')
+                    ->label('Kiểu')
+                    ->options(collect(ContentFieldType::cases())->mapWithKeys(fn (ContentFieldType $type): array => [$type->value => $type->label()])->all())
+                    ->default(ContentFieldType::Text->value)
+                    ->required()
+                    ->disabled($fieldLocked)
+                    ->dehydrated(),
+                TextInput::make('pattern')
+                    ->label('Regex')
+                    ->helperText('Tuỳ chọn, phải khớp toàn bộ giá trị.')
+                    ->maxLength(255)
+                    ->disabled($fieldLocked)
+                    ->dehydrated(),
+                Toggle::make('required')
+                    ->label('Bắt buộc')
+                    ->default(true)
+                    ->disabled($fieldLocked)
+                    ->dehydrated(),
+                Toggle::make('sensitive')
+                    ->label('Nhạy cảm')
+                    ->helperText('Mã hoá và che hoàn toàn.')
+                    ->default(true)
+                    ->disabled($fieldLocked)
+                    ->dehydrated(),
+                Toggle::make('dedupe_key')
+                    ->label('Khoá chống trùng')
+                    ->default(false)
+                    ->disabled(fn (Get $get): bool => (bool) $get('../../has_stock'))
+                    ->dehydrated(),
+            ]);
     }
 
     public static function table(Table $table): Table

@@ -176,6 +176,17 @@ it('trang Sửa báo lỗi khi đổi cấu hình bị khoá của Sản phẩm 
     expect($stocked->fresh()->case_insensitive)->toBeTrue();
 });
 
+it('bày một mạch cuộn như variant A: mỗi khối một card chiếm trọn bề ngang, Trường nội dung cũng có card', function () {
+    $this->actingAs(staffMember(Role::Owner));
+
+    $page = Livewire::test(CreateProduct::class)->assertSchemaComponentExists('content-fields');
+
+    // Trang resource ép lưới 2 cột khi form không tự khai cột (CreateRecord::defaultForm), làm
+    // card Thông tin chỉ ăn nửa bề ngang thay vì một mạch cuộn. `columns(1)` ghi vào breakpoint
+    // `lg` — đúng chỗ lưới 2 cột bật lên.
+    expect($page->instance()->form->getColumns('lg'))->toBe(1);
+});
+
 it('form xếp Trường nội dung lên ngay dưới Thông tin và thu gọn sẵn hai khối có mặc định dùng được', function () {
     $collapsed = fn (bool $expected): Closure => fn (Section $section): bool => $section->isCollapsed() === $expected;
 
