@@ -50,7 +50,7 @@ Quy tắc chọn **Slot** Còn hàng cho một **Dòng xuất**: slot của **T�
 Số ngày **Hạn sử dụng** còn lại ít nhất mà một **Slot** phải có để được giao, do **Sản phẩm** khai báo, mặc định 0. Slot không đạt vẫn là tồn kho nhưng không bán được.
 
 **Giá bán** (Sale price):
-Tổng số tiền (VND) khách trả cho cả một **Dòng xuất**, không phải đơn giá; ghi tuỳ chọn khi xuất, trừ khi **Kênh bán** bắt buộc. Dòng xuất loại **Đổi hàng** và **Giao thay** không có Giá bán, và DB chặn ghi. Khi khách được hoàn tiền ngoài kho, Giá bán được sửa xuống số tiền shop thực giữ. Kho chỉ lưu để tính **Lãi gộp**, không quản lý việc bán.
+Tổng số tiền (VND) khách trả cho cả một **Dòng xuất**, không phải đơn giá; ghi tuỳ chọn khi xuất, trừ khi **Kênh bán** bắt buộc. Dòng xuất loại **Đổi hàng** và **Giao thay** không có Giá bán, và DB chặn ghi; loại **Ghi nhận giao bù** thì có, vì nó chép lại một lần bán đã thu tiền. Khi khách được hoàn tiền ngoài kho, Giá bán được sửa xuống số tiền shop thực giữ. Kho chỉ lưu để tính **Lãi gộp**, không quản lý việc bán.
 
 **Giao thêm** (Additional delivery):
 Thêm **Dòng xuất** mới vào một **Phiếu xuất** đã Hoàn tất, khi khách của cùng đơn mua thêm. Phần thêm giữ đủ hoặc thất bại.

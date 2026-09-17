@@ -8,6 +8,7 @@ use App\Inventory\Catalog\InvalidProductConfiguration;
 use App\Inventory\Catalog\InvalidSupplier;
 use App\Inventory\Catalog\ProductHasStock;
 use App\Inventory\Claims\InvalidSupplierClaim;
+use App\Inventory\Dispatch\DispatchFrozen;
 use App\Inventory\Dispatch\InvalidDispatch;
 use App\Inventory\Dispatch\InvalidSalesChannel;
 use App\Inventory\Dispatch\OutOfStock;
@@ -77,6 +78,7 @@ final class InventoryAction
             || $exception instanceof InvalidReveal
             || $exception instanceof InvalidSalesChannel
             || $exception instanceof InvalidDispatch
+            || $exception instanceof DispatchFrozen
             || $exception instanceof OutOfStock
             || $exception instanceof InvalidVoid
             || $exception instanceof InvalidDefectMarking

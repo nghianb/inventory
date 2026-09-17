@@ -19,6 +19,10 @@ use stdClass;
 /**
  * Chọn Slot theo Thứ tự xuất và giao, dùng chung cho tạo Phiếu xuất, Giao thêm, Giao thay và Đổi
  * hàng. Người gọi chạy trong transaction và ghi Sổ biến động kho.
+ *
+ * Đây cũng là chỗ mọi đường lấy hàng ra khỏi kho đi qua, nên Tạm dừng xuất kho được kiểm tra ngay ở
+ * đầu hai hàm chọn Slot ({@see DispatchFreeze::guard()}). Ghi nhận giao bù chọn Slot đích danh chứ
+ * không qua đây, đúng như spec: nó là ngoại lệ duy nhất, cả với Thứ tự xuất lẫn với tạm dừng.
  */
 final class SlotPicker
 {
@@ -38,11 +42,14 @@ final class SlotPicker
      * @param  bool  $allowDiscontinued  cho giao Sản phẩm Ngừng bán, khi giao bù cho lần giao cũ của chính Sản phẩm đó
      * @return array{EloquentCollection<int, Product>, array<int, Collection<int, stdClass>>}
      *
+     * @throws DispatchFrozen
      * @throws InvalidDispatch
      * @throws OutOfStock
      */
     public static function lockAndPick(array $lines, array $exceptUnitIds = [], bool $allowDiscontinued = false): array
     {
+        DispatchFreeze::guard();
+
         $products = self::lockProducts(array_map(fn (DispatchLineDraft $line): int => (int) $line->product?->getKey(), $lines), $allowDiscontinued);
         $today = CarbonImmutable::today();
         $picks = [];
@@ -71,11 +78,14 @@ final class SlotPicker
      * @param  list<int>  $exceptUnitIds
      * @return stdClass hàng `id`, `stock_unit_id`, `cost`, `expires_on`, `covers` của Slot đã khoá
      *
+     * @throws DispatchFrozen
      * @throws InvalidDispatch
      * @throws OutOfStock
      */
     public static function lockAndPickReplacement(Product $product, CarbonImmutable $coverUntil, array $exceptUnitIds, bool $allowDiscontinued): stdClass
     {
+        DispatchFreeze::guard();
+
         $locked = self::lockProducts([(int) $product->getKey()], $allowDiscontinued)->firstOrFail();
 
         return self::replacementCandidates($locked, CarbonImmutable::today(), $coverUntil, $exceptUnitIds)->lock(self::SKIP_LOCKED_FOR_DELIVERY)->first()
@@ -142,6 +152,20 @@ final class SlotPicker
         ])->all());
 
         return $slots->map(fn (object $slot): StockTransition => new StockTransition((int) $slot->stock_unit_id, (int) $slot->id, $from, SlotStatus::Delivered))->values()->all();
+    }
+
+    /**
+     * Một hàng Slot đã khoá, đúng hình dạng {@see deliver()} nhận. Ghi nhận giao bù chọn Slot đích
+     * danh chứ không qua một lượt chọn theo Thứ tự xuất, nên nó dựng hàng bằng hàm này thay vì tự
+     * bịa lại hình dạng ấy ở nơi khác.
+     */
+    public static function pickedRow(int $slotId, int $stockUnitId): stdClass
+    {
+        $row = new stdClass;
+        $row->id = $slotId;
+        $row->stock_unit_id = $stockUnitId;
+
+        return $row;
     }
 
     /**

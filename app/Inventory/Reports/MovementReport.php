@@ -209,7 +209,7 @@ class MovementReport
     private static function outflow(MovementReportFilter $filter): QueryBuilder
     {
         $corrective = "(deliveries.corrects_delivery_id IS NOT NULL OR dispatch_lines.kind = '".DispatchLineKind::Corrective->value."')";
-        $sale = "dispatch_lines.kind IN ('".DispatchLineKind::Sale->value."', '".DispatchLineKind::Additional->value."')";
+        $sale = "dispatch_lines.kind IN ('".implode("', '", DispatchLineKind::salePriceValues())."')";
         $replacement = "dispatch_lines.kind = '".DispatchLineKind::Replacement->value."'";
 
         return DB::table('deliveries')
@@ -251,8 +251,8 @@ class MovementReport
     /**
      * Tổng Giá bán các Dòng xuất có lần Giao hàng đầu tiên trong khoảng. Giá bán là tổng tiền của cả
      * Dòng xuất, không phải đơn giá, nên mỗi Dòng xuất chỉ tính một lần, vào kỳ nó bắt đầu được
-     * giao. Chỉ Giao bán và Giao thêm: Đổi hàng và Giao thay không có Giá bán — ràng buộc
-     * `dispatch_lines_sale_price_kind` giữ điều đó ở tầng DB, đây lọc theo loại cho đúng ý.
+     * giao. Chỉ Giao bán, Giao thêm và Ghi nhận giao bù: Đổi hàng và Giao thay không có Giá bán —
+     * ràng buộc `dispatch_lines_sale_price_kind` giữ điều đó ở tầng DB, đây lọc theo loại cho đúng ý.
      */
     private static function sales(MovementReportFilter $filter): QueryBuilder
     {
@@ -263,7 +263,7 @@ class MovementReport
 
         return DB::table('dispatch_lines')
             ->joinSub($firstDelivery, 'first_delivery', 'first_delivery.dispatch_line_id', '=', 'dispatch_lines.id')
-            ->whereIn('dispatch_lines.kind', [DispatchLineKind::Sale->value, DispatchLineKind::Additional->value])
+            ->whereIn('dispatch_lines.kind', DispatchLineKind::salePriceValues())
             ->whereNotNull('dispatch_lines.sale_price')
             ->where('first_delivery.first_delivered_at', '>=', $filter->startsAt())
             ->where('first_delivery.first_delivered_at', '<', $filter->endsBefore())

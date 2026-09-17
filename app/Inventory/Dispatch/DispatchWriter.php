@@ -139,9 +139,15 @@ final class DispatchWriter
      * Xác nhận một phiếu Đang giữ: giao đúng các Slot phiếu đang giữ (Đã giữ → Đã giao) vào chính
      * các Dòng xuất đã chèn lúc giữ, rồi hoàn tất phiếu. Không chọn lại Slot, nên khách nhận đúng
      * phần hàng đã được giữ cho mình.
+     *
+     * @throws DispatchFrozen
      */
     public function deliverHeld(DispatchActor $actor, Dispatch $dispatch, string $ledgerReason): void
     {
+        // Đường giao duy nhất không qua SlotPicker: Slot đã được giữ từ trước. Hàng vẫn rời kho ở
+        // đây, nên đang tạm dừng thì phiếu ở nguyên Đang giữ cho tới khi Quản trị mở lại kho.
+        DispatchFreeze::guard();
+
         $heldByLine = SlotHolds::lockByLine($dispatch);
         $lines = $dispatch->lines()->whereIn('id', array_keys($heldByLine))->with('product')->get();
         $now = now();
