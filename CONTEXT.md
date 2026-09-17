@@ -36,6 +36,10 @@ Tạm khoá một **Slot** cho một **Phiếu xuất** để không giao trùng
 Việc trao nội dung **Slot** cho khách. Đây là thời điểm hàng rời kho và là mốc tính **Hạn bảo hành**.
 _Avoid_: bán (kho không quản lý việc bán)
 
+**Xuất hàng** (Outbound):
+Nửa công việc đưa hàng ra khỏi kho: nhận đơn của **Kênh bán** thành **Phiếu xuất**, **Giao hàng**, rồi xử lý **Báo lỗi** và **Đổi hàng** sau khi giao. Là phần việc của **Vai trò** Bán hàng, không phải tên của Vai trò đó.
+_Avoid_: bán hàng (đó là tên **Vai trò**), xuất kho (dễ nhầm với **Tạm dừng xuất kho**)
+
 **Phiếu xuất** (Dispatch):
 Một đơn cần giao từ một **Kênh bán**, gồm một hoặc nhiều **Dòng xuất**, định danh bằng mã đơn ngoài duy nhất trong kênh bán đó. Ghi thông tin khách dạng văn bản tự do để tra cứu khi bảo hành. Có trạng thái Đang giữ, Hết hạn giữ, Hoàn tất hoặc Đã huỷ; huỷ phiếu thì nhả mọi **Slot** đang giữ. Phiếu Hết hạn giữ đã nhả Slot nhưng vẫn giao được nếu giữ lại đủ hàng; Đã huỷ là trạng thái cuối. Mã đơn ngoài bị chiếm vĩnh viễn khi phiếu được tạo, kể cả khi phiếu bị huỷ. Phiếu xuất giữ đủ số lượng cho mọi Dòng xuất hoặc thất bại toàn bộ, không giao thiếu.
 _Avoid_: đơn hàng (kho không quản lý đơn bán), Khách hàng (kho không có thực thể khách)
@@ -137,6 +141,10 @@ Việc đòi một **Nhà cung cấp** bồi hoàn cho một hoặc nhiều **Đ
 **Ngừng bán** (Discontinue):
 Đánh dấu một **Sản phẩm** không còn được giữ hàng hay giao mới, nhưng vẫn dùng được cho **Đổi hàng** và **Giao thay** của các lần giao cũ của chính nó.
 
+**Nhập hàng** (Intake):
+Nửa công việc đưa hàng vào kho: làm việc với **Nhà cung cấp**, tạo **Lô nhập**, và đòi bồi hoàn cho hàng lỗi qua **Khiếu nại nhà cung cấp**. Là phần việc của **Vai trò** Nhập kho, không phải tên của Vai trò đó.
+_Avoid_: nhập kho (đó là tên **Vai trò**)
+
 **Lô nhập** (Batch):
 Một lần nhập hàng vào kho từ một **Nhà cung cấp**, gồm một hoặc nhiều **Dòng nhập**. Chỉ vào kho khi nhân viên xác nhận sau bước xem trước; ghi lại số dòng bị bỏ vì lỗi hoặc trùng.
 
@@ -229,3 +237,4 @@ Quản trị ghi lại một lần **Giao hàng** đã thực sự xảy ra như
 - Lọc **Nhà cung cấp** trên báo cáo Lãi/lỗ gặp đúng vấn đề của báo cáo Nhập/xuất: một Dòng xuất có thể gồm Slot của nhiều Nhà cung cấp. Đã chốt: khác báo cáo Nhập/xuất (ẩn hẳn cột Giá bán), báo cáo Lãi/lỗ **chia đều Giá bán theo Slot**, vì ở đây bỏ doanh thu đi thì Lãi gộp của Nhà cung cấp mất nghĩa hoàn toàn, còn chia theo Slot vẫn là một phép quy đổi nói được.
 - Hàng thay thế từ **Khiếu nại nhà cung cấp** có thể bị coi là một khoản bồi hoàn trừ vào lỗ. Đã chốt: trong báo cáo lỗ theo Nhà cung cấp nó chỉ là cột tham khảo (đếm **Đơn vị hàng**), không trừ vào lỗ ròng, vì hàng ấy vào kho với **Giá vốn** 0 nên đã tự phản ánh khi bán; trừ thêm lần nữa là tính hai lần.
 - Lỗ "của một **Nhà cung cấp**" có thể hiểu là mọi **Tổn thất** của hàng họ giao. Đã chốt: chỉ gồm **Giá vốn** hàng Lỗi và **Chi phí đổi hàng**; Tổn thất **Huỷ hàng** (giao nhầm, lộ nội dung, ngừng kinh doanh lô) và Tổn thất hết hạn là chuyện của shop, tính cho Nhà cung cấp là đổ oan.
+- "nhập kho" và "bán hàng" vừa là tên **Vai trò**, vừa có thể hiểu là công việc. Đã chốt: công việc gọi là **Nhập hàng** và **Xuất hàng**; **Nhập kho** và **Bán hàng** chỉ là tên Vai trò. Hai cặp từ này cố tình khác nhau để một câu nói ra là biết đang nói về người hay về việc.

@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Filament\Resources\Dispatches\DispatchResource;
 use App\Filament\Resources\SupplierClaims\SupplierClaimResource;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Reports\ProfitReport;
 use App\Inventory\Reports\ProfitReportFilter;
 use App\Inventory\Reports\ProfitReportRow;
@@ -30,6 +31,7 @@ use Filament\Tables\Table;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Url;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use UnitEnum;
 
 /**
  * Báo cáo Lãi/lỗ theo Sản phẩm. Adapter mỏng: số liệu, quyền và cột nào hiện nằm ở ProfitReport; giá
@@ -47,7 +49,11 @@ class ProfitReportPage extends Page implements HasTable
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBanknotes;
 
-    protected static ?string $navigationLabel = 'Báo cáo lãi/lỗ';
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::BaoCao;
+
+    protected static ?int $navigationSort = 30;
+
+    protected static ?string $navigationLabel = 'Lãi/lỗ';
 
     protected static ?string $title = 'Báo cáo lãi/lỗ';
 

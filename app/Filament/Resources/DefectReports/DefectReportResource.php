@@ -6,6 +6,7 @@ use App\Filament\Resources\DefectReports\Pages\ListDefectReports;
 use App\Filament\Resources\DefectReports\Pages\ViewDefectReport;
 use App\Filament\Resources\Dispatches\DispatchResource;
 use App\Filament\Resources\StockUnits\StockUnitResource;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Dispatch\AffectedDelivery;
 use App\Inventory\Warranty\DefectReportStatus;
 use App\Inventory\Warranty\DefectResolution;
@@ -25,6 +26,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
+use UnitEnum;
 
 /**
  * Báo lỗi trong panel: danh sách (tab tồn đọng Chờ xác minh quá hạn) và trang xác minh. Adapter
@@ -36,6 +38,10 @@ class DefectReportResource extends Resource
     protected static ?string $model = DefectReport::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedExclamationTriangle;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::XuatHang;
+
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $modelLabel = 'báo lỗi';
 

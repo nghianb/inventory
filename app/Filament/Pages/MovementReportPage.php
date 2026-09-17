@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Resources\SupplierClaims\SupplierClaimResource;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Reports\MovementReport;
 use App\Inventory\Reports\MovementReportFilter;
 use App\Inventory\Reports\ReportFormat;
@@ -28,6 +29,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Livewire\Attributes\Url;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use UnitEnum;
 
 /**
  * Báo cáo Nhập/xuất. Adapter mỏng: số liệu, quyền và cột theo Vai trò nằm ở MovementReport; bộ lọc
@@ -40,7 +42,11 @@ class MovementReportPage extends Page implements HasTable
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowsRightLeft;
 
-    protected static ?string $navigationLabel = 'Báo cáo nhập/xuất';
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::BaoCao;
+
+    protected static ?int $navigationSort = 20;
+
+    protected static ?string $navigationLabel = 'Nhập/xuất';
 
     protected static ?string $title = 'Báo cáo nhập/xuất';
 

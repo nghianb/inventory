@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Resources\Dispatches\DispatchResource;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
 use App\Inventory\Catalog\ProductType;
@@ -42,6 +43,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use UnitEnum;
 
 /**
  * Trang sự cố kho của Quản trị, gom ba việc phải làm được **trong lúc** kho đang dừng: bật/tắt Tạm
@@ -55,6 +57,10 @@ class DispatchFreezePage extends Page implements HasTable
     use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedNoSymbol;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::HeThong;
+
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $navigationLabel = 'Tạm dừng xuất kho';
 

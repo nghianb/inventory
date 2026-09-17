@@ -7,6 +7,7 @@ use App\Filament\Resources\StockUnits\Pages\ViewStockUnit;
 use App\Filament\Resources\StockUnits\RelationManagers\RevealLogEntriesRelationManager;
 use App\Filament\Resources\StockUnits\RelationManagers\SlotsRelationManager;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
 use App\Inventory\Dispatch\AffectedDelivery;
@@ -30,6 +31,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use UnitEnum;
 
 /**
  * Đơn vị hàng trong panel, chỉ đọc. Danh sách và chi tiết luôn ở dạng che: nội dung đầy đủ
@@ -40,7 +42,11 @@ class StockUnitResource extends Resource
 {
     protected static ?string $model = StockUnit::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedKey;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::KhoHang;
+
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $modelLabel = 'đơn vị hàng';
 

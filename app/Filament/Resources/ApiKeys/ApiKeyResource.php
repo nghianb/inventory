@@ -4,6 +4,7 @@ namespace App\Filament\Resources\ApiKeys;
 
 use App\Filament\Resources\ApiKeys\Pages\ManageApiKeys;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Api\ApiKeys;
 use App\Inventory\Api\IssuedApiKey;
 use App\Inventory\Dispatch\SalesChannelType;
@@ -21,6 +22,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
+use UnitEnum;
 
 /**
  * Khoá API trong panel, chỉ Quản trị. Adapter mỏng: tạo, xoay và thu hồi đều gọi {@see ApiKeys},
@@ -31,6 +33,10 @@ class ApiKeyResource extends Resource
     protected static ?string $model = ApiKey::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedKey;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::HeThong;
+
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $modelLabel = 'khoá API';
 

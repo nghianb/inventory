@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Suppliers;
 
 use App\Filament\Resources\Suppliers\Pages\ManageSuppliers;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Models\Supplier;
 use BackedEnum;
@@ -16,6 +17,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use UnitEnum;
 
 /**
  * Nhà cung cấp trong panel. Adapter mỏng: mọi thao tác gọi SupplierDirectory.
@@ -26,6 +28,10 @@ class SupplierResource extends Resource
     protected static ?string $model = Supplier::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingStorefront;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::NhapHang;
+
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $modelLabel = 'nhà cung cấp';
 

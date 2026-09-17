@@ -7,6 +7,7 @@ use App\Filament\Resources\Batches\Pages\ListBatches;
 use App\Filament\Resources\Batches\Pages\ViewBatch;
 use App\Filament\Resources\SupplierClaims\SupplierClaimResource;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Catalog\InvalidSupplier;
 use App\Inventory\Catalog\ProductType;
 use App\Inventory\Catalog\SupplierDirectory;
@@ -41,6 +42,7 @@ use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use UnitEnum;
 
 /**
  * Lô nhập trong panel. Adapter mỏng: trang tạo gọi BatchIntake::submit, trang xem hiện
@@ -52,6 +54,10 @@ class BatchResource extends Resource
     protected static ?string $model = Batch::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedInboxArrowDown;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::NhapHang;
+
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $modelLabel = 'lô nhập';
 
