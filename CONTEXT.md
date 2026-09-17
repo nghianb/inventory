@@ -5,8 +5,16 @@ Hệ thống quản lý kho nội bộ cho một shop bán hàng số (CD key, c
 ## Language
 
 **Sản phẩm** (Product):
-Một mặt hàng mà shop bán, ví dụ "Windows 11 Pro key" hay "Netflix Premium 1 tháng". Sản phẩm là loại hàng, không phải từng đơn vị hàng trong kho. Mỗi thời hạn bán khác nhau là một Sản phẩm riêng, có kho riêng. Có **Mã sản phẩm** duy nhất do quản trị đặt (ví dụ `NETFLIX-1M`), là cách **Kênh bán** loại API tham chiếu tới Sản phẩm; không đổi được sau khi đã có **Phiếu xuất**. Sản phẩm khai báo các **Trường nội dung** của hàng thuộc nó. Sản phẩm đã có hàng thì không bị xoá, chỉ có thể **Ngừng bán**.
+Một mặt hàng mà shop bán, ví dụ "Windows 11 Pro key" hay "Netflix Premium 1 tháng". Sản phẩm là thứ được bán nói chung, không phải từng đơn vị hàng cụ thể trong kho. Mỗi thời hạn bán khác nhau là một Sản phẩm riêng, có kho riêng. Có **Mã sản phẩm** duy nhất do quản trị đặt (ví dụ `NETFLIX-1M`), là cách **Kênh bán** loại API tham chiếu tới Sản phẩm; không đổi được sau khi đã có **Phiếu xuất**. Sản phẩm thuộc đúng một **Loại sản phẩm**, nơi khai báo **Dạng hàng** và các **Trường nội dung** của hàng thuộc nó; chuyển sang Loại khác chỉ được khi Sản phẩm chưa có hàng. Sản phẩm tự khai thời hạn bảo hành, **Hạn còn lại tối thiểu** và **Ngưỡng sắp hết** của riêng mình. Sản phẩm đã có hàng thì không bị xoá, chỉ có thể **Ngừng bán**.
 _Avoid_: mặt hàng, SKU (khi nói về đơn vị trong kho), gói bán
+
+**Loại sản phẩm** (Product type):
+Khuôn dùng chung cho nhiều **Sản phẩm** mô tả hàng giống nhau, ví dụ "Thẻ nạp" hay "Tài khoản có 2FA": khai **Dạng hàng**, các **Trường nội dung**, cách chuẩn hoá **Khoá chống trùng** và **Mẫu giao hàng** mặc định. Mọi Sản phẩm thuộc đúng một Loại và không khai lại những thứ đó, nên sửa Loại là sửa mọi Sản phẩm thuộc nó. Có tên duy nhất, không có mã vì không **Kênh bán** nào tham chiếu tới nó. Thay đổi chạm vào dữ liệu đã lưu bị từ chối trọn gói khi Loại đã có Sản phẩm có hàng (ADR 0004). Chưa Sản phẩm nào dùng thì xoá được; đang có thì chỉ ngừng dùng, tức ẩn khỏi danh sách chọn khi tạo Sản phẩm mới.
+_Avoid_: mẫu sản phẩm, nhóm sản phẩm, danh mục (`ProductCatalog` trong code nghĩa là sổ đăng ký Sản phẩm, không phải Loại)
+
+**Dạng hàng** (Stock form):
+Hàng của một **Loại sản phẩm** nằm trong kho dưới hình thức nào: **Mã dùng một lần** hay **Tài khoản**. Quyết định một **Đơn vị hàng** chia được mấy **Slot** (Mã dùng một lần luôn đúng một).
+_Avoid_: loại sản phẩm (đó là **Loại sản phẩm**), kiểu hàng
 
 **Mã dùng một lần** (One-time code):
 Một đơn vị hàng là chuỗi kích hoạt, giao cho đúng một khách và hết giá trị sau khi giao. Gồm cả CD key (Steam, Windows...) và code (gift card, thẻ nạp có mệnh giá, voucher). CD key và code chỉ khác nhau ở thuộc tính của **Sản phẩm**.
@@ -21,7 +29,7 @@ Một thứ cụ thể nằm trong kho: một **Mã dùng một lần** hoặc m
 _Avoid_: item, hàng (khi nói chung chung)
 
 **Trường nội dung** (Content field):
-Một phần nội dung của **Đơn vị hàng** do **Sản phẩm** khai báo, ví dụ Serial và Mã thẻ của thẻ nạp, hay username và password của **Tài khoản**. Mỗi trường có cờ nhạy cảm, mặc định bật: trường nhạy cảm được mã hoá và che hoàn toàn; trường không nhạy cảm (ví dụ Serial thẻ nạp) hiển thị và tìm kiếm được. Một trường được chọn làm **Khoá chống trùng**. Định danh và tên hiển thị dùng chung một không gian tên duy nhất trong một Sản phẩm (so sau khi trim, không phân biệt hoa thường), vì nội dung giao khách và dạng che đánh chỉ mục theo tên hiển thị, còn cột file nhập khớp theo định danh hoặc tên hiển thị. Khi Sản phẩm đã có hàng, chỉ được thêm trường tuỳ chọn hoặc đổi tên hiển thị.
+Một phần nội dung của **Đơn vị hàng** do **Loại sản phẩm** khai báo, ví dụ Serial và Mã thẻ của thẻ nạp, hay username và password của **Tài khoản**. Mỗi trường có cờ nhạy cảm, mặc định bật: trường nhạy cảm được mã hoá và che hoàn toàn; trường không nhạy cảm (ví dụ Serial thẻ nạp) hiển thị và tìm kiếm được. Một trường được chọn làm **Khoá chống trùng**. Định danh và tên hiển thị dùng chung một không gian tên duy nhất trong một Loại sản phẩm (so sau khi trim, không phân biệt hoa thường), vì nội dung giao khách và dạng che đánh chỉ mục theo tên hiển thị, còn cột file nhập khớp theo định danh hoặc tên hiển thị. Khi Loại sản phẩm đã có **Sản phẩm** nào có hàng, chỉ được thêm trường tuỳ chọn hoặc đổi tên hiển thị — hai thay đổi này áp cho mọi Sản phẩm của Loại; mọi thay đổi khác bị từ chối trọn gói, kể cả với Sản phẩm chưa có hàng (ADR 0004).
 
 **Khoá chống trùng** (Dedupe key):
 **Trường nội dung** dùng để phát hiện một **Đơn vị hàng** bị nhập hai lần. Kho chỉ lưu HMAC của nó, và không bao giờ giữ song song hai hash: khi xoay khoá mã hoá HMAC, hash được tính lại, nhập hàng và tra cứu theo Khoá chống trùng tạm dừng cho tới khi xong (ADR 0003). Với **Tài khoản** là định danh đăng nhập, không phải mật khẩu. Mã dùng một lần là duy nhất toàn kho mãi mãi, trừ khi bị **Huỷ nhập**; một Tài khoản được nhập lại khi Đơn vị hàng cũ đã bị **Huỷ hàng** hoặc quá **Hạn sử dụng**, và Đơn vị hàng mới liên kết với cái cũ.
@@ -64,7 +72,7 @@ Sửa một lần **Giao hàng** nhầm do nhân viên: **Huỷ hàng** Slot đ�
 _Avoid_: Đổi hàng (Đổi hàng là do hàng lỗi)
 
 **Mẫu giao hàng** (Delivery template):
-Văn bản do **Sản phẩm** khai báo để ghép nội dung một **Slot** thành tin nhắn gửi khách, gồm các **Trường nội dung**, **Hạn sử dụng**, **Hạn bảo hành** và hướng dẫn cố định. Sản phẩm chưa có mẫu thì dùng mẫu mặc định liệt kê các trường.
+Văn bản để ghép nội dung một **Slot** thành tin nhắn gửi khách, gồm các **Trường nội dung**, **Hạn sử dụng**, **Hạn bảo hành** và hướng dẫn cố định. Tìm theo ba bậc lúc ghép tin nhắn, không chép sẵn: mẫu riêng của **Sản phẩm**, rồi mẫu của **Loại sản phẩm**, rồi mẫu mặc định liệt kê các trường. Sản phẩm ghi đè mẫu riêng vì hướng dẫn kích hoạt khác nhau giữa các Sản phẩm cùng Loại; Loại đổi mẫu thì Sản phẩm đã ghi đè không bị đụng tới.
 
 **Kênh bán** (Sales channel):
 Nguồn phát sinh đơn cần giao, do quản trị khai báo, loại thủ công (Shopee, Facebook, Zalo...) hoặc API (website). Mỗi kênh quy định có bắt buộc mã đơn ngoài không; nếu không bắt buộc và nhân viên để trống thì mã được tự sinh. Kênh loại API gọi vào kho bằng **Khoá API**, quy định hạn **Giữ hàng** (mặc định 15 phút) và có bắt buộc **Giá bán** không (mặc định có).
@@ -194,7 +202,8 @@ Quản trị ghi lại một lần **Giao hàng** đã thực sự xảy ra như
 
 ## Relationships
 
-- Một **Sản phẩm** là loại **Mã dùng một lần** hoặc loại **Tài khoản**, và khai báo một hoặc nhiều **Trường nội dung**
+- Mỗi **Sản phẩm** thuộc đúng một **Loại sản phẩm**; một Loại sản phẩm có không hoặc nhiều Sản phẩm
+- Một **Loại sản phẩm** có **Dạng hàng** là **Mã dùng một lần** hoặc **Tài khoản**, và khai báo một hoặc nhiều **Trường nội dung**
 - Một **Lô nhập** đến từ đúng một **Nhà cung cấp** và gồm một hoặc nhiều **Dòng nhập**
 - Một **Dòng nhập** thuộc đúng một **Sản phẩm** và chứa nhiều **Đơn vị hàng**
 - Mỗi **Đơn vị hàng** thuộc đúng một **Dòng nhập** (do đó đúng một **Lô nhập** và đúng một **Sản phẩm**)
@@ -238,3 +247,6 @@ Quản trị ghi lại một lần **Giao hàng** đã thực sự xảy ra như
 - Hàng thay thế từ **Khiếu nại nhà cung cấp** có thể bị coi là một khoản bồi hoàn trừ vào lỗ. Đã chốt: trong báo cáo lỗ theo Nhà cung cấp nó chỉ là cột tham khảo (đếm **Đơn vị hàng**), không trừ vào lỗ ròng, vì hàng ấy vào kho với **Giá vốn** 0 nên đã tự phản ánh khi bán; trừ thêm lần nữa là tính hai lần.
 - Lỗ "của một **Nhà cung cấp**" có thể hiểu là mọi **Tổn thất** của hàng họ giao. Đã chốt: chỉ gồm **Giá vốn** hàng Lỗi và **Chi phí đổi hàng**; Tổn thất **Huỷ hàng** (giao nhầm, lộ nội dung, ngừng kinh doanh lô) và Tổn thất hết hạn là chuyện của shop, tính cho Nhà cung cấp là đổ oan.
 - "nhập kho" và "bán hàng" vừa là tên **Vai trò**, vừa có thể hiểu là công việc. Đã chốt: công việc gọi là **Nhập hàng** và **Xuất hàng**; **Nhập kho** và **Bán hàng** chỉ là tên Vai trò. Hai cặp từ này cố tình khác nhau để một câu nói ra là biết đang nói về người hay về việc.
+- "loại sản phẩm" từng nghĩa là **Mã dùng một lần** hay **Tài khoản**. Đã chốt: tách làm hai. **Dạng hàng** là hàng nằm trong kho dưới hình thức nào, **Loại sản phẩm** là khuôn khai **Trường nội dung** dùng chung cho nhiều **Sản phẩm**. Câu hỏi "sản phẩm này loại gì?" từ nay trả lời bằng tên Loại sản phẩm, không phải Mã dùng một lần hay Tài khoản.
+- Có **Loại sản phẩm** rồi thì dễ tưởng sửa Loại là sửa được mọi **Sản phẩm** thuộc nó. Đã chốt: chỉ thêm trường tuỳ chọn và đổi tên hiển thị mới áp xuống; mọi thay đổi chạm vào dữ liệu đã lưu (kiểu trường, cờ nhạy cảm, **Khoá chống trùng**, chuẩn hoá, **Dạng hàng**, xoá trường) bị từ chối trọn gói khi Loại đã có Sản phẩm có hàng, chứ không áp cho những Sản phẩm áp được (ADR 0004). Hệ quả cố ý: một Sản phẩm chưa có hàng vẫn bị chặn vì Sản phẩm anh em cùng Loại đã có hàng.
+- **Sản phẩm** dùng chung **Trường nội dung** nhưng cần hướng dẫn kích hoạt riêng. Đã chốt: chỉ **Mẫu giao hàng** được Sản phẩm ghi đè, vì nó chi phối văn bản gửi khách chứ không chi phối dữ liệu đã lưu; mọi khai báo khác của **Loại sản phẩm** thì Sản phẩm không lệch được.
