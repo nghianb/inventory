@@ -1,6 +1,6 @@
 <?php
 
-use App\Filament\Resources\Products\Pages\ManageProducts;
+use App\Filament\Resources\Products\Pages\ListProducts;
 use App\Filament\Resources\StockUnits\Pages\ViewStockUnit;
 use App\Filament\Resources\StockUnits\RelationManagers\SlotsRelationManager;
 use App\Inventory\Access\MissingRole;
@@ -236,7 +236,7 @@ it('bảng Sản phẩm hiện Tồn lỗi riêng', function () {
     $this->defects->markDefective($this->admin, $this->unit, 'Hỏng');
     $this->actingAs($this->admin);
 
-    Livewire::test(ManageProducts::class)
+    Livewire::test(ListProducts::class)
         ->assertTableColumnStateSet('defective_stock_slots_count', 2, $this->netflix);
 });
 

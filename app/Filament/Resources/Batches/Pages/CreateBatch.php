@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Batches\Pages;
 
 use App\Filament\Resources\Batches\BatchResource;
+use App\Filament\Support\HandlesBusinessErrors;
 use App\Filament\Support\InventoryAction;
 use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
@@ -13,11 +14,9 @@ use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\SupplierClaim;
 use Carbon\CarbonImmutable;
-use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
-use Throwable;
 
 /**
  * Tạo Lô nhập nhiều Dòng nhập (dán văn bản hoặc file), rồi chuyển sang trang xem trước.
@@ -26,6 +25,8 @@ use Throwable;
  */
 class CreateBatch extends CreateRecord
 {
+    use HandlesBusinessErrors;
+
     protected static string $resource = BatchResource::class;
 
     /** Tham số query: mở trang tạo Lô nhập hàng thay thế cho Khiếu nại nhà cung cấp. */
@@ -54,7 +55,7 @@ class CreateBatch extends CreateRecord
                 $lines[] = self::line($claim === null ? $line : [...$line, 'unit_cost' => 0], $upload);
             }
 
-            return app(BatchIntake::class)->submit(InventoryAction::actor(), new BatchDraft(
+            return $this->attempt(fn (): Model => app(BatchIntake::class)->submit(InventoryAction::actor(), new BatchDraft(
                 supplier: Supplier::query()->findOrFail($data['supplier_id']),
                 receivedOn: CarbonImmutable::parse($data['received_on']),
                 lines: $lines,
@@ -63,16 +64,7 @@ class CreateBatch extends CreateRecord
                 invoiceTotal: filled($data['invoice_total'] ?? null) ? (int) $data['invoice_total'] : null,
                 supplements: filled($data['supplements_batch_id'] ?? null) ? Batch::query()->findOrFail($data['supplements_batch_id']) : null,
                 supplierClaim: $claim,
-            ));
-        } catch (Throwable $exception) {
-            if (! InventoryAction::isBusinessError($exception)) {
-                throw $exception;
-            }
-
-            Notification::make()->danger()->title($exception->getMessage())->send();
-            $this->halt(shouldRollbackDatabaseTransaction: true);
-
-            throw $exception;
+            )));
         } finally {
             foreach ($uploads as $upload) {
                 $upload->delete();
