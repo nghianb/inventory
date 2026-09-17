@@ -28,4 +28,17 @@ enum KeyPurpose: string
     {
         return $this === self::Content;
     }
+
+    /**
+     * Cột trên `stock_units` ghi phiên bản khoá đã dùng cho bản ghi, để lệnh xoay khoá biết bản
+     * ghi nào còn ở khoá cũ; null khi loại khoá không chạm tới dữ liệu trong app.
+     */
+    public function versionColumn(): ?string
+    {
+        return match ($this) {
+            self::Content => 'secret_key_version',
+            self::Hmac => 'dedupe_hmac_version',
+            self::Backup => null,
+        };
+    }
 }

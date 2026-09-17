@@ -4,6 +4,7 @@ namespace App\Inventory\Encryption;
 
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Encryption\Encrypter;
+use JsonException;
 use SensitiveParameter;
 
 /**
@@ -53,12 +54,34 @@ final class ContentCrypto
     }
 
     /**
-     * Phiên bản khoá HMAC đang tính hash Khoá chống trùng. Bản ghi lưu lại phiên bản này để lệnh
-     * xoay khoá HMAC biết hàng nào còn ở khoá cũ.
+     * Các Trường nội dung nhạy cảm đã giải mã của một Đơn vị hàng, theo định danh trường; rỗng khi
+     * hàng không có trường nhạy cảm nào.
+     *
+     * @return array<string, string>
+     *
+     * @throws DecryptException
+     * @throws InvalidKeyConfiguration
+     * @throws JsonException
+     */
+    public function decryptFields(?string $ciphertext, ?int $keyVersion): array
+    {
+        if ($ciphertext === null) {
+            return [];
+        }
+
+        /** @var array<string, string> $values */
+        $values = json_decode($this->decrypt(new EncryptedContent($ciphertext, (int) $keyVersion)), true, flags: JSON_THROW_ON_ERROR);
+
+        return $values;
+    }
+
+    /**
+     * Phiên bản khoá mã hoá HMAC đang tính hash Khoá chống trùng. Bản ghi lưu lại phiên bản này để
+     * lệnh xoay khoá HMAC biết hàng nào còn ở khoá cũ.
      *
      * @throws InvalidKeyConfiguration
      */
-    public function dedupeKeyVersion(): int
+    public function hmacKeyVersion(): int
     {
         return $this->keys->current(KeyPurpose::Hmac)->version;
     }

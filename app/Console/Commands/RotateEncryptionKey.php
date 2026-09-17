@@ -6,6 +6,7 @@ use App\Inventory\Encryption\InvalidKeyConfiguration;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyPurpose;
 use App\Inventory\Encryption\KeyRotation;
+use App\Inventory\Encryption\KeyRotationFailed;
 use App\Inventory\Encryption\KeyRotationSummary;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -32,10 +33,16 @@ class RotateEncryptionKey extends Command
 
         try {
             $summary = $rotation->rotate($purpose);
-        } catch (KeyFingerprintMismatch|InvalidKeyConfiguration $exception) {
+        } catch (KeyFingerprintMismatch|InvalidKeyConfiguration|KeyRotationFailed $exception) {
             $this->error($exception->getMessage());
 
             return self::FAILURE;
+        }
+
+        if ($summary === null) {
+            $this->info("Không có gì để xoay: {$purpose->label()} vẫn ở phiên bản đã đăng ký và mọi bản ghi đã dùng phiên bản ấy. Thêm phiên bản mới vào .env rồi chạy lại.");
+
+            return self::SUCCESS;
         }
 
         $this->info(sprintf(

@@ -15,7 +15,6 @@ use App\Inventory\Dispatch\DispatchResultExport;
 use App\Inventory\Dispatch\DispatchResultFormat;
 use App\Inventory\Dispatch\SupersededDeliveries;
 use App\Inventory\Encryption\ContentCrypto;
-use App\Inventory\Encryption\EncryptedContent;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Stock\MaskedContent;
@@ -572,10 +571,7 @@ class ContentReveal
      */
     private function decryptedValues(StockUnit $unit): array
     {
-        $secret = $unit->secret_ciphertext === null
-            ? []
-            : (array) json_decode($this->crypto->decrypt(new EncryptedContent($unit->secret_ciphertext, (int) $unit->secret_key_version)), true, flags: JSON_THROW_ON_ERROR);
-        $values = [...($unit->content ?? []), ...$secret];
+        $values = [...($unit->content ?? []), ...$this->crypto->decryptFields($unit->secret_ciphertext, $unit->secret_key_version)];
 
         return $unit->product->contentFields->mapWithKeys(fn (ContentField $field): array => [
             $field->key => (string) ($values[$field->key] ?? ''),

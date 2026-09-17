@@ -161,6 +161,8 @@ final class KeyFingerprints
     /**
      * HMAC của một chuỗi cố định bằng chính khoá: nhận ra khoá mà không lộ giá trị khoá, nên
      * ghi được vào Nhật ký bảo mật.
+     *
+     * @internal chỉ module Mã hoá dùng; nhận VersionedKey nên ngoài module cũng không gọi được.
      */
     public static function fingerprint(VersionedKey $key): string
     {

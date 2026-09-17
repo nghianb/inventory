@@ -14,6 +14,7 @@ use App\Inventory\Dispatch\ManualDispatch;
 use App\Inventory\Dispatch\SalesChannelDirectory;
 use App\Inventory\Dispatch\SalesChannelDraft;
 use App\Inventory\Encryption\ContentCrypto;
+use App\Inventory\Encryption\DedupeHashesStale;
 use App\Inventory\Encryption\DedupeLookup;
 use App\Inventory\Encryption\EncryptedContent;
 use App\Inventory\Encryption\KeyFingerprints;
@@ -83,14 +84,19 @@ it('xoay khoá nội dung: mã hoá lại mọi Đơn vị hàng sang phiên b�
     // Bỏ hẳn khoá cũ khỏi môi trường: còn bản ghi nào chưa mã hoá lại thì đọc nội dung sẽ nổ.
     config(['inventory.keys.content_previous' => []]);
 
-    $content = app(ContentReveal::class)->reveal(
-        RevealActor::staff($this->admin),
-        Slot::query()->orderBy('id')->firstOrFail(),
-        RevealContext::inStock(),
-        'Đối chiếu sau khi xoay khoá',
-    );
+    $revealed = Slot::query()->orderBy('id')->get()
+        ->map(fn (Slot $slot): array => app(ContentReveal::class)->reveal(
+            RevealActor::staff($this->admin),
+            $slot,
+            RevealContext::inStock(),
+            'Đối chiếu sau khi xoay khoá',
+        )->fields)
+        ->all();
 
-    expect($content->fields)->toBe(['Serial' => 'SR001', 'Mã thẻ' => '100000000001']);
+    expect($revealed)->toBe([
+        ['Serial' => 'SR001', 'Mã thẻ' => '100000000001'],
+        ['Serial' => 'SR002', 'Mã thẻ' => '100000000002'],
+    ]);
 });
 
 it('mỗi lần xoay ghi Nhật ký bảo mật lúc bắt đầu và lúc xong, kèm phiên bản cũ/mới và dấu vân tay, không có giá trị khoá', function () {
@@ -141,7 +147,8 @@ it('xoay khoá HMAC: tính lại mọi Khoá chống trùng, tra cứu và chố
 
     expect(app(BatchIntake::class)->preview($this->admin, $batch)->lines[0])
         ->validCount->toBe(0)
-        ->stockDuplicateCount->toBe(1);
+        ->stockDuplicateCount->toBe(1)
+        ->and(SecurityLogEntry::pluck('details')->toJson())->not->toContain('+aDuV69');
 });
 
 it('xoay khoá HMAC chưa xong: nhập hàng tạm dừng, xuất kho vẫn chạy, xong thì nhập lại được', function () {
@@ -161,7 +168,10 @@ it('xoay khoá HMAC chưa xong: nhập hàng tạm dừng, xuất kho vẫn ch�
 
     expect($dispatch->status)->toBe(DispatchStatus::Completed)
         ->and(fn () => app(BatchIntake::class)->submit($this->admin, $draft()))
-        ->toThrow(InvalidBatch::class, 'Đang xoay khoá mã hoá HMAC');
+        ->toThrow(InvalidBatch::class, 'Đang xoay khoá mã hoá HMAC')
+        // Tra cứu theo Khoá chống trùng cũng không được im lặng trả rỗng giữa chừng.
+        ->and(fn () => app(DedupeLookup::class)->matchingUnits('100000000001'))
+        ->toThrow(DedupeHashesStale::class);
 
     $this->artisan('inventory:keys:rotate hmac')->assertSuccessful();
 
@@ -200,13 +210,16 @@ it('xoay khoá backup: chỉ thêm dấu vân tay phiên bản mới, không đ�
     expect(StockUnit::orderBy('id')->get(['dedupe_hash', 'secret_ciphertext', 'secret_key_version'])->toArray())->toBe($before)
         ->and(DB::table('encryption_key_fingerprints')->where('purpose', 'backup')->orderBy('version')->pluck('version')->all())->toBe([1, 2])
         ->and(SecurityLogEntry::query()->where('event', SecurityEvent::KeyRotationFinished)->value('details'))
-        ->toMatchArray(['purpose' => 'backup', 'from_version' => 1, 'to_version' => 2, 'rewritten' => 0]);
+        ->toMatchArray(['purpose' => 'backup', 'from_version' => 1, 'to_version' => 2, 'rewritten' => 0])
+        ->and(SecurityLogEntry::pluck('details')->toJson())->not->toContain('T5GFObgd');
 });
 
 it('lệnh chạy lại được sau khi bị ngắt giữa chừng: chỉ làm nốt phần còn lại', function () {
     config(['inventory.keys.content' => CONTENT_V2, 'inventory.keys.content_previous' => [CONTENT_V1]]);
 
-    // Lần chạy trước mã hoá lại xong Đơn vị hàng đầu rồi bị giết.
+    // Lần chạy trước đã đăng ký dấu vân tay khoá mới (bước đầu tiên của lệnh) rồi mã hoá lại xong
+    // Đơn vị hàng đầu thì bị giết.
+    app(KeyFingerprints::class)->register(KeyPurpose::Content);
     $crypto = app(ContentCrypto::class);
     $done = StockUnit::orderBy('id')->firstOrFail();
     $encrypted = $crypto->encrypt($crypto->decrypt(new EncryptedContent((string) $done->secret_ciphertext, 1)));
@@ -216,15 +229,26 @@ it('lệnh chạy lại được sau khi bị ngắt giữa chừng: chỉ làm 
         'secret_key_version' => $encrypted->keyVersion,
     ]);
 
+    // Giữa chừng kho vẫn chạy bình thường: một Đơn vị hàng ở khoá mới, một còn ở khoá cũ.
+    expect(StockUnit::orderBy('id')->pluck('secret_key_version')->all())->toBe([2, 1])
+        ->and(app(ContentReveal::class)->reveal(
+            RevealActor::staff($this->admin),
+            Slot::query()->orderBy('id', 'desc')->firstOrFail(),
+            RevealContext::inStock(),
+            'Xem giữa lúc đang xoay khoá',
+        )->fields)->toBe(['Serial' => 'SR002', 'Mã thẻ' => '100000000002']);
+
     $this->artisan('inventory:keys:rotate content')->assertSuccessful();
 
     $finished = SecurityLogEntry::query()->where('event', SecurityEvent::KeyRotationFinished)->orderBy('id')->pluck('details');
 
-    // Lần chạy này chỉ còn một Đơn vị hàng để làm; chạy thêm lần nữa thì không còn gì.
     expect($finished->last()['rewritten'])->toBe(1)
         ->and(StockUnit::orderBy('id')->pluck('secret_key_version')->all())->toBe([2, 2]);
 
-    $this->artisan('inventory:keys:rotate content')->assertSuccessful();
+    // Chạy lại khi không còn gì: không ghi thêm một lần "xoay khoá" chưa hề xảy ra vào nhật ký.
+    $this->artisan('inventory:keys:rotate content')
+        ->expectsOutputToContain('Không có gì để xoay')
+        ->assertSuccessful();
 
-    expect(SecurityLogEntry::query()->where('event', SecurityEvent::KeyRotationFinished)->orderBy('id')->pluck('details')->last()['rewritten'])->toBe(0);
+    expect(SecurityLogEntry::query()->where('event', SecurityEvent::KeyRotationFinished)->count())->toBe(1);
 });

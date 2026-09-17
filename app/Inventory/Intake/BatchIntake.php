@@ -526,7 +526,7 @@ class BatchIntake
      */
     private static function ensureDedupeKeysSettled(): void
     {
-        if (KeyRotation::rotatingDedupeKeys()) {
+        if (KeyRotation::hasStaleDedupeHashes()) {
             throw new InvalidBatch('Đang xoay khoá mã hoá HMAC nên nhập hàng tạm dừng; chạy xong lệnh xoay khoá rồi thử lại.');
         }
     }
@@ -620,7 +620,7 @@ class BatchIntake
     {
         $sensitive = $product->contentFields->where('sensitive', true)->pluck('key')->flip()->all();
         $importable = array_values(array_filter($classified, fn (ClassifiedLine $row): bool => $row->isImportable()));
-        $dedupeKeyVersion = $this->crypto->dedupeKeyVersion();
+        $dedupeHmacVersion = $this->crypto->hmacKeyVersion();
         $inserted = [];
 
         foreach (array_chunk($importable, self::INSERT_CHUNK) as $chunk) {
@@ -638,7 +638,7 @@ class BatchIntake
                 continue;
             }
 
-            $units = DB::table('stock_units')->insertOrIgnoreReturning(array_map(function (ClassifiedLine $row) use ($line, $product, $sensitive, $dedupeKeyVersion, $now): array {
+            $units = DB::table('stock_units')->insertOrIgnoreReturning(array_map(function (ClassifiedLine $row) use ($line, $product, $sensitive, $dedupeHmacVersion, $now): array {
                 $secret = array_intersect_key($row->values, $sensitive);
                 $plain = array_diff_key($row->values, $sensitive);
                 $encrypted = $secret === [] ? null : $this->crypto->encrypt((string) json_encode($secret));
@@ -654,7 +654,7 @@ class BatchIntake
                     'renews_stock_unit_id' => $row->renewsStockUnitId,
                     'holds_dedupe_key' => true,
                     'dedupe_hash' => $row->dedupeHash,
-                    'dedupe_key_version' => $dedupeKeyVersion,
+                    'dedupe_hmac_version' => $dedupeHmacVersion,
                     'content' => $plain === [] ? null : json_encode($plain),
                     'secret_ciphertext' => $encrypted?->ciphertext,
                     'secret_key_version' => $encrypted?->keyVersion,
