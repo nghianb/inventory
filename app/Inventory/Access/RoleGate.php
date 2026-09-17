@@ -13,7 +13,7 @@ class RoleGate
 {
     public function allows(User $user, Role ...$roles): bool
     {
-        return ! $user->isDeactivated() && $user->hasAnyRole([Role::QuanTri, ...$roles]);
+        return ! $user->isDeactivated() && $user->hasAnyRole([Role::Owner, ...$roles]);
     }
 
     /**

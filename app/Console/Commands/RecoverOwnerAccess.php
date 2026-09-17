@@ -13,9 +13,9 @@ use Illuminate\Console\Command;
  * Lối thoát cho Quản trị tự khoá mình ngoài hệ thống. Chỉ chạy được trên server,
  * mỗi thao tác ghi Nhật ký bảo mật.
  */
-#[Signature('staff:recover-quan-tri {email : Email của Quản trị} {--unlock : Mở khoá nhân viên} {--reset-2fa : Xoá 2FA để thiết lập lại}')]
+#[Signature('staff:recover-owner {email : Email của Quản trị} {--unlock : Mở khoá nhân viên} {--reset-2fa : Xoá 2FA để thiết lập lại}')]
 #[Description('Khôi phục quyền truy cập cho Quản trị: mở khoá và/hoặc reset 2FA')]
-class RecoverQuanTriAccess extends Command
+class RecoverOwnerAccess extends Command
 {
     public function handle(StaffManager $staff): int
     {
@@ -37,7 +37,7 @@ class RecoverQuanTriAccess extends Command
         }
 
         try {
-            $staff->recoverQuanTriAccess($admin, $reactivate, $resetTwoFactor);
+            $staff->recoverOwnerAccess($admin, $reactivate, $resetTwoFactor);
         } catch (MissingRole $exception) {
             $this->error('Nhân viên này không mang Vai trò Quản trị.');
 

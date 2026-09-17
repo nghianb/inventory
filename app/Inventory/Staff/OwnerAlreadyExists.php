@@ -7,7 +7,7 @@ use RuntimeException;
 /**
  * Lỗi nghiệp vụ: kho đã có Quản trị nên không còn chỗ cho Quản trị đầu tiên.
  */
-class QuanTriAlreadyExists extends RuntimeException
+class OwnerAlreadyExists extends RuntimeException
 {
     public function __construct()
     {

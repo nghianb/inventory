@@ -10,7 +10,7 @@ use Database\Seeders\RoleSeeder;
 
 beforeEach(function () {
     $this->seed(RoleSeeder::class);
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->website = app(SalesChannelDirectory::class)->create($this->admin, new SalesChannelDraft('Website', SalesChannelType::Api));
 });
 
@@ -19,7 +19,7 @@ it('chỉ Quản trị mở được trang Khoá API', function (Role $role, int
         ->get(ApiKeyResource::getUrl('index'))
         ->assertStatus($status);
 })->with([
-    'Quản trị' => [Role::QuanTri, 200],
+    'Quản trị' => [Role::Owner, 200],
     'Nhập kho' => [Role::NhapKho, 403],
     'Bán hàng' => [Role::BanHang, 403],
 ]);

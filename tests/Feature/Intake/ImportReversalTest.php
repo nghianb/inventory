@@ -38,7 +38,7 @@ beforeEach(function () {
 
     $this->intake = app(BatchIntake::class);
     $this->reversal = app(ImportReversal::class);
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
 
     $catalog = app(ProductCatalog::class);

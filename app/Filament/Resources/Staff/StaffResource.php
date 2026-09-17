@@ -5,7 +5,7 @@ namespace App\Filament\Resources\Staff;
 use App\Filament\Resources\Staff\Pages\ManageStaff;
 use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
-use App\Inventory\Staff\LastActiveQuanTri;
+use App\Inventory\Staff\LastActiveOwner;
 use App\Inventory\Staff\StaffManager;
 use App\Inventory\Staff\StaffRules;
 use App\Models\User;
@@ -182,7 +182,7 @@ class StaffResource extends Resource
         return function (Action $action) use ($operation, $success): void {
             try {
                 $action->evaluate($operation);
-            } catch (LastActiveQuanTri|MissingRole $exception) {
+            } catch (LastActiveOwner|MissingRole $exception) {
                 Notification::make()->danger()->title($exception->getMessage())->send();
 
                 return;

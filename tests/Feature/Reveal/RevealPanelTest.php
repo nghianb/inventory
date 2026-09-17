@@ -32,7 +32,7 @@ beforeEach(function () {
     $this->seed(RoleSeeder::class);
     app(KeyFingerprints::class)->register();
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->clerk = staffMember(Role::NhapKho);
     $product = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
         type: ProductType::OneTimeCode,
@@ -54,7 +54,7 @@ it('chỉ Quản trị vào được Nhật ký xem mã', function (Role $role, 
         ->get(RevealLogEntryResource::getUrl('index'))
         ->assertStatus($status);
 })->with([
-    'Quản trị' => [Role::QuanTri, 200],
+    'Quản trị' => [Role::Owner, 200],
     'Nhập kho' => [Role::NhapKho, 403],
     'Bán hàng' => [Role::BanHang, 403],
 ]);

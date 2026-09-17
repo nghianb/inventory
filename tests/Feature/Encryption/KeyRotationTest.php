@@ -56,7 +56,7 @@ beforeEach(function () {
     config(['inventory.keys.content' => CONTENT_V1, 'inventory.keys.content_previous' => []]);
     app(KeyFingerprints::class)->register();
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
     $this->garena = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
         type: ProductType::OneTimeCode,

@@ -36,7 +36,7 @@ it('chỉ Quản trị xem được Nhật ký bảo mật trong Filament', func
         ->get(SecurityLogEntryResource::getUrl('index'))
         ->assertStatus($status);
 })->with([
-    'Quản trị' => [Role::QuanTri, 200],
+    'Quản trị' => [Role::Owner, 200],
     'Nhập kho' => [Role::NhapKho, 403],
     'Bán hàng' => [Role::BanHang, 403],
 ]);
@@ -44,14 +44,14 @@ it('chỉ Quản trị xem được Nhật ký bảo mật trong Filament', func
 it('Quản trị thấy các dòng nhật ký trên trang danh sách', function () {
     app(SecurityLog::class)->record(SecurityEvent::TwoFactorFailed, email: 'la@shop.test');
 
-    $this->actingAs(staffWithRole(Role::QuanTri))
+    $this->actingAs(staffWithRole(Role::Owner))
         ->get(SecurityLogEntryResource::getUrl('index'))
         ->assertSee('Nhập sai 2FA')
         ->assertSee('la@shop.test');
 });
 
 it('không ai tạo, sửa hay xoá được dòng Nhật ký bảo mật qua Filament, kể cả Quản trị', function () {
-    $admin = staffWithRole(Role::QuanTri);
+    $admin = staffWithRole(Role::Owner);
     $entry = app(SecurityLog::class)->record(SecurityEvent::LoginSucceeded, $admin);
 
     expect($admin->can('create', SecurityLogEntry::class))->toBeFalse()

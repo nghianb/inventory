@@ -41,7 +41,7 @@ function netflixDraft(?array $fields = null, mixed ...$overrides): ProductDraft
 }
 
 it('Quản trị tạo Sản phẩm Tài khoản kèm Trường nội dung và Khoá chống trùng', function () {
-    $product = $this->catalog->create(staffMember(Role::QuanTri), netflixDraft(lowStockThreshold: 5));
+    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft(lowStockThreshold: 5));
 
     $product = $product->fresh();
 
@@ -77,7 +77,7 @@ it('chỉ Quản trị tạo được Sản phẩm', function (Role $role) {
 ]);
 
 it('tuỳ chọn chuẩn hoá mặc định theo loại Sản phẩm', function (ProductType $type, string $raw, string $normalized) {
-    $product = $this->catalog->create(staffMember(Role::QuanTri), netflixDraft(type: $type, defaultSlots: 1));
+    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft(type: $type, defaultSlots: 1));
 
     expect($product->fresh()->normalization()->apply($raw))->toBe($normalized);
 })->with([
@@ -86,7 +86,7 @@ it('tuỳ chọn chuẩn hoá mặc định theo loại Sản phẩm', function 
 ]);
 
 it('Quản trị chọn tuỳ chọn chuẩn hoá riêng cho Sản phẩm', function () {
-    $product = $this->catalog->create(staffMember(Role::QuanTri), netflixDraft(
+    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft(
         normalization: new Normalization(caseInsensitive: false, stripSeparators: true),
     ));
 
@@ -94,7 +94,7 @@ it('Quản trị chọn tuỳ chọn chuẩn hoá riêng cho Sản phẩm', func
 });
 
 it('từ chối cấu hình Sản phẩm không hợp lệ', function (ProductDraft $draft) {
-    expect(fn () => $this->catalog->create(staffMember(Role::QuanTri), $draft))
+    expect(fn () => $this->catalog->create(staffMember(Role::Owner), $draft))
         ->toThrow(InvalidProductConfiguration::class);
 
     expect(Product::count())->toBe(0);
@@ -134,7 +134,7 @@ it('từ chối cấu hình Sản phẩm không hợp lệ', function (ProductDr
 ]);
 
 it('Mã sản phẩm là duy nhất', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $this->catalog->create($admin, netflixDraft());
 
     expect(fn () => $this->catalog->create($admin, netflixDraft(name: 'Netflix bản sao')))
@@ -144,7 +144,7 @@ it('Mã sản phẩm là duy nhất', function () {
 });
 
 it('Định danh và tên hiển thị Trường nội dung dùng chung một không gian tên', function (ProductDraft $draft, string $message) {
-    expect(fn () => $this->catalog->create(staffMember(Role::QuanTri), $draft))
+    expect(fn () => $this->catalog->create(staffMember(Role::Owner), $draft))
         ->toThrow(InvalidProductConfiguration::class, $message);
 
     expect(Product::count())->toBe(0);
@@ -160,7 +160,7 @@ it('Định danh và tên hiển thị Trường nội dung dùng chung một kh
 ]);
 
 it('Trường nội dung đặt tên hiển thị trùng định danh của chính nó vẫn hợp lệ', function () {
-    $product = $this->catalog->create(staffMember(Role::QuanTri), netflixDraft([
+    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft([
         new ContentFieldDraft('serial', 'Serial', sensitive: false),
         new ContentFieldDraft('card_code', 'Mã thẻ', dedupeKey: true),
     ], type: ProductType::OneTimeCode, defaultSlots: 1));
@@ -172,7 +172,7 @@ it('Trường nội dung đặt tên hiển thị trùng định danh của chí
 });
 
 it('Quản trị sửa mọi cấu hình của Sản phẩm chưa có hàng', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $product = $this->catalog->create($admin, netflixDraft());
 
     $this->catalog->update($admin, $product, new ProductDraft(
@@ -212,7 +212,7 @@ it('Quản trị sửa mọi cấu hình của Sản phẩm chưa có hàng', fu
 });
 
 it('sửa Sản phẩm vẫn kiểm tra cấu hình và cho giữ nguyên Mã sản phẩm của chính nó', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $product = $this->catalog->create($admin, netflixDraft());
     $this->catalog->create($admin, netflixDraft(code: 'NETFLIX-3M'));
 
@@ -232,7 +232,7 @@ it('sửa Sản phẩm vẫn kiểm tra cấu hình và cho giữ nguyên Mã s�
 });
 
 it('chỉ Quản trị sửa được Sản phẩm', function (Role $role) {
-    $product = $this->catalog->create(staffMember(Role::QuanTri), netflixDraft());
+    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft());
 
     expect(fn () => $this->catalog->update(staffMember($role), $product, netflixDraft(name: 'Đổi tên')))
         ->toThrow(MissingRole::class);
@@ -254,7 +254,7 @@ function withStock(Product $product): Product
 }
 
 it('Sản phẩm đã có hàng vẫn đổi được tên hiển thị, thêm trường tuỳ chọn và sửa cấu hình không bị khoá', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $product = withStock($this->catalog->create($admin, netflixDraft()));
 
     $this->catalog->update($admin, $product, netflixDraft([
@@ -281,7 +281,7 @@ it('Sản phẩm đã có hàng vẫn đổi được tên hiển thị, thêm t
 });
 
 it('Sản phẩm đã có hàng không đổi tên hiển thị hay thêm trường thành trùng tên', function (ProductDraft $draft, string $message) {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $product = withStock($this->catalog->create($admin, netflixDraft()));
 
     expect(fn () => $this->catalog->update($admin, $product, $draft))
@@ -308,7 +308,7 @@ it('Sản phẩm đã có hàng không đổi tên hiển thị hay thêm trư�
 ]);
 
 it('Sản phẩm đã có hàng khoá Trường nội dung, Khoá chống trùng, cờ nhạy cảm và tuỳ chọn chuẩn hoá', function (ProductDraft $draft) {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $product = withStock($this->catalog->create($admin, netflixDraft()));
 
     expect(fn () => $this->catalog->update($admin, $product, $draft))
@@ -358,7 +358,7 @@ it('Sản phẩm đã có hàng khoá Trường nội dung, Khoá chống trùng
 ]);
 
 it('Quản trị Ngừng bán Sản phẩm', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $product = withStock($this->catalog->create($admin, netflixDraft()));
 
     $this->catalog->discontinue($admin, $product);
@@ -367,7 +367,7 @@ it('Quản trị Ngừng bán Sản phẩm', function () {
 });
 
 it('chỉ Quản trị Ngừng bán được Sản phẩm', function (Role $role) {
-    $product = $this->catalog->create(staffMember(Role::QuanTri), netflixDraft());
+    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft());
 
     expect(fn () => $this->catalog->discontinue(staffMember($role), $product))
         ->toThrow(MissingRole::class);
@@ -379,7 +379,7 @@ it('chỉ Quản trị Ngừng bán được Sản phẩm', function (Role $role
 ]);
 
 it('Quản trị xoá được Sản phẩm chưa có hàng', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $product = $this->catalog->create($admin, netflixDraft());
 
     $this->catalog->delete($admin, $product);
@@ -389,7 +389,7 @@ it('Quản trị xoá được Sản phẩm chưa có hàng', function () {
 });
 
 it('Sản phẩm đã có hàng không xoá được, chỉ Ngừng bán', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $product = withStock($this->catalog->create($admin, netflixDraft()));
 
     expect(fn () => $this->catalog->delete($admin, $product))
@@ -399,7 +399,7 @@ it('Sản phẩm đã có hàng không xoá được, chỉ Ngừng bán', funct
 });
 
 it('chỉ Quản trị xoá được Sản phẩm', function (Role $role) {
-    $product = $this->catalog->create(staffMember(Role::QuanTri), netflixDraft());
+    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft());
 
     expect(fn () => $this->catalog->delete(staffMember($role), $product))
         ->toThrow(MissingRole::class);
@@ -411,7 +411,7 @@ it('chỉ Quản trị xoá được Sản phẩm', function (Role $role) {
 ]);
 
 it('Quản trị soạn Mẫu giao hàng với biến Trường nội dung, Hạn sử dụng, Hạn bảo hành, tên Sản phẩm, mã đơn; để trống thì dùng mẫu mặc định', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $template = "Cảm ơn bạn đã mua {{san_pham}} (đơn {{ ma_don }})\nTài khoản: {{username}} / {{password}}\nHạn: {{han_su_dung}} · Bảo hành đến {{han_bao_hanh}}";
 
     $product = $this->catalog->create($admin, netflixDraft(deliveryTemplate: $template));
@@ -424,7 +424,7 @@ it('Quản trị soạn Mẫu giao hàng với biến Trường nội dung, Hạ
 });
 
 it('Mẫu giao hàng chỉ dùng được biến đã khai báo', function (ProductDraft $draft, string $message) {
-    expect(fn () => $this->catalog->create(staffMember(Role::QuanTri), $draft))
+    expect(fn () => $this->catalog->create(staffMember(Role::Owner), $draft))
         ->toThrow(InvalidProductConfiguration::class, $message);
 
     expect(Product::count())->toBe(0);

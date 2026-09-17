@@ -19,7 +19,7 @@ it('Quản trị và Nhập kho tạo được Nhà cung cấp', function (Role 
         ->name->toBe('Kinguin')
         ->note->toBe('Liên hệ qua Telegram @kinguin');
 })->with([
-    'Quản trị' => Role::QuanTri,
+    'Quản trị' => Role::Owner,
     'Nhập kho' => Role::NhapKho,
 ]);
 
@@ -44,7 +44,7 @@ it('Quản trị và Nhập kho sửa và xoá được Nhà cung cấp', functi
 
     expect(Supplier::find($supplier->id))->toBeNull();
 })->with([
-    'Quản trị' => Role::QuanTri,
+    'Quản trị' => Role::Owner,
     'Nhập kho' => Role::NhapKho,
 ]);
 

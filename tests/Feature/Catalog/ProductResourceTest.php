@@ -49,13 +49,13 @@ it('mọi Vai trò xem được danh sách Sản phẩm, chỉ Quản trị th�
     Livewire::test(ManageProducts::class)
         ->{$canCreate ? 'assertActionVisible' : 'assertActionHidden'}(CreateAction::class);
 })->with([
-    'Quản trị' => [Role::QuanTri, true],
+    'Quản trị' => [Role::Owner, true],
     'Nhập kho' => [Role::NhapKho, false],
     'Bán hàng' => [Role::BanHang, false],
 ]);
 
 it('Quản trị tạo Sản phẩm kèm Trường nội dung từ panel', function () {
-    $this->actingAs(staffMember(Role::QuanTri));
+    $this->actingAs(staffMember(Role::Owner));
 
     Livewire::test(ManageProducts::class)
         ->callAction(CreateAction::class, data: [
@@ -86,7 +86,7 @@ it('Quản trị tạo Sản phẩm kèm Trường nội dung từ panel', funct
 });
 
 it('Quản trị Ngừng bán Sản phẩm; Sản phẩm đã có hàng không có nút xoá', function () {
-    $this->actingAs($admin = staffMember(Role::QuanTri));
+    $this->actingAs($admin = staffMember(Role::Owner));
     $stocked = steamWalletProduct($admin, stocked: true);
 
     Livewire::test(ManageProducts::class)
@@ -98,7 +98,7 @@ it('Quản trị Ngừng bán Sản phẩm; Sản phẩm đã có hàng không c
 });
 
 it('panel báo lỗi khi sửa cấu hình bị khoá của Sản phẩm đã có hàng', function () {
-    $this->actingAs($admin = staffMember(Role::QuanTri));
+    $this->actingAs($admin = staffMember(Role::Owner));
     $stocked = steamWalletProduct($admin, stocked: true);
 
     Livewire::test(ManageProducts::class)
@@ -109,7 +109,7 @@ it('panel báo lỗi khi sửa cấu hình bị khoá của Sản phẩm đã c�
 });
 
 it('Nhập kho và Bán hàng không sửa, không Ngừng bán, không xoá được Sản phẩm', function (Role $role) {
-    $product = steamWalletProduct(staffMember(Role::QuanTri));
+    $product = steamWalletProduct(staffMember(Role::Owner));
     $this->actingAs(staffMember($role));
 
     Livewire::test(ManageProducts::class)

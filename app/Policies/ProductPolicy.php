@@ -27,22 +27,22 @@ class ProductPolicy
 
     public function create(User $user): bool
     {
-        return $this->roles->allows($user, Role::QuanTri);
+        return $this->roles->allows($user, Role::Owner);
     }
 
     public function update(User $user, Product $product): bool
     {
-        return $this->roles->allows($user, Role::QuanTri);
+        return $this->roles->allows($user, Role::Owner);
     }
 
     public function discontinue(User $user, Product $product): bool
     {
-        return $this->roles->allows($user, Role::QuanTri) && ! $product->isDiscontinued();
+        return $this->roles->allows($user, Role::Owner) && ! $product->isDiscontinued();
     }
 
     public function delete(User $user, Product $product): bool
     {
-        return $this->roles->allows($user, Role::QuanTri) && ! $product->hasStock();
+        return $this->roles->allows($user, Role::Owner) && ! $product->hasStock();
     }
 
     public function deleteAny(User $user): bool

@@ -29,7 +29,7 @@ beforeEach(function () {
     app(KeyFingerprints::class)->register();
     $this->travelTo(CarbonImmutable::parse('2026-09-15 10:00'));
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->stocker = staffMember(Role::NhapKho);
     $this->seller = staffMember(Role::BanHang);
 
@@ -76,7 +76,7 @@ it('cả ba vai trò vào được báo cáo Nhập/xuất; nhân viên không c
 
     $this->get(MovementReportPage::getUrl())->assertStatus($sees ? 200 : 403);
 })->with([
-    'Quản trị' => [Role::QuanTri, true],
+    'Quản trị' => [Role::Owner, true],
     'Nhập kho' => [Role::NhapKho, true],
     'Bán hàng' => [Role::BanHang, true],
     'không vai trò' => [null, false],
@@ -94,7 +94,7 @@ it('Bán hàng không thấy cột Giá vốn, Giá bán và bộ lọc Nhà cun
 
     $values ? $page->assertTableFilterVisible('supplier') : $page->assertTableFilterHidden('supplier');
 })->with([
-    'Quản trị' => [Role::QuanTri, true],
+    'Quản trị' => [Role::Owner, true],
     'Nhập kho' => [Role::NhapKho, true],
     'Bán hàng' => [Role::BanHang, false],
 ]);
