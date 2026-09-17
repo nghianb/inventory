@@ -9,7 +9,7 @@ use App\Filament\Resources\SupplierClaims\SupplierClaimResource;
 use App\Filament\Support\InventoryAction;
 use App\Filament\Support\NavGroup;
 use App\Inventory\Catalog\InvalidSupplier;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLinePreview;
@@ -81,7 +81,7 @@ class BatchResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        $productType = fn (Get $get): ?ProductType => Product::query()->find($get('product_id'))?->type;
+        $stockForm = fn (Get $get): ?StockForm => Product::query()->with('productType')->find($get('product_id'))?->form();
 
         return $schema->components([
             Section::make('Chứng từ')
@@ -165,8 +165,8 @@ class BatchResource extends Resource
                 ->schema([
                     Select::make('product_id')
                         ->label('Sản phẩm')
-                        ->options(fn (): array => Product::query()->orderBy('name')->get()
-                            ->mapWithKeys(fn (Product $product): array => [$product->id => "{$product->name} ({$product->type->label()})"])
+                        ->options(fn (): array => Product::query()->with('productType')->orderBy('name')->get()
+                            ->mapWithKeys(fn (Product $product): array => [$product->id => "{$product->name} ({$product->form()->label()})"])
                             ->all())
                         ->searchable()
                         ->distinct()
@@ -188,7 +188,7 @@ class BatchResource extends Resource
                         ->integer()
                         ->minValue(1)
                         ->maxValue(LineClassifier::MAX_SLOTS)
-                        ->visible(fn (Get $get): bool => $productType($get) === ProductType::Account),
+                        ->visible(fn (Get $get): bool => $stockForm($get) === StockForm::Account),
                     Select::make('expiry_mode')
                         ->label('Hạn sử dụng')
                         ->options(['none' => 'Không có', 'date' => 'Ngày cụ thể', 'days' => 'Số ngày kể từ ngày nhập'])

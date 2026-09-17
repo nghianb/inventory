@@ -9,61 +9,62 @@ use App\Inventory\Catalog\LockedProductConfiguration;
 use App\Inventory\Catalog\ProductCatalog;
 use App\Inventory\Catalog\ProductDraft;
 use App\Inventory\Catalog\ProductHasStock;
-use App\Inventory\Catalog\ProductType;
-use App\Inventory\Encryption\Normalization;
+use App\Inventory\Catalog\ProductTypeCatalog;
+use App\Inventory\Catalog\ProductTypeDraft;
+use App\Inventory\Catalog\StockForm;
 use App\Models\Product;
 use Database\Seeders\RoleSeeder;
 
 beforeEach(function () {
     $this->seed(RoleSeeder::class);
     $this->catalog = app(ProductCatalog::class);
+    $this->admin = staffMember(Role::Owner);
+    $this->accountType = productTypeOf(StockForm::Account, [
+        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
+        new ContentFieldDraft('password', 'Mật khẩu'),
+    ], name: 'Tài khoản streaming');
 });
 
 /**
- * Sản phẩm Tài khoản Netflix: username là Khoá chống trùng, password nhạy cảm.
- *
- * @param  list<ContentFieldDraft>|null  $fields
+ * Sản phẩm Netflix thuộc Loại Tài khoản streaming dựng sẵn trong beforeEach.
  */
-function netflixDraft(?array $fields = null, mixed ...$overrides): ProductDraft
+function netflixDraft(mixed ...$overrides): ProductDraft
 {
     return new ProductDraft(...[
-        'type' => ProductType::Account,
+        'productType' => test()->accountType,
         'name' => 'Netflix Premium 1 tháng',
         'code' => 'NETFLIX-1M',
-        'fields' => $fields ?? [
-            new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
-            new ContentFieldDraft('password', 'Mật khẩu'),
-        ],
         'defaultSlots' => 4,
         'warrantyDays' => 30,
         ...$overrides,
     ]);
 }
 
-it('Quản trị tạo Sản phẩm Tài khoản kèm Trường nội dung và Khoá chống trùng', function () {
-    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft(lowStockThreshold: 5));
-
-    $product = $product->fresh();
+it('Quản trị tạo Sản phẩm thuộc một Loại sản phẩm, đọc Trường nội dung qua Loại', function () {
+    $product = $this->catalog->create($this->admin, netflixDraft(lowStockThreshold: 5))->fresh();
 
     expect($product)
-        ->type->toBe(ProductType::Account)
+        ->product_type_id->toBe($this->accountType->id)
         ->name->toBe('Netflix Premium 1 tháng')
         ->code->toBe('NETFLIX-1M')
         ->default_slots->toBe(4)
         ->warranty_days->toBe(30)
         ->min_remaining_days->toBe(0)
         ->low_stock_threshold->toBe(5)
+        ->and($product->form())->toBe(StockForm::Account)
+        ->and($product->normalization())->toEqual($this->accountType->normalization())
         ->and($product->isDiscontinued())->toBeFalse()
         ->and($product->hasStock())->toBeFalse()
         ->and($product->contentFields->pluck('key')->all())->toBe(['username', 'password'])
         ->and($product->dedupeKeyField()->key)->toBe('username');
+});
 
-    expect($product->contentFields->firstWhere('key', 'password'))
-        ->label->toBe('Mật khẩu')
-        ->type->toBe(ContentFieldType::Text)
-        ->pattern->toBeNull()
-        ->required->toBeTrue()
-        ->sensitive->toBeTrue();
+it('mọi Sản phẩm cùng Loại đọc ra đúng một bộ Trường nội dung', function () {
+    $netflix = $this->catalog->create($this->admin, netflixDraft());
+    $spotify = $this->catalog->create($this->admin, netflixDraft(name: 'Spotify 1 tháng', code: 'SPOTIFY-1M'));
+
+    expect($netflix->fresh()->contentFields->pluck('id')->all())
+        ->toBe($spotify->fresh()->contentFields->pluck('id')->all());
 });
 
 it('chỉ Quản trị tạo được Sản phẩm', function (Role $role) {
@@ -76,163 +77,69 @@ it('chỉ Quản trị tạo được Sản phẩm', function (Role $role) {
     'Bán hàng' => Role::BanHang,
 ]);
 
-it('tuỳ chọn chuẩn hoá mặc định theo loại Sản phẩm', function (ProductType $type, string $raw, string $normalized) {
-    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft(type: $type, defaultSlots: 1));
-
-    expect($product->fresh()->normalization()->apply($raw))->toBe($normalized);
-})->with([
-    'Mã dùng một lần: bỏ hoa thường và gạch ngang' => [ProductType::OneTimeCode, ' abcd-EFGH ijkl ', 'abcdefghijkl'],
-    'Tài khoản: bỏ hoa thường, giữ ký tự bên trong' => [ProductType::Account, ' Khach.Hang-01@Mail.com ', 'khach.hang-01@mail.com'],
-]);
-
-it('Quản trị chọn tuỳ chọn chuẩn hoá riêng cho Sản phẩm', function () {
-    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft(
-        normalization: new Normalization(caseInsensitive: false, stripSeparators: true),
-    ));
-
-    expect($product->fresh()->normalization())->toEqual(new Normalization(caseInsensitive: false, stripSeparators: true));
-});
-
 it('từ chối cấu hình Sản phẩm không hợp lệ', function (ProductDraft $draft) {
-    expect(fn () => $this->catalog->create(staffMember(Role::Owner), $draft))
+    expect(fn () => $this->catalog->create($this->admin, $draft))
         ->toThrow(InvalidProductConfiguration::class);
 
     expect(Product::count())->toBe(0);
 })->with([
-    'không có Trường nội dung' => fn () => netflixDraft([]),
-    'không có Khoá chống trùng' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập'),
-        new ContentFieldDraft('password', 'Mật khẩu'),
-    ]),
-    'hai Khoá chống trùng' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', dedupeKey: true),
-        new ContentFieldDraft('password', 'Mật khẩu', dedupeKey: true),
-    ]),
-    'Khoá chống trùng là trường tuỳ chọn' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', required: false, dedupeKey: true),
-    ]),
-    'trùng định danh trường' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', dedupeKey: true),
-        new ContentFieldDraft('username', 'Email'),
-    ]),
-    'định danh trường sai định dạng' => fn () => netflixDraft([
-        new ContentFieldDraft('Tên đăng nhập', 'Tên đăng nhập', dedupeKey: true),
-    ]),
-    'tên hiển thị trường để trống' => fn () => netflixDraft([
-        new ContentFieldDraft('username', '  ', dedupeKey: true),
-    ]),
-    'regex không hợp lệ' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', pattern: '[a-z', dedupeKey: true),
-    ]),
-    'Mã dùng một lần có nhiều slot' => fn () => netflixDraft(type: ProductType::OneTimeCode, defaultSlots: 2),
-    'Tài khoản không có slot' => fn () => netflixDraft(defaultSlots: 0),
     'tên Sản phẩm để trống' => fn () => netflixDraft(name: ' '),
     'Mã sản phẩm sai định dạng' => fn () => netflixDraft(code: 'netflix 1 tháng'),
+    'Tài khoản không có slot' => fn () => netflixDraft(defaultSlots: 0),
     'thời hạn bảo hành âm' => fn () => netflixDraft(warrantyDays: -1),
     'Hạn còn lại tối thiểu âm' => fn () => netflixDraft(minRemainingDays: -1),
     'Ngưỡng sắp hết âm' => fn () => netflixDraft(lowStockThreshold: -1),
+    'Loại Dạng hàng Mã dùng một lần mà nhiều slot' => fn () => netflixDraft(
+        productType: productTypeOf(StockForm::OneTimeCode, [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)]),
+        defaultSlots: 2,
+    ),
 ]);
 
 it('Mã sản phẩm là duy nhất', function () {
-    $admin = staffMember(Role::Owner);
-    $this->catalog->create($admin, netflixDraft());
+    $this->catalog->create($this->admin, netflixDraft());
 
-    expect(fn () => $this->catalog->create($admin, netflixDraft(name: 'Netflix bản sao')))
+    expect(fn () => $this->catalog->create($this->admin, netflixDraft(name: 'Netflix bản sao')))
         ->toThrow(InvalidProductConfiguration::class, 'Mã sản phẩm NETFLIX-1M đã được dùng.');
 
     expect(Product::count())->toBe(1);
 });
 
-it('Định danh và tên hiển thị Trường nội dung dùng chung một không gian tên', function (ProductDraft $draft, string $message) {
-    expect(fn () => $this->catalog->create(staffMember(Role::Owner), $draft))
-        ->toThrow(InvalidProductConfiguration::class, $message);
+it('Quản trị sửa được cấu hình riêng của Sản phẩm', function () {
+    $product = $this->catalog->create($this->admin, netflixDraft());
 
-    expect(Product::count())->toBe(0);
-})->with([
-    'hai trường trùng tên hiển thị' => [fn () => netflixDraft([
-        new ContentFieldDraft('serial', 'Mã', dedupeKey: true),
-        new ContentFieldDraft('card_code', '  mã  '),
-    ]), 'Tên hiển thị trường "Mã" bị trùng.'],
-    'tên hiển thị trùng định danh trường khác' => [fn () => netflixDraft([
-        new ContentFieldDraft('serial', 'Mã', dedupeKey: true),
-        new ContentFieldDraft('card_code', ' Serial '),
-    ]), 'Tên hiển thị trường "Serial" trùng định danh trường "serial".'],
-]);
-
-it('Trường nội dung đặt tên hiển thị trùng định danh của chính nó vẫn hợp lệ', function () {
-    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft([
-        new ContentFieldDraft('serial', 'Serial', sensitive: false),
-        new ContentFieldDraft('card_code', 'Mã thẻ', dedupeKey: true),
-    ], type: ProductType::OneTimeCode, defaultSlots: 1));
-
-    expect($product->fresh()->contentFields->pluck('label', 'key')->all())->toBe([
-        'serial' => 'Serial',
-        'card_code' => 'Mã thẻ',
-    ]);
-});
-
-it('Quản trị sửa mọi cấu hình của Sản phẩm chưa có hàng', function () {
-    $admin = staffMember(Role::Owner);
-    $product = $this->catalog->create($admin, netflixDraft());
-
-    $this->catalog->update($admin, $product, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Netflix gift card',
-        code: 'NETFLIX-GIFT',
-        fields: [
-            new ContentFieldDraft('serial', 'Serial', sensitive: false),
-            new ContentFieldDraft('card_code', 'Mã thẻ', ContentFieldType::Number, pattern: '\d{12}', dedupeKey: true),
-        ],
-        defaultSlots: 1,
-        warrantyDays: 7,
-        minRemainingDays: 3,
-        lowStockThreshold: null,
-        normalization: new Normalization(caseInsensitive: false, stripSeparators: false),
+    $this->catalog->update($this->admin, $product, netflixDraft(
+        name: 'Netflix 30 ngày',
+        code: 'NETFLIX-30D',
+        defaultSlots: 5,
+        warrantyDays: 25,
+        minRemainingDays: 2,
+        lowStockThreshold: 10,
     ));
 
-    $product = $product->fresh();
-
-    expect($product)
-        ->type->toBe(ProductType::OneTimeCode)
-        ->name->toBe('Netflix gift card')
-        ->code->toBe('NETFLIX-GIFT')
-        ->default_slots->toBe(1)
-        ->warranty_days->toBe(7)
-        ->min_remaining_days->toBe(3)
-        ->low_stock_threshold->toBeNull()
-        ->and($product->normalization())->toEqual(new Normalization(caseInsensitive: false, stripSeparators: false))
-        ->and($product->contentFields->pluck('key')->all())->toBe(['serial', 'card_code'])
-        ->and($product->dedupeKeyField()->key)->toBe('card_code')
-        ->and($product->contentFields->firstWhere('key', 'serial')->sensitive)->toBeFalse();
-
-    expect($product->dedupeKeyField())
-        ->label->toBe('Mã thẻ')
-        ->type->toBe(ContentFieldType::Number)
-        ->pattern->toBe('\d{12}');
+    expect($product->fresh())
+        ->name->toBe('Netflix 30 ngày')
+        ->code->toBe('NETFLIX-30D')
+        ->default_slots->toBe(5)
+        ->warranty_days->toBe(25)
+        ->min_remaining_days->toBe(2)
+        ->low_stock_threshold->toBe(10);
 });
 
 it('sửa Sản phẩm vẫn kiểm tra cấu hình và cho giữ nguyên Mã sản phẩm của chính nó', function () {
-    $admin = staffMember(Role::Owner);
-    $product = $this->catalog->create($admin, netflixDraft());
-    $this->catalog->create($admin, netflixDraft(code: 'NETFLIX-3M'));
+    $product = $this->catalog->create($this->admin, netflixDraft());
+    $this->catalog->create($this->admin, netflixDraft(name: 'Netflix 3 tháng', code: 'NETFLIX-3M'));
 
-    $this->catalog->update($admin, $product, netflixDraft(name: 'Netflix Premium 30 ngày'));
-
-    expect($product->fresh()->dedupeKeyField()->key)->toBe('username');
+    $this->catalog->update($this->admin, $product, netflixDraft(name: 'Netflix Premium 30 ngày'));
 
     expect($product->fresh()->name)->toBe('Netflix Premium 30 ngày')
-        ->and(fn () => $this->catalog->update($admin, $product, netflixDraft(code: 'NETFLIX-3M')))
-        ->toThrow(InvalidProductConfiguration::class, 'Mã sản phẩm NETFLIX-3M đã được dùng.')
-        ->and(fn () => $this->catalog->update($admin, $product, netflixDraft([])))
-        ->toThrow(InvalidProductConfiguration::class);
+        ->and(fn () => $this->catalog->update($this->admin, $product, netflixDraft(code: 'NETFLIX-3M')))
+        ->toThrow(InvalidProductConfiguration::class, 'Mã sản phẩm NETFLIX-3M đã được dùng.');
 
-    expect($product->fresh())
-        ->code->toBe('NETFLIX-1M')
-        ->contentFields->toHaveCount(2);
+    expect($product->fresh()->code)->toBe('NETFLIX-1M');
 });
 
 it('chỉ Quản trị sửa được Sản phẩm', function (Role $role) {
-    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft());
+    $product = $this->catalog->create($this->admin, netflixDraft());
 
     expect(fn () => $this->catalog->update(staffMember($role), $product, netflixDraft(name: 'Đổi tên')))
         ->toThrow(MissingRole::class);
@@ -243,131 +150,113 @@ it('chỉ Quản trị sửa được Sản phẩm', function (Role $role) {
     'Bán hàng' => Role::BanHang,
 ]);
 
-/**
- * Tạm đánh dấu Sản phẩm đã có hàng cho tới khi có thao tác Nhập hàng.
- */
-function withStock(Product $product): Product
-{
-    $product->forceFill(['stocked_at' => now()])->save();
+it('Sản phẩm chưa có hàng chuyển được sang Loại sản phẩm khác', function () {
+    $product = $this->catalog->create($this->admin, netflixDraft());
+    $codeType = productTypeOf(StockForm::OneTimeCode, [
+        new ContentFieldDraft('card_code', 'Mã thẻ', dedupeKey: true),
+    ], name: 'Thẻ nạp');
 
-    return $product;
-}
-
-it('Sản phẩm đã có hàng vẫn đổi được tên hiển thị, thêm trường tuỳ chọn và sửa cấu hình không bị khoá', function () {
-    $admin = staffMember(Role::Owner);
-    $product = withStock($this->catalog->create($admin, netflixDraft()));
-
-    $this->catalog->update($admin, $product, netflixDraft([
-        new ContentFieldDraft('username', 'Email đăng nhập', ContentFieldType::Email, dedupeKey: true),
-        new ContentFieldDraft('password', 'Mật khẩu tài khoản'),
-        new ContentFieldDraft('recovery_email', 'Email khôi phục', ContentFieldType::Email, required: false, sensitive: false),
-    ], name: 'Netflix 30 ngày', code: 'NETFLIX-30D', defaultSlots: 5, warrantyDays: 25, minRemainingDays: 2, lowStockThreshold: 10));
+    $this->catalog->update($this->admin, $product, netflixDraft(productType: $codeType, defaultSlots: 1));
 
     $product = $product->fresh();
 
-    expect($product)
+    expect($product->product_type_id)->toBe($codeType->id)
+        ->and($product->form())->toBe(StockForm::OneTimeCode)
+        ->and($product->contentFields->pluck('key')->all())->toBe(['card_code']);
+});
+
+it('Sản phẩm đã có hàng không chuyển được sang Loại sản phẩm khác', function () {
+    $product = withStock($this->catalog->create($this->admin, netflixDraft()));
+    $other = productTypeOf(StockForm::Account, [
+        new ContentFieldDraft('username', 'Tên đăng nhập', dedupeKey: true),
+    ], name: 'Tài khoản khác');
+
+    expect(fn () => $this->catalog->update($this->admin, $product, netflixDraft(productType: $other)))
+        ->toThrow(LockedProductConfiguration::class, ProductCatalog::STOCK_LOCKS_PRODUCT_TYPE);
+
+    expect($product->fresh()->product_type_id)->toBe($this->accountType->id);
+});
+
+it('Sản phẩm đã có hàng vẫn sửa được tên, mã, slot, hạn và ngưỡng của riêng nó', function () {
+    $product = withStock($this->catalog->create($this->admin, netflixDraft()));
+
+    $this->catalog->update($this->admin, $product, netflixDraft(
+        name: 'Netflix 30 ngày',
+        code: 'NETFLIX-30D',
+        defaultSlots: 5,
+        warrantyDays: 25,
+    ));
+
+    expect($product->fresh())
         ->name->toBe('Netflix 30 ngày')
         ->code->toBe('NETFLIX-30D')
         ->default_slots->toBe(5)
-        ->warranty_days->toBe(25)
-        ->min_remaining_days->toBe(2)
-        ->low_stock_threshold->toBe(10)
-        ->and($product->dedupeKeyField()->key)->toBe('username')
-        ->and($product->contentFields->pluck('label', 'key')->all())->toBe([
-            'username' => 'Email đăng nhập',
-            'password' => 'Mật khẩu tài khoản',
-            'recovery_email' => 'Email khôi phục',
-        ]);
+        ->warranty_days->toBe(25);
 });
 
-it('Sản phẩm đã có hàng không đổi tên hiển thị hay thêm trường thành trùng tên', function (ProductDraft $draft, string $message) {
-    $admin = staffMember(Role::Owner);
-    $product = withStock($this->catalog->create($admin, netflixDraft()));
+it('Mẫu giao hàng tìm theo ba bậc: Sản phẩm, rồi Loại, rồi mẫu mặc định', function () {
+    $types = app(ProductTypeCatalog::class);
+    $product = $this->catalog->create($this->admin, netflixDraft());
 
-    expect(fn () => $this->catalog->update($admin, $product, $draft))
-        ->toThrow(InvalidProductConfiguration::class, $message);
+    // Bậc 3: không ai có mẫu.
+    expect($product->fresh()->deliveryTemplate())->toBeNull();
 
-    expect($product->fresh()->contentFields->pluck('label', 'key')->all())->toBe([
-        'username' => 'Tên đăng nhập',
-        'password' => 'Mật khẩu',
-    ]);
-})->with([
-    'đổi tên hiển thị thành trùng' => [fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
-        new ContentFieldDraft('password', 'tên đăng nhập'),
-    ]), 'Tên hiển thị trường "Tên đăng nhập" bị trùng.'],
-    'thêm trường tuỳ chọn trùng tên' => [fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
-        new ContentFieldDraft('password', 'Mật khẩu'),
-        new ContentFieldDraft('recovery_email', ' Tên đăng nhập ', required: false),
-    ]), 'Tên hiển thị trường "Tên đăng nhập" bị trùng.'],
-    'đổi tên hiển thị thành trùng định danh trường khác' => [fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Password', ContentFieldType::Email, dedupeKey: true),
-        new ContentFieldDraft('password', 'Mật khẩu'),
-    ]), 'Tên hiển thị trường "Password" trùng định danh trường "password".'],
-]);
+    // Bậc 2: Loại có mẫu, Sản phẩm không ghi đè.
+    $types->update($this->admin, $this->accountType, new ProductTypeDraft(
+        name: 'Tài khoản streaming',
+        form: StockForm::Account,
+        fields: [
+            new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
+            new ContentFieldDraft('password', 'Mật khẩu'),
+        ],
+        deliveryTemplate: 'Tài khoản: {{username}} / {{password}}',
+    ));
 
-it('Sản phẩm đã có hàng khoá Trường nội dung, Khoá chống trùng, cờ nhạy cảm và tuỳ chọn chuẩn hoá', function (ProductDraft $draft) {
-    $admin = staffMember(Role::Owner);
-    $product = withStock($this->catalog->create($admin, netflixDraft()));
+    expect($product->fresh()->deliveryTemplate())->toBe('Tài khoản: {{username}} / {{password}}');
 
-    expect(fn () => $this->catalog->update($admin, $product, $draft))
-        ->toThrow(LockedProductConfiguration::class);
+    // Bậc 1: Sản phẩm ghi đè mẫu riêng.
+    $this->catalog->update($this->admin, $product, netflixDraft(deliveryTemplate: 'Netflix của bạn: {{username}}'));
 
-    $product = $product->fresh();
+    expect($product->fresh()->deliveryTemplate())->toBe('Netflix của bạn: {{username}}');
 
-    expect($product)
-        ->type->toBe(ProductType::Account)
-        ->and($product->normalization())->toEqual(ProductType::Account->defaultNormalization())
-        ->and($product->dedupeKeyField()->key)->toBe('username')
-        ->and($product->contentFields->pluck('key')->all())->toBe(['username', 'password'])
-        ->and($product->contentFields->firstWhere('key', 'password'))
-        ->sensitive->toBeTrue()
-        ->required->toBeTrue();
-})->with([
-    'đổi loại Sản phẩm' => fn () => netflixDraft(type: ProductType::OneTimeCode, defaultSlots: 1),
-    'đổi tuỳ chọn chuẩn hoá' => fn () => netflixDraft(normalization: new Normalization(caseInsensitive: false)),
-    'đổi Khoá chống trùng' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email),
-        new ContentFieldDraft('password', 'Mật khẩu', dedupeKey: true),
-    ]),
-    'tắt cờ nhạy cảm' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
-        new ContentFieldDraft('password', 'Mật khẩu', sensitive: false),
-    ]),
-    'xoá trường' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
-    ]),
-    'thêm trường bắt buộc' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
-        new ContentFieldDraft('password', 'Mật khẩu'),
-        new ContentFieldDraft('otp_secret', 'Mã 2FA'),
-    ]),
-    'đổi trường có sẵn sang tuỳ chọn' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
-        new ContentFieldDraft('password', 'Mật khẩu', required: false),
-    ]),
-    'đổi kiểu trường' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Text, dedupeKey: true),
-        new ContentFieldDraft('password', 'Mật khẩu'),
-    ]),
-    'đổi regex' => fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
-        new ContentFieldDraft('password', 'Mật khẩu', pattern: '.{8,}'),
-    ]),
-]);
+    // Loại đổi mẫu thì Sản phẩm đã ghi đè không bị đụng tới.
+    $types->update($this->admin, $this->accountType->fresh(), new ProductTypeDraft(
+        name: 'Tài khoản streaming',
+        form: StockForm::Account,
+        fields: [
+            new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, dedupeKey: true),
+            new ContentFieldDraft('password', 'Mật khẩu'),
+        ],
+        deliveryTemplate: 'Mẫu mới của Loại: {{username}}',
+    ));
+
+    expect($product->fresh()->deliveryTemplate())->toBe('Netflix của bạn: {{username}}');
+
+    // Bỏ mẫu riêng thì Sản phẩm rơi về mẫu của Loại.
+    $this->catalog->update($this->admin, $product->fresh(), netflixDraft(deliveryTemplate: "  \n "));
+
+    expect($product->fresh())
+        ->delivery_template->toBeNull()
+        ->and($product->fresh()->deliveryTemplate())->toBe('Mẫu mới của Loại: {{username}}');
+});
+
+it('Mẫu giao hàng của Sản phẩm chỉ dùng được biến của Loại', function () {
+    expect(fn () => $this->catalog->create($this->admin, netflixDraft(deliveryTemplate: 'Mã: {{ma_the}} {{username}}')))
+        ->toThrow(InvalidProductConfiguration::class, 'Mẫu giao hàng dùng biến không có: {{ma_the}}.');
+
+    expect(Product::count())->toBe(0);
+});
 
 it('Quản trị Ngừng bán Sản phẩm', function () {
-    $admin = staffMember(Role::Owner);
-    $product = withStock($this->catalog->create($admin, netflixDraft()));
+    $product = withStock($this->catalog->create($this->admin, netflixDraft()));
 
-    $this->catalog->discontinue($admin, $product);
+    $this->catalog->discontinue($this->admin, $product);
 
     expect($product->fresh()->isDiscontinued())->toBeTrue();
 });
 
 it('chỉ Quản trị Ngừng bán được Sản phẩm', function (Role $role) {
-    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft());
+    $product = $this->catalog->create($this->admin, netflixDraft());
 
     expect(fn () => $this->catalog->discontinue(staffMember($role), $product))
         ->toThrow(MissingRole::class);
@@ -379,27 +268,25 @@ it('chỉ Quản trị Ngừng bán được Sản phẩm', function (Role $role
 ]);
 
 it('Quản trị xoá được Sản phẩm chưa có hàng', function () {
-    $admin = staffMember(Role::Owner);
-    $product = $this->catalog->create($admin, netflixDraft());
+    $product = $this->catalog->create($this->admin, netflixDraft());
 
-    $this->catalog->delete($admin, $product);
+    $this->catalog->delete($this->admin, $product);
 
     expect(Product::find($product->id))->toBeNull()
-        ->and($this->catalog->create($admin, netflixDraft())->code)->toBe('NETFLIX-1M');
+        ->and($this->catalog->create($this->admin, netflixDraft())->code)->toBe('NETFLIX-1M');
 });
 
 it('Sản phẩm đã có hàng không xoá được, chỉ Ngừng bán', function () {
-    $admin = staffMember(Role::Owner);
-    $product = withStock($this->catalog->create($admin, netflixDraft()));
+    $product = withStock($this->catalog->create($this->admin, netflixDraft()));
 
-    expect(fn () => $this->catalog->delete($admin, $product))
+    expect(fn () => $this->catalog->delete($this->admin, $product))
         ->toThrow(ProductHasStock::class, 'Sản phẩm đã có hàng không xoá được, chỉ Ngừng bán.');
 
     expect(Product::find($product->id))->not->toBeNull();
 });
 
 it('chỉ Quản trị xoá được Sản phẩm', function (Role $role) {
-    $product = $this->catalog->create(staffMember(Role::Owner), netflixDraft());
+    $product = $this->catalog->create($this->admin, netflixDraft());
 
     expect(fn () => $this->catalog->delete(staffMember($role), $product))
         ->toThrow(MissingRole::class);
@@ -408,30 +295,4 @@ it('chỉ Quản trị xoá được Sản phẩm', function (Role $role) {
 })->with([
     'Nhập kho' => Role::NhapKho,
     'Bán hàng' => Role::BanHang,
-]);
-
-it('Quản trị soạn Mẫu giao hàng với biến Trường nội dung, Hạn sử dụng, Hạn bảo hành, tên Sản phẩm, mã đơn; để trống thì dùng mẫu mặc định', function () {
-    $admin = staffMember(Role::Owner);
-    $template = "Cảm ơn bạn đã mua {{san_pham}} (đơn {{ ma_don }})\nTài khoản: {{username}} / {{password}}\nHạn: {{han_su_dung}} · Bảo hành đến {{han_bao_hanh}}";
-
-    $product = $this->catalog->create($admin, netflixDraft(deliveryTemplate: $template));
-
-    expect($product->fresh()->delivery_template)->toBe($template);
-
-    $this->catalog->update($admin, $product, netflixDraft(deliveryTemplate: "  \n "));
-
-    expect($product->fresh()->delivery_template)->toBeNull();
-});
-
-it('Mẫu giao hàng chỉ dùng được biến đã khai báo', function (ProductDraft $draft, string $message) {
-    expect(fn () => $this->catalog->create(staffMember(Role::Owner), $draft))
-        ->toThrow(InvalidProductConfiguration::class, $message);
-
-    expect(Product::count())->toBe(0);
-})->with([
-    'biến không tồn tại' => [fn () => netflixDraft(deliveryTemplate: 'Mã: {{ma_the}} {{user_name}}'), 'Mẫu giao hàng dùng biến không có: {{ma_the}}, {{user_name}}.'],
-    'Trường nội dung trùng tên biến có sẵn' => [fn () => netflixDraft([
-        new ContentFieldDraft('username', 'Tên đăng nhập', dedupeKey: true),
-        new ContentFieldDraft('ma_don', 'Mã đơn gốc'),
-    ]), 'Định danh trường "ma_don" trùng tên biến của Mẫu giao hàng.'],
 ]);

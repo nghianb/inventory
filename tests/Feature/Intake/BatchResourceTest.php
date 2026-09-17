@@ -7,9 +7,7 @@ use App\Filament\Resources\StockUnits\Pages\ListStockUnits;
 use App\Filament\Resources\StockUnits\StockUnitResource;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
@@ -39,12 +37,12 @@ beforeEach(function () {
 
     $this->admin = staffMember(Role::Owner);
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
-    $this->product = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
-    ));
+    $this->product = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        'Steam Wallet 100k',
+        'STEAM-100K',
+    );
 });
 
 it('Quản trị và Nhập kho vào được trang Lô nhập, Bán hàng thì không; mọi Vai trò xem được Đơn vị hàng', function (Role $role, bool $seesBatches) {
@@ -96,13 +94,13 @@ it('Nhập kho tạo nhanh Nhà cung cấp, upload file Tài khoản kèm Dòng 
     $this->actingAs(staffMember(Role::NhapKho));
     $intake = app(BatchIntake::class);
     $intake->confirm($this->admin, $intake->submit($this->admin, new BatchDraft($this->supplier, CarbonImmutable::parse('2026-09-15'), [new BatchLineDraft($this->product, 1, 'AAAA-BBBB')])));
-    $netflix = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::Account,
-        name: 'Netflix 1 tháng',
-        code: 'NETFLIX-1M',
-        fields: [new ContentFieldDraft('username', 'Tên đăng nhập', dedupeKey: true, sensitive: false), new ContentFieldDraft('password', 'Mật khẩu')],
+    $netflix = productOf(
+        StockForm::Account,
+        [new ContentFieldDraft('username', 'Tên đăng nhập', dedupeKey: true, sensitive: false), new ContentFieldDraft('password', 'Mật khẩu')],
+        'Netflix 1 tháng',
+        'NETFLIX-1M',
         defaultSlots: 4,
-    ));
+    );
 
     Livewire::test(CreateBatch::class)
         ->callAction(TestAction::make('createOption')->schemaComponent('supplier_id'), data: ['name' => 'G2A'])
@@ -151,7 +149,7 @@ it('Nhập kho tạo nhanh Nhà cung cấp, upload file Tài khoản kèm Dòng 
 
     expect($batch->fresh()->status)->toBe(BatchStatus::Confirmed)
         ->and(StockUnit::count())->toBe(4)
-        ->and(StockUnit::where('kind', ProductType::Account)->sum('slot_count'))->toBe(4)
+        ->and(StockUnit::where('kind', StockForm::Account)->sum('slot_count'))->toBe(4)
         ->and(Storage::disk('intake')->allFiles('batch-lines'))->toBe([]);
 });
 

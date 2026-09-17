@@ -13,6 +13,7 @@ use App\Filament\Resources\Batches\BatchResource;
 use App\Filament\Resources\DefectReports\DefectReportResource;
 use App\Filament\Resources\Dispatches\DispatchResource;
 use App\Filament\Resources\Products\ProductResource;
+use App\Filament\Resources\ProductTypes\ProductTypeResource;
 use App\Filament\Resources\RevealLogEntries\RevealLogEntryResource;
 use App\Filament\Resources\SalesChannels\SalesChannelResource;
 use App\Filament\Resources\SecurityLogEntries\SecurityLogEntryResource;
@@ -36,6 +37,7 @@ dataset('mục điều hướng', [
 
     'Đơn vị hàng' => [StockUnitResource::class, NavGroup::KhoHang],
     'Sản phẩm' => [ProductResource::class, NavGroup::KhoHang],
+    'Loại sản phẩm' => [ProductTypeResource::class, NavGroup::KhoHang],
 
     'Tồn kho' => [StockReportPage::class, NavGroup::BaoCao],
     'Nhập/xuất' => [MovementReportPage::class, NavGroup::BaoCao],
@@ -111,7 +113,7 @@ it('đặt nhãn tiếng Việt cho Tổng quan', function () {
  * Dựng menu thật của panel thay vì đọc $navigationSort: assert tĩnh từng đọc là đủ, nhưng nó bỏ lọt
  * đúng chuyện thứ tự mục chưa được khai bao giờ.
  */
-it('xếp thứ tự mục trong từng nhóm, Quản trị thấy đủ 20 mục', function () {
+it('xếp thứ tự mục trong từng nhóm, Quản trị thấy đủ 21 mục', function () {
     $this->seed(RoleSeeder::class);
     $this->actingAs(staffMember(Role::Owner));
 
@@ -128,7 +130,7 @@ it('xếp thứ tự mục trong từng nhóm, Quản trị thấy đủ 20 mụ
     expect($menu)->toBe([
         'Xuất hàng' => ['Phiếu xuất', 'Báo lỗi', 'Kênh bán'],
         'Nhập hàng' => ['Lô nhập', 'Nhà cung cấp', 'Khiếu nại nhà cung cấp'],
-        'Kho hàng' => ['Đơn vị hàng', 'Sản phẩm'],
+        'Kho hàng' => ['Đơn vị hàng', 'Sản phẩm', 'Loại sản phẩm'],
         'Báo cáo' => ['Tồn kho', 'Nhập/xuất', 'Lãi/lỗ', 'Lãi/lỗ theo phiếu xuất', 'Tỉ lệ lỗi', 'Lỗ theo nhà cung cấp'],
         'Nhật ký' => ['Nhật ký xem mã', 'Nhật ký bảo mật'],
         'Hệ thống' => ['Nhân viên', 'Khoá API', 'Tạm dừng xuất kho'],

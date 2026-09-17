@@ -4,9 +4,7 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\DeliveryLookup;
 use App\Inventory\Dispatch\DispatchDraft;
@@ -57,26 +55,27 @@ beforeEach(function () {
     $this->shopee = $channels->create($this->admin, new SalesChannelDraft('Shopee', requiresExternalRef: true));
     $this->zalo = $channels->create($this->admin, new SalesChannelDraft('Zalo'));
 
-    $catalog = app(ProductCatalog::class);
-    $this->steam = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+    $this->steam = productIn(
+        productTypeOf(
+            StockForm::OneTimeCode,
+            [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+            normalization: new Normalization(caseInsensitive: true, stripSeparators: true),
+        ),
+        'Steam Wallet 100k',
+        'STEAM-100K',
         warrantyDays: 7,
-        normalization: new Normalization(caseInsensitive: true, stripSeparators: true),
-    ));
-    $this->netflix = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::Account,
-        name: 'Netflix 1 tháng',
-        code: 'NETFLIX-1M',
-        fields: [
+    );
+    $this->netflix = productOf(
+        StockForm::Account,
+        [
             new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, sensitive: false, dedupeKey: true),
             new ContentFieldDraft('password', 'Mật khẩu'),
         ],
+        'Netflix 1 tháng',
+        'NETFLIX-1M',
         defaultSlots: 2,
         warrantyDays: 30,
-    ));
+    );
 });
 
 function completedStock(Product $product, string $content): void

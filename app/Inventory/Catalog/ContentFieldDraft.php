@@ -3,7 +3,7 @@
 namespace App\Inventory\Catalog;
 
 /**
- * Khai báo một Trường nội dung khi tạo hoặc sửa Sản phẩm. `key` là định danh ổn định
+ * Khai báo một Trường nội dung khi tạo hoặc sửa Loại sản phẩm. `key` là định danh ổn định
  * của trường (dùng trong file nhập, Mẫu giao hàng, API); `label` là tên hiển thị.
  */
 final readonly class ContentFieldDraft

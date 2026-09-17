@@ -4,9 +4,7 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\AffectedDelivery;
 use App\Inventory\Dispatch\CorrectionDraft;
@@ -60,25 +58,24 @@ beforeEach(function () {
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
     $this->shopee = app(SalesChannelDirectory::class)->create($this->admin, new SalesChannelDraft('Shopee', requiresExternalRef: true));
 
-    $catalog = app(ProductCatalog::class);
-    $this->steam = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+    $this->steam = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        'Steam Wallet 100k',
+        'STEAM-100K',
         warrantyDays: 7,
-    ));
-    $this->netflix = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::Account,
-        name: 'Netflix 1 tháng',
-        code: 'NETFLIX-1M',
-        fields: [
+    );
+    $this->netflix = productOf(
+        StockForm::Account,
+        [
             new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, sensitive: false, dedupeKey: true),
             new ContentFieldDraft('password', 'Mật khẩu'),
         ],
+        'Netflix 1 tháng',
+        'NETFLIX-1M',
         defaultSlots: 3,
         warrantyDays: 30,
-    ));
+    );
 });
 
 function defectStock(Product $product, string $content): void
@@ -132,12 +129,12 @@ it('Bán hàng tạo Báo lỗi từ Phiếu xuất cho nhiều Slot, mỗi Slot
 });
 
 it('ngoài Hạn bảo hành hoặc thời hạn bảo hành 0 thì Bán hàng không tạo được Báo lỗi; Quản trị vượt được kèm lý do', function () {
-    $free = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Quà tặng',
-        code: 'GIFT',
-        fields: [new ContentFieldDraft('code', 'Mã', dedupeKey: true)],
-    ));
+    $free = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã', dedupeKey: true)],
+        'Quà tặng',
+        'GIFT',
+    );
     defectStock($this->steam, "SR1\tA-1");
     defectStock($free, 'G-1');
     [$code, $gift] = defectDeliveries(defectOrder('SP-001', [$this->steam->id => 1, $free->id => 1]));

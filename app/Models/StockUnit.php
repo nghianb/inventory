@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Stock\MaskedContent;
 use App\Inventory\Stock\StockUnitStatus;
 use App\Inventory\Stock\VoidReason;
@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $id
  * @property int $batch_line_id
  * @property int $product_id
- * @property ProductType $kind
+ * @property StockForm $kind
  * @property StockUnitStatus $status
  * @property int $unit_cost
  * @property int $slot_count
@@ -48,7 +48,7 @@ class StockUnit extends Model
     protected function casts(): array
     {
         return [
-            'kind' => ProductType::class,
+            'kind' => StockForm::class,
             'status' => StockUnitStatus::class,
             'unit_cost' => 'integer',
             'slot_count' => 'integer',

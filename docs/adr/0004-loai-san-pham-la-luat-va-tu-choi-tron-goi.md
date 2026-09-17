@@ -4,8 +4,8 @@
 
 Sửa Loại chia làm hai hạng, theo đúng ranh giới `ProductCatalog::ensureOnlyUnlockedChanges()` đã có:
 
-- **Áp xuống mọi Sản phẩm**: thêm trường tuỳ chọn, đổi tên hiển thị. Chúng không đụng tới `stock_units.content`, `secret_ciphertext` hay `dedupe_hash`.
-- **Chạm dữ liệu đã lưu**: kiểu trường, `pattern`, bắt buộc, cờ nhạy cảm, **Khoá chống trùng**, hai cờ chuẩn hoá, **Dạng hàng**, xoá trường.
+- **Áp xuống mọi Sản phẩm**: thêm trường tuỳ chọn, đổi tên hiển thị, đổi tên Loại, đổi **Mẫu giao hàng** của Loại. Chúng không đụng tới `stock_units.content`, `secret_ciphertext` hay `dedupe_hash`.
+- **Chạm dữ liệu đã lưu**: kiểu trường, `pattern`, bắt buộc, cờ nhạy cảm, **Khoá chống trùng**, thứ tự trường (chính là thứ tự cột khi dán danh sách lúc nhập), hai cờ chuẩn hoá, **Dạng hàng**, xoá trường.
 
 Khi Loại đã có **Sản phẩm** nào có hàng, thay đổi hạng thứ hai **bị từ chối trọn gói** — không áp cho bất kỳ Sản phẩm nào, kể cả những Sản phẩm của Loại đó chưa có hàng. Bước xem trước nêu đích danh Sản phẩm đang chặn.
 

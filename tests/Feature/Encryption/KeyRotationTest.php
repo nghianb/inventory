@@ -3,9 +3,7 @@
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
@@ -58,15 +56,15 @@ beforeEach(function () {
 
     $this->admin = staffMember(Role::Owner);
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
-    $this->garena = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Thẻ Garena 100k',
-        code: 'GARENA-100K',
-        fields: [
+    $this->garena = productOf(
+        StockForm::OneTimeCode,
+        [
             new ContentFieldDraft('serial', 'Serial', sensitive: false),
             new ContentFieldDraft('pin', 'Mã thẻ', ContentFieldType::Number, pattern: '\d{12}', dedupeKey: true),
         ],
-    ));
+        'Thẻ Garena 100k',
+        'GARENA-100K',
+    );
 
     stockUp($this->garena, "SR001\t100000000001\nSR002\t100000000002");
 });
@@ -181,15 +179,15 @@ it('xoay khoá HMAC chưa xong: nhập hàng tạm dừng, xuất kho vẫn ch�
 });
 
 it('tính lại được Khoá chống trùng của Sản phẩm có trường khoá không nhạy cảm', function () {
-    $viettel = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Thẻ cào Viettel 50k',
-        code: 'VIETTEL-50K',
-        fields: [
+    $viettel = productOf(
+        StockForm::OneTimeCode,
+        [
             new ContentFieldDraft('serial', 'Serial', sensitive: false, dedupeKey: true),
             new ContentFieldDraft('pin', 'Mã thẻ'),
         ],
-    ));
+        'Thẻ cào Viettel 50k',
+        'VIETTEL-50K',
+    );
 
     stockUp($viettel, "SERIAL-9001\t999000111222");
 

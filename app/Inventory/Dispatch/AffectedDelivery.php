@@ -2,7 +2,7 @@
 
 namespace App\Inventory\Dispatch;
 
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Warranty\DefectReportStatus;
 use App\Models\Delivery;
@@ -91,7 +91,7 @@ final readonly class AffectedDelivery
             // warrantyEndsOn()), nên nạp sẵn cả hai: thiếu là mỗi dòng thêm vài truy vấn.
             ->with(['dispatchLine.dispatch.salesChannel', 'dispatchLine.product', 'stockUnit', 'latestDefectReport'])
             ->whereHas('stockUnit', fn (Builder $units) => $units
-                ->where('stock_units.kind', ProductType::Account)
+                ->where('stock_units.kind', StockForm::Account)
                 ->when($product !== null, fn (Builder $ofProduct) => $ofProduct->where('stock_units.product_id', $product?->getKey()))
                 ->whereRaw($warrantyEnd, [config('app.timezone'), $today->toDateString()]))
             ->whereHas('slot', fn (Builder $slots) => $slots->where('status', SlotStatus::Delivered))

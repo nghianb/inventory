@@ -7,8 +7,8 @@ use App\Filament\Resources\Products\ProductResource;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\ProductTypeCatalog;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
@@ -16,44 +16,40 @@ use App\Inventory\Dispatch\ManualDispatch;
 use App\Inventory\Dispatch\SalesChannelDirectory;
 use App\Inventory\Dispatch\SalesChannelDraft;
 use App\Inventory\Encryption\KeyFingerprints;
-use App\Inventory\Encryption\Normalization;
 use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
 use App\Models\Product;
-use App\Models\User;
+use App\Models\ProductType;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RoleSeeder;
 use Filament\Actions\CreateAction;
 use Filament\Actions\Testing\TestAction;
-use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
 use Filament\Schemas\Components\Section;
 use Livewire\Livewire;
 
 beforeEach(function () {
     $this->seed(RoleSeeder::class);
-    $this->undoRepeaterFake = Repeater::fake();
 });
 
-afterEach(function () {
-    ($this->undoRepeaterFake)();
-});
-
-function steamWalletProduct(User $admin, bool $stocked = false): Product
+/**
+ * Loại Thẻ nạp, Dạng hàng Mã dùng một lần: một trường duy nhất là Khoá chống trùng.
+ */
+function cardType(): ProductType
 {
-    $product = app(ProductCatalog::class)->create($admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
-    ));
+    return productTypeOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        name: 'Thẻ nạp',
+    );
+}
 
-    if ($stocked) {
-        // Tạm đánh dấu đã có hàng cho tới khi có thao tác Nhập hàng.
-        $product->forceFill(['stocked_at' => now()])->save();
-    }
+function steamWalletProduct(bool $stocked = false): Product
+{
+    $product = productIn(cardType(), 'Steam Wallet 100k', 'STEAM-100K');
 
-    return $product;
+    return $stocked ? withStock($product) : $product;
 }
 
 it('mọi Vai trò xem được danh sách Sản phẩm, chỉ Quản trị vào được trang Tạo', function (Role $role, bool $canCreate) {
@@ -71,24 +67,23 @@ it('mọi Vai trò xem được danh sách Sản phẩm, chỉ Quản trị vào
     'Bán hàng' => [Role::BanHang, false],
 ]);
 
-it('Quản trị tạo Sản phẩm kèm Trường nội dung ở trang riêng, xong về danh sách', function () {
+it('Quản trị tạo Sản phẩm bằng cách chọn Loại sản phẩm, xong về danh sách', function () {
+    $type = productTypeOf(StockForm::Account, [
+        new ContentFieldDraft('username', 'Tên đăng nhập', dedupeKey: true),
+        new ContentFieldDraft('password', 'Mật khẩu'),
+    ], name: 'Tài khoản streaming');
+
     $this->actingAs(staffMember(Role::Owner));
 
     Livewire::test(CreateProduct::class)
         ->fillForm([
-            'type' => ProductType::Account->value,
+            'product_type_id' => $type->id,
             'name' => 'Netflix Premium 1 tháng',
             'code' => 'NETFLIX-1M',
             'default_slots' => 4,
             'warranty_days' => 30,
             'min_remaining_days' => 0,
             'low_stock_threshold' => 5,
-            'case_insensitive' => true,
-            'strip_separators' => false,
-            'fields' => [
-                ['key' => 'username', 'label' => 'Tên đăng nhập', 'type' => 'email', 'pattern' => null, 'required' => true, 'sensitive' => true, 'dedupe_key' => true],
-                ['key' => 'password', 'label' => 'Mật khẩu', 'type' => 'text', 'pattern' => null, 'required' => true, 'sensitive' => true, 'dedupe_key' => false],
-            ],
         ])
         ->call('create')
         ->assertHasNoFormErrors()
@@ -98,28 +93,73 @@ it('Quản trị tạo Sản phẩm kèm Trường nội dung ở trang riêng, 
 
     expect($product)
         ->code->toBe('NETFLIX-1M')
+        ->product_type_id->toBe($type->id)
         ->default_slots->toBe(4)
         ->low_stock_threshold->toBe(5)
-        ->and($product->dedupeKeyField()->key)->toBe('username')
+        ->and($product->form())->toBe(StockForm::Account)
         ->and($product->contentFields->pluck('key')->all())->toBe(['username', 'password']);
 });
 
+it('trang Tạo bỏ hẳn Trường nội dung, Chuẩn hoá Khoá chống trùng và ô Dạng hàng', function () {
+    $this->actingAs(staffMember(Role::Owner));
+
+    // Soi cấu trúc form chứ không dò chữ trên trang: mô tả khối Mẫu giao hàng có nhắc tới
+    // "Trường nội dung" một cách hợp lệ, nên assertDontSee sẽ bắt oan.
+    $page = Livewire::test(CreateProduct::class)
+        ->assertSchemaComponentExists('template')
+        ->assertFormFieldExists('product_type_id')
+        ->assertSchemaComponentDoesNotExist('content-fields')
+        ->assertSchemaComponentDoesNotExist('normalization')
+        ->assertFormFieldDoesNotExist('fields')
+        ->assertFormFieldDoesNotExist('case_insensitive')
+        ->assertFormFieldDoesNotExist('strip_separators')
+        ->assertFormFieldDoesNotExist('type');
+
+    // Một mạch cuộn: trang resource ép lưới 2 cột khi form không tự khai cột.
+    expect($page->instance()->form->getColumns('lg'))->toBe(1);
+});
+
+it('ô Số slot mặc định chỉ hiện khi Loại có Dạng hàng Tài khoản', function () {
+    $account = productTypeOf(StockForm::Account, [
+        new ContentFieldDraft('username', 'Tên đăng nhập', dedupeKey: true),
+    ], name: 'Tài khoản streaming');
+
+    $this->actingAs(staffMember(Role::Owner));
+
+    Livewire::test(CreateProduct::class)
+        ->fillForm(['product_type_id' => cardType()->id])
+        ->assertFormFieldHidden('default_slots')
+        ->fillForm(['product_type_id' => $account->id])
+        ->assertFormFieldVisible('default_slots');
+});
+
+it('Loại đã Ngừng dùng biến khỏi ô chọn khi tạo Sản phẩm mới, nhưng Sản phẩm cũ vẫn thấy Loại của mình', function () {
+    $product = steamWalletProduct();
+    $type = $product->productType;
+    app(ProductTypeCatalog::class)->discontinue(staffMember(Role::Owner), $type);
+
+    $this->actingAs(staffMember(Role::Owner));
+
+    $options = fn (bool $expected): Closure => fn (Select $field): bool => array_key_exists($type->id, $field->getOptions()) === $expected;
+
+    Livewire::test(CreateProduct::class)
+        ->assertSchemaComponentExists('product_type_id', checkComponentUsing: $options(false));
+
+    Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+        ->assertSchemaComponentExists('product_type_id', checkComponentUsing: $options(true));
+});
+
 it('lỗi nghiệp vụ ở trang Tạo thành thông báo, không ghi gì và ở lại form', function () {
-    $this->actingAs($admin = staffMember(Role::Owner));
-    steamWalletProduct($admin);
+    $this->actingAs(staffMember(Role::Owner));
+    $existing = steamWalletProduct();
 
     Livewire::test(CreateProduct::class)
         ->fillForm([
-            'type' => ProductType::OneTimeCode->value,
+            'product_type_id' => $existing->product_type_id,
             'name' => 'Steam Wallet 200k',
             'code' => 'STEAM-100K',
             'warranty_days' => 0,
             'min_remaining_days' => 0,
-            'case_insensitive' => true,
-            'strip_separators' => true,
-            'fields' => [
-                ['key' => 'code', 'label' => 'Mã thẻ', 'type' => 'text', 'pattern' => null, 'required' => true, 'sensitive' => true, 'dedupe_key' => true],
-            ],
         ])
         ->call('create')
         ->assertNotified('Mã sản phẩm STEAM-100K đã được dùng.')
@@ -129,12 +169,12 @@ it('lỗi nghiệp vụ ở trang Tạo thành thông báo, không ghi gì và �
 });
 
 it('Quản trị sửa Sản phẩm ở trang riêng, lưu xong ở lại trang', function () {
-    $this->actingAs($admin = staffMember(Role::Owner));
-    $product = steamWalletProduct($admin);
+    $this->actingAs(staffMember(Role::Owner));
+    $product = steamWalletProduct();
 
     Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
         ->assertSchemaStateSet([
-            'type' => ProductType::OneTimeCode->value,
+            'product_type_id' => $product->product_type_id,
             'name' => 'Steam Wallet 100k',
             'code' => 'STEAM-100K',
         ])
@@ -149,95 +189,22 @@ it('Quản trị sửa Sản phẩm ở trang riêng, lưu xong ở lại trang'
         ->low_stock_threshold->toBe(3);
 });
 
-it('Quản trị Ngừng bán Sản phẩm; Sản phẩm đã có hàng không có nút xoá', function () {
-    $this->actingAs($admin = staffMember(Role::Owner));
-    $stocked = steamWalletProduct($admin, stocked: true);
-
-    Livewire::test(ListProducts::class)
-        ->assertActionHidden(TestAction::make('delete')->table($stocked))
-        ->callAction(TestAction::make('discontinue')->table($stocked))
-        ->assertActionHidden(TestAction::make('discontinue')->table($stocked));
-
-    expect($stocked->fresh()->isDiscontinued())->toBeTrue();
-});
-
-it('trang Sửa báo lỗi khi đổi cấu hình bị khoá của Sản phẩm đã có hàng', function () {
-    $this->actingAs($admin = staffMember(Role::Owner));
-    $stocked = steamWalletProduct($admin, stocked: true);
-
-    Livewire::test(EditProduct::class, ['record' => $stocked->getRouteKey()])
-        // Khối Chuẩn hoá có key riêng nên khoá phẳng của ô mang tiền tố khối.
-        ->assertFormFieldDisabled('normalization.case_insensitive')
-        ->fillForm(['case_insensitive' => false])
-        ->call('save')
-        ->assertNotified('Sản phẩm đã có hàng: không đổi được tuỳ chọn chuẩn hoá.')
-        ->assertNoRedirect();
-
-    expect($stocked->fresh()->case_insensitive)->toBeTrue();
-});
-
-it('bày một mạch cuộn như variant A: mỗi khối một card chiếm trọn bề ngang, Trường nội dung cũng có card', function () {
+it('Sản phẩm đã có hàng bị khoá ô Loại sản phẩm và được giải thích ngay đầu trang', function () {
     $this->actingAs(staffMember(Role::Owner));
-
-    $page = Livewire::test(CreateProduct::class)->assertSchemaComponentExists('content-fields');
-
-    // Trang resource ép lưới 2 cột khi form không tự khai cột (CreateRecord::defaultForm), làm
-    // card Thông tin chỉ ăn nửa bề ngang thay vì một mạch cuộn. `columns(1)` ghi vào breakpoint
-    // `lg` — đúng chỗ lưới 2 cột bật lên.
-    expect($page->instance()->form->getColumns('lg'))->toBe(1);
-});
-
-it('form xếp Trường nội dung lên ngay dưới Thông tin và thu gọn sẵn hai khối có mặc định dùng được', function () {
-    $collapsed = fn (bool $expected): Closure => fn (Section $section): bool => $section->isCollapsed() === $expected;
-
-    $this->actingAs($admin = staffMember(Role::Owner));
-
-    Livewire::test(CreateProduct::class)
-        ->assertSeeHtmlInOrder(['Thông tin', 'Trường nội dung', 'Chuẩn hoá Khoá chống trùng', 'Mẫu giao hàng'])
-        ->assertSchemaComponentExists('normalization', checkComponentUsing: $collapsed(true))
-        ->assertSchemaComponentExists('template', checkComponentUsing: $collapsed(true));
-
-    // Mã dùng một lần dựng sẵn: chuẩn hoá đúng mặc định của loại, chưa có Mẫu giao hàng.
-    $product = steamWalletProduct($admin);
+    $product = steamWalletProduct();
 
     Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
-        ->assertSchemaComponentExists('normalization', checkComponentUsing: $collapsed(true))
-        ->assertSchemaComponentExists('template', checkComponentUsing: $collapsed(true));
+        ->assertDontSee('Cấu hình bị khoá')
+        ->assertFormFieldEnabled('product_type_id');
 
-    app(ProductCatalog::class)->update($admin, $product, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
-        normalization: new Normalization(caseInsensitive: true, stripSeparators: false),
-        deliveryTemplate: 'Mã thẻ của bạn: {{code}}',
-    ));
-
-    // Khối đang mang giá trị khác mặc định thì mở sẵn, không ai phải bấm mở mới thấy mình đã đổi gì.
-    Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
-        ->assertSchemaComponentExists('normalization', checkComponentUsing: $collapsed(false))
-        ->assertSchemaComponentExists('template', checkComponentUsing: $collapsed(false))
-        // Ô Loại là live(): đổi nó không được đóng sập khối đang mở dở.
-        ->fillForm(['type' => ProductType::Account->value])
-        ->assertSchemaComponentExists('normalization', checkComponentUsing: $collapsed(false))
-        ->assertSchemaComponentExists('template', checkComponentUsing: $collapsed(false));
-});
-
-it('trang Sửa giải thích cấu hình bị khoá của Sản phẩm đã có hàng, không phải để Quản trị đâm vào mới biết', function () {
-    $this->actingAs($admin = staffMember(Role::Owner));
-    $product = steamWalletProduct($admin);
-
-    Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
-        ->assertDontSee('Cấu hình bị khoá');
-
-    $product->forceFill(['stocked_at' => now()])->save();
+    withStock($product);
 
     Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
         ->assertSee('Cấu hình bị khoá')
-        ->assertSee('Sản phẩm đã có hàng: không đổi được Loại')
-        ->assertSee('Vẫn thêm được trường tuỳ chọn và đổi tên hiển thị.')
+        ->assertSee(ProductCatalog::STOCK_LOCKS_PRODUCT_TYPE)
+        ->assertFormFieldDisabled('product_type_id')
         // Đã có hàng mà chưa từng xuất: Mã sản phẩm vẫn đổi được nên không nhắc tới.
-        ->assertDontSee('Sản phẩm đã có Phiếu xuất')
+        ->assertDontSee(ProductCatalog::DISPATCH_LOCKS_CODE)
         ->assertFormFieldEnabled('code');
 });
 
@@ -245,7 +212,7 @@ it('cùng một hộp giải thích thêm dòng Mã sản phẩm khi Sản phẩ
     app(KeyFingerprints::class)->register();
     $admin = staffMember(Role::Owner);
     $seller = staffMember(Role::BanHang);
-    $product = steamWalletProduct($admin);
+    $product = steamWalletProduct();
 
     $intake = app(BatchIntake::class);
     $intake->confirm($admin, $intake->submit($admin, new BatchDraft(
@@ -264,14 +231,45 @@ it('cùng một hộp giải thích thêm dòng Mã sản phẩm khi Sản phẩ
 
     Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
         ->assertSee('Cấu hình bị khoá')
-        ->assertSee('Sản phẩm đã có hàng: không đổi được Loại')
-        ->assertSee('Sản phẩm đã có Phiếu xuất: không đổi được Mã sản phẩm.')
+        ->assertSee(ProductCatalog::STOCK_LOCKS_PRODUCT_TYPE)
+        ->assertSee(ProductCatalog::DISPATCH_LOCKS_CODE)
         ->assertFormFieldDisabled('code');
 });
 
-it('header trang Sửa có Xoá, xoá xong về danh sách', function () {
+it('khối Mẫu giao hàng thu gọn sẵn khi Sản phẩm chưa ghi đè mẫu riêng', function () {
+    $collapsed = fn (bool $expected): Closure => fn (Section $section): bool => $section->isCollapsed() === $expected;
+
     $this->actingAs($admin = staffMember(Role::Owner));
-    $product = steamWalletProduct($admin);
+    $product = steamWalletProduct();
+
+    Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+        ->assertSchemaComponentExists('template', checkComponentUsing: $collapsed(true));
+
+    app(ProductCatalog::class)->update($admin, $product, ProductResource::draftFromForm([
+        ...ProductResource::formData($product->fresh()),
+        'delivery_template' => 'Mã thẻ của bạn: {{code}}',
+    ]));
+
+    // Sản phẩm đang ghi đè mẫu riêng thì mở sẵn, không ai phải bấm mở mới thấy mình đã đổi gì.
+    Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+        ->assertSchemaComponentExists('template', checkComponentUsing: $collapsed(false));
+});
+
+it('Quản trị Ngừng bán Sản phẩm; Sản phẩm đã có hàng không có nút xoá', function () {
+    $this->actingAs(staffMember(Role::Owner));
+    $stocked = steamWalletProduct(stocked: true);
+
+    Livewire::test(ListProducts::class)
+        ->assertActionHidden(TestAction::make('delete')->table($stocked))
+        ->callAction(TestAction::make('discontinue')->table($stocked))
+        ->assertActionHidden(TestAction::make('discontinue')->table($stocked));
+
+    expect($stocked->fresh()->isDiscontinued())->toBeTrue();
+});
+
+it('header trang Sửa có Xoá, xoá xong về danh sách', function () {
+    $this->actingAs(staffMember(Role::Owner));
+    $product = steamWalletProduct();
 
     Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
         ->callAction('delete')
@@ -281,8 +279,8 @@ it('header trang Sửa có Xoá, xoá xong về danh sách', function () {
 });
 
 it('header trang Sửa có Ngừng bán; Sản phẩm đã có hàng không có nút xoá', function () {
-    $this->actingAs($admin = staffMember(Role::Owner));
-    $stocked = steamWalletProduct($admin, stocked: true);
+    $this->actingAs(staffMember(Role::Owner));
+    $stocked = steamWalletProduct(stocked: true);
 
     Livewire::test(EditProduct::class, ['record' => $stocked->getRouteKey()])
         ->assertActionHidden('delete')
@@ -293,7 +291,7 @@ it('header trang Sửa có Ngừng bán; Sản phẩm đã có hàng không có 
 });
 
 it('Nhập kho và Bán hàng không sửa, không Ngừng bán, không xoá được Sản phẩm', function (Role $role) {
-    $product = steamWalletProduct(staffMember(Role::Owner));
+    $product = steamWalletProduct();
     $this->actingAs(staffMember($role));
 
     $this->get(ProductResource::getUrl('edit', ['record' => $product]))->assertForbidden();

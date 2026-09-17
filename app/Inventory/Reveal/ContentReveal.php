@@ -82,7 +82,7 @@ class ContentReveal
 
             $this->log->record($actor, $context, $reason, $current);
 
-            $unit = $current->stockUnit()->with('product.contentFields')->firstOrFail();
+            $unit = $current->stockUnit()->with(['product.contentFields', 'product.productType'])->firstOrFail();
 
             return new RevealedContent(self::byLabel($unit, $this->decryptedValues($unit)));
         });
@@ -227,7 +227,7 @@ class ContentReveal
 
         return DB::transaction(function () use ($actor, $delivery): DeliveredContent {
             $deliveries = Delivery::query()
-                ->with(['slot', 'stockUnit.product.contentFields', 'dispatchLine.dispatch'])
+                ->with(['slot', 'stockUnit.product.contentFields', 'stockUnit.product.productType', 'dispatchLine.dispatch'])
                 ->whereKey($delivery->getKey())
                 ->get();
             $current = $deliveries->firstOrFail();
@@ -270,7 +270,7 @@ class ContentReveal
         return DB::transaction(function () use ($key, $dispatch, $everyLine): array {
             $query = $dispatch->deliveries()
                 ->orderBy('deliveries.id')
-                ->with(['slot', 'stockUnit.product.contentFields', 'replacement.defectReport']);
+                ->with(['slot', 'stockUnit.product.contentFields', 'stockUnit.product.productType', 'replacement.defectReport']);
 
             if (! $everyLine) {
                 // Giao thêm, Giao thay và Đổi hàng là việc nhân viên làm sau đó, không thuộc đơn đã gửi.
@@ -344,7 +344,7 @@ class ContentReveal
             }
 
             $delivery = Delivery::query()
-                ->with(['slot', 'stockUnit.product.contentFields', 'dispatchLine.dispatch'])
+                ->with(['slot', 'stockUnit.product.contentFields', 'stockUnit.product.productType', 'dispatchLine.dispatch'])
                 ->findOrFail($current->delivery_id);
 
             $this->log->record(RevealActor::staff($actor), RevealContext::defectReport($current), "Xác minh Báo lỗi #{$current->id}", $delivery->slot);
@@ -381,7 +381,7 @@ class ContentReveal
             $current->forceFill(['result_revealed_at' => now()])->save();
 
             $delivery = Delivery::query()
-                ->with(['slot', 'stockUnit.product.contentFields', 'dispatchLine.dispatch'])
+                ->with(['slot', 'stockUnit.product.contentFields', 'stockUnit.product.productType', 'dispatchLine.dispatch'])
                 ->findOrFail($current->delivery_id);
 
             $this->log->record(RevealActor::staff($actor), RevealContext::replacement($current), "Màn kết quả Đổi hàng #{$current->id}", $delivery->slot);
@@ -412,7 +412,7 @@ class ContentReveal
                 throw new InvalidReveal('Đơn vị hàng không còn nằm trong Khiếu nại; không xem mã qua Khiếu nại được.');
             }
 
-            $unit = $current->stockUnit()->with('product.contentFields')->firstOrFail();
+            $unit = $current->stockUnit()->with(['product.contentFields', 'product.productType'])->firstOrFail();
 
             // Đã Khôi phục thì là hàng bán được: chỉ Quản trị xem kèm lý do.
             if ($unit->status !== StockUnitStatus::Defective) {
@@ -478,7 +478,7 @@ class ContentReveal
         return $dispatch->deliveries()
             ->when($dispatch->result_from_line_id !== null, fn (Builder $query) => $query->where('deliveries.dispatch_line_id', '>=', $dispatch->result_from_line_id))
             ->orderBy('deliveries.id')
-            ->with(['slot', 'stockUnit.product.contentFields'])
+            ->with(['slot', 'stockUnit.product.contentFields', 'stockUnit.product.productType'])
             ->get();
     }
 
@@ -520,7 +520,7 @@ class ContentReveal
             fields: $fields,
             values: $values,
             message: DeliveryTemplate::render(
-                $unit->product->delivery_template,
+                $unit->product->deliveryTemplate(),
                 $values,
                 $fields,
                 $unit->product->name,

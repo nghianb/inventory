@@ -6,9 +6,8 @@ use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
 use App\Inventory\Catalog\InvalidSupplier;
 use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
 use App\Inventory\Catalog\ProductHasStock;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
@@ -53,12 +52,12 @@ beforeEach(function () {
  */
 function steamWallet(string $code = 'STEAM-100K'): Product
 {
-    return app(ProductCatalog::class)->create(staffMember(Role::Owner), new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: "Steam Wallet {$code}",
-        code: $code,
-        fields: [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
-    ));
+    return productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        "Steam Wallet {$code}",
+        $code,
+    );
 }
 
 /**
@@ -67,16 +66,16 @@ function steamWallet(string $code = 'STEAM-100K'): Product
  */
 function garenaCard(): Product
 {
-    return app(ProductCatalog::class)->create(staffMember(Role::Owner), new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Thẻ Garena 100k',
-        code: 'GARENA-100K',
-        fields: [
+    return productOf(
+        StockForm::OneTimeCode,
+        [
             new ContentFieldDraft('serial', 'Serial', sensitive: false),
             new ContentFieldDraft('pin', 'Mã thẻ', ContentFieldType::Number, pattern: '\d{12}', dedupeKey: true),
             new ContentFieldDraft('note', 'Ghi chú', required: false),
         ],
-    ));
+        'Thẻ Garena 100k',
+        'GARENA-100K',
+    );
 }
 
 /**
@@ -84,16 +83,16 @@ function garenaCard(): Product
  */
 function streamingAccount(string $code = 'NETFLIX-1M', int $defaultSlots = 4): Product
 {
-    return app(ProductCatalog::class)->create(staffMember(Role::Owner), new ProductDraft(
-        type: ProductType::Account,
-        name: "Tài khoản {$code}",
-        code: $code,
-        fields: [
+    return productOf(
+        StockForm::Account,
+        [
             new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, sensitive: false, dedupeKey: true),
             new ContentFieldDraft('password', 'Mật khẩu'),
         ],
+        "Tài khoản {$code}",
+        $code,
         defaultSlots: $defaultSlots,
-    ));
+    );
 }
 
 /**
@@ -222,10 +221,10 @@ it('một Lô nhập nhiều Dòng nhập; Tài khoản tạo đủ số Slot th
     $units = StockUnit::with('slots')->orderBy('id')->get();
 
     expect($units->map(fn (StockUnit $unit) => [$unit->kind, $unit->unit_cost, $unit->slots->pluck('cost')->all()])->all())->toBe([
-        [ProductType::Account, 200_000, [50_000, 50_000, 50_000, 50_000]],
-        [ProductType::Account, 200_000, [50_000, 50_000, 50_000, 50_000]],
-        [ProductType::Account, 100_000, [33_334, 33_333, 33_333]],
-        [ProductType::OneTimeCode, 95_000, [95_000]],
+        [StockForm::Account, 200_000, [50_000, 50_000, 50_000, 50_000]],
+        [StockForm::Account, 200_000, [50_000, 50_000, 50_000, 50_000]],
+        [StockForm::Account, 100_000, [33_334, 33_333, 33_333]],
+        [StockForm::OneTimeCode, 95_000, [95_000]],
     ])
         ->and(Product::withCount('inStockSlots')->find($netflix->id)->in_stock_slots_count)->toBe(8)
         ->and(StockLedgerEntry::count())->toBe(4 + 8 + 3 + 1);

@@ -9,9 +9,9 @@ use Illuminate\Database\Eloquent\Collection;
 use SensitiveParameter;
 
 /**
- * Tra Đơn vị hàng theo Khoá chống trùng khách gửi tới. Chuỗi dán vào được chuẩn hoá theo cấu hình
- * của **từng** Sản phẩm rồi so HMAC khớp chính xác, nên một chuỗi sinh ra nhiều hash: các Sản phẩm
- * cùng cách chuẩn hoá chung một hash. Chỉ dựng truy vấn, không giải mã gì, nên không ghi Nhật ký
+ * Tra Đơn vị hàng theo Khoá chống trùng khách gửi tới. Chuỗi dán vào được chuẩn hoá theo Loại sản
+ * phẩm của **từng** Sản phẩm rồi so HMAC khớp chính xác, nên một chuỗi sinh ra nhiều hash: các Sản
+ * phẩm có Loại cùng cách chuẩn hoá chung một hash. Chỉ dựng truy vấn, không giải mã gì, nên không ghi Nhật ký
  * xem mã.
  */
 final class DedupeLookup
@@ -36,7 +36,8 @@ final class DedupeLookup
         }
 
         $productIdsByHash = Product::query()
-            ->get(['id', 'case_insensitive', 'strip_separators'])
+            ->with('productType')
+            ->get(['id', 'product_type_id'])
             ->reject(fn (Product $product): bool => $product->normalization()->apply($value) === '')
             ->groupBy(fn (Product $product): string => $this->crypto->dedupeHash($value, $product->normalization()))
             ->map(fn (Collection $products): array => $products->modelKeys());
