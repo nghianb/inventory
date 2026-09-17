@@ -52,6 +52,17 @@ final class ContentCrypto
         return hash_hmac('sha256', $normalization->apply($value), $this->keys->current(KeyPurpose::Hmac)->material);
     }
 
+    /**
+     * Phiên bản khoá HMAC đang tính hash Khoá chống trùng. Bản ghi lưu lại phiên bản này để lệnh
+     * xoay khoá HMAC biết hàng nào còn ở khoá cũ.
+     *
+     * @throws InvalidKeyConfiguration
+     */
+    public function dedupeKeyVersion(): int
+    {
+        return $this->keys->current(KeyPurpose::Hmac)->version;
+    }
+
     private static function encrypter(VersionedKey $key): Encrypter
     {
         return new Encrypter($key->material, self::CIPHER);

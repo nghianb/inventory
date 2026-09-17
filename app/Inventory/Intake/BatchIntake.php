@@ -9,6 +9,7 @@ use App\Inventory\Catalog\ProductType;
 use App\Inventory\Encryption\ContentCrypto;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
+use App\Inventory\Encryption\KeyRotation;
 use App\Inventory\Reveal\RevealActor;
 use App\Inventory\Reveal\RevealContext;
 use App\Inventory\Reveal\RevealLog;
@@ -67,6 +68,7 @@ class BatchIntake
         $this->roles->authorize($actor, Role::NhapKho);
         self::validateDraft($draft);
         $this->fingerprints->verify();
+        self::ensureDedupeKeysSettled();
 
         foreach ($draft->lines as $line) {
             $this->ensureReadable($line);
@@ -129,6 +131,9 @@ class BatchIntake
     public function validate(Batch $batch): void
     {
         $this->fingerprints->verify();
+        // Phân loại bằng khoá HMAC mới trong khi kho còn hash cũ sẽ báo "không trùng" cho mã đã có
+        // trong kho: thà để Lô nhập hỏng kiểm tra kèm lý do rõ ràng.
+        self::ensureDedupeKeysSettled();
 
         DB::transaction(function () use ($batch): void {
             $current = Batch::query()->lockForUpdate()->findOrFail($batch->getKey());
@@ -214,6 +219,7 @@ class BatchIntake
     {
         $this->roles->authorize($actor, Role::NhapKho);
         $this->fingerprints->verify();
+        self::ensureDedupeKeysSettled();
 
         try {
             return $this->write($actor, $batch, $skipStockDuplicates);
@@ -512,6 +518,19 @@ class BatchIntake
         }
     }
 
+    /**
+     * Nhập hàng tạm dừng trong lúc xoay khoá HMAC: kho không bao giờ giữ song song hai hash Khoá
+     * chống trùng, nên ghi thêm hàng lúc này là để lọt dòng trùng.
+     *
+     * @throws InvalidBatch
+     */
+    private static function ensureDedupeKeysSettled(): void
+    {
+        if (KeyRotation::rotatingDedupeKeys()) {
+            throw new InvalidBatch('Đang xoay khoá mã hoá HMAC nên nhập hàng tạm dừng; chạy xong lệnh xoay khoá rồi thử lại.');
+        }
+    }
+
     private static function stockDuplicatesNeedAcknowledgement(int $count): InvalidBatch
     {
         return new InvalidBatch(sprintf(
@@ -601,6 +620,7 @@ class BatchIntake
     {
         $sensitive = $product->contentFields->where('sensitive', true)->pluck('key')->flip()->all();
         $importable = array_values(array_filter($classified, fn (ClassifiedLine $row): bool => $row->isImportable()));
+        $dedupeKeyVersion = $this->crypto->dedupeKeyVersion();
         $inserted = [];
 
         foreach (array_chunk($importable, self::INSERT_CHUNK) as $chunk) {
@@ -618,7 +638,7 @@ class BatchIntake
                 continue;
             }
 
-            $units = DB::table('stock_units')->insertOrIgnoreReturning(array_map(function (ClassifiedLine $row) use ($line, $product, $sensitive, $now): array {
+            $units = DB::table('stock_units')->insertOrIgnoreReturning(array_map(function (ClassifiedLine $row) use ($line, $product, $sensitive, $dedupeKeyVersion, $now): array {
                 $secret = array_intersect_key($row->values, $sensitive);
                 $plain = array_diff_key($row->values, $sensitive);
                 $encrypted = $secret === [] ? null : $this->crypto->encrypt((string) json_encode($secret));
@@ -634,6 +654,7 @@ class BatchIntake
                     'renews_stock_unit_id' => $row->renewsStockUnitId,
                     'holds_dedupe_key' => true,
                     'dedupe_hash' => $row->dedupeHash,
+                    'dedupe_key_version' => $dedupeKeyVersion,
                     'content' => $plain === [] ? null : json_encode($plain),
                     'secret_ciphertext' => $encrypted?->ciphertext,
                     'secret_key_version' => $encrypted?->keyVersion,
