@@ -11,6 +11,7 @@ use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
 use App\Inventory\Dispatch\DispatchStatus;
 use App\Inventory\Dispatch\SalesChannelType;
+use App\Inventory\Dispatch\SlotHolds;
 use App\Inventory\Stock\SellableStock;
 use App\Models\Dispatch;
 use App\Models\DispatchLine;
@@ -174,6 +175,12 @@ class DispatchResource extends Resource
                         ->badge()
                         ->formatStateUsing(fn (DispatchStatus $state): string => $state->label())
                         ->color(fn (DispatchStatus $state): string => $state->color()),
+                    // Phiếu Đang giữ đang giam hàng: nói rõ tới khi nào, để nhân viên thấy tồn hụt
+                    // không phải đoán vì sao.
+                    TextEntry::make('hold_expires_at')
+                        ->label('Hạn giữ')
+                        ->state(fn (Dispatch $record): string => self::holdLabel($record))
+                        ->visible(fn (Dispatch $record): bool => $record->hold_expires_at !== null),
                     TextEntry::make('customer')->label('Khách')->placeholder('Không có')->columnSpan(2),
                     TextEntry::make('total_sale_price')
                         ->label('Tổng Giá bán')
@@ -204,6 +211,24 @@ class DispatchResource extends Resource
                     TextEntry::make('kind')->badge(),
                     TextEntry::make('quantity'),
                     TextEntry::make('sale_price')->placeholder('Chưa có'),
+                ])
+                ->columnSpanFull(),
+            // Phiếu Đang giữ chưa có Lần giao nào; đây là chỗ duy nhất trong panel thấy hàng nào
+            // đang bị phiếu này giam.
+            RepeatableEntry::make('held_slots')
+                ->label('Slot đang giữ')
+                ->state(fn (Dispatch $record): array => array_map(fn (array $held): array => [
+                    'product' => $held['product'],
+                    'unit' => "#{$held['unit']} · Slot #{$held['slot']}",
+                ], SlotHolds::summary($record)))
+                ->visible(fn (Dispatch $record): bool => $record->status === DispatchStatus::Holding)
+                ->table([
+                    TableColumn::make('Sản phẩm'),
+                    TableColumn::make('Đơn vị hàng'),
+                ])
+                ->schema([
+                    TextEntry::make('product'),
+                    TextEntry::make('unit'),
                 ])
                 ->columnSpanFull(),
             Livewire::make(DispatchDeliveries::class, fn (Dispatch $record): array => ['record' => $record])
@@ -372,6 +397,27 @@ class DispatchResource extends Resource
             self::count($slots),
             self::money($prices === [] ? null : array_sum($prices)) ?? 'chưa có',
         );
+    }
+
+    /**
+     * Hạn Giữ hàng của phiếu: mốc hết hạn, kèm thời gian còn lại khi phiếu vẫn Đang giữ. Phiếu đã
+     * qua trạng thái ấy thì mốc chỉ còn là lịch sử.
+     */
+    private static function holdLabel(Dispatch $dispatch): string
+    {
+        $expiresAt = $dispatch->hold_expires_at;
+        assert($expiresAt !== null);
+
+        $moment = $expiresAt->format('d/m/Y H:i');
+
+        if ($dispatch->status !== DispatchStatus::Holding) {
+            return $moment;
+        }
+
+        $minutes = (int) ceil(CarbonImmutable::now()->diffInMinutes($expiresAt, false));
+
+        // Đã quá hạn nhưng job nhả hold (chạy mỗi phút) chưa tới phiếu này.
+        return $minutes > 0 ? "{$moment} (còn {$minutes} phút)" : "{$moment} (đang nhả)";
     }
 
     /**

@@ -68,9 +68,7 @@ beforeEach(function () {
  */
 function postOrder(array $order, ?string $secret = null): TestResponse
 {
-    return test()
-        ->withHeaders(['Authorization' => 'Bearer '.($secret ?? test()->secret)])
-        ->postJson('/api/v1/dispatches', $order);
+    return apiAs($secret)->postJson('/api/v1/dispatches', $order);
 }
 
 /**
@@ -175,7 +173,7 @@ it('gọi lại với Dòng xuất giống hệt trả đúng phiếu cũ và n�
         ->and(RevealLogEntry::count())->toBe(4);
 });
 
-it('gửi lại mã đơn cũ sau Hạn bảo hành chỉ trả thông tin phiếu, không trả nội dung', function () {
+it('gửi lại mã đơn cũ sau Hạn bảo hành vẫn liệt kê lần giao nhưng không trả nội dung', function () {
     stockUp($this->netflix, "a@shop.test\tpw1");
 
     $first = postOrder(netflixOrder())->assertCreated();
@@ -187,10 +185,15 @@ it('gửi lại mã đơn cũ sau Hạn bảo hành chỉ trả thông tin phi�
     $this->travelTo(CarbonImmutable::parse('2026-10-17 09:00'));
 
     $again = postOrder(netflixOrder())->assertOk();
+    $deliveries = collect($again->json('dispatch.deliveries'));
 
     expect($again->json('dispatch.id'))->toBe($first->json('dispatch.id'))
         ->and($again->json('dispatch.external_ref'))->toBe('WEB-1001')
-        ->and($again->json('dispatch.deliveries'))->toBe([])
+        // Lần giao vẫn được liệt kê để website kể đúng lịch sử đơn, chỉ là không kèm nội dung.
+        ->and($deliveries)->toHaveCount(2)
+        ->and($deliveries->pluck('text')->all())->toBe([null, null])
+        ->and($deliveries->pluck('fields')->all())->toBe([null, null])
+        ->and($deliveries->pluck('status')->unique()->all())->toBe(['active'])
         // Không trả nội dung thì cũng không có dòng Nhật ký xem mã mới.
         ->and(RevealLogEntry::count())->toBe(2);
 });

@@ -119,9 +119,10 @@ final class SlotPicker
      * @param  ?int  $correctsDeliveryId  lần giao bị huỷ mà các Slot này Giao thay
      * @param  ?Delivery  $inheritsWarrantyFrom  Đổi hàng: lần giao gốc có Hạn bảo hành (và thời hạn bảo hành, để biết lần giao có bảo hành không) được kế thừa
      * @param  ?User  $actor  null khi lần giao đến từ API: "ai" của lần xuất là Khoá API, ghi ở Phiếu xuất và Sổ biến động kho
+     * @param  SlotStatus  $from  trạng thái Slot trước khi giao: Đã giữ khi phiếu đi đường hai bước, còn lại là Còn hàng
      * @return list<StockTransition> để người gọi ghi Sổ biến động kho
      */
-    public static function deliver(int $dispatchLineId, Product $product, Collection $slots, ?User $actor, CarbonInterface $now, ?int $correctsDeliveryId = null, ?Delivery $inheritsWarrantyFrom = null): array
+    public static function deliver(int $dispatchLineId, Product $product, Collection $slots, ?User $actor, CarbonInterface $now, ?int $correctsDeliveryId = null, ?Delivery $inheritsWarrantyFrom = null, SlotStatus $from = SlotStatus::InStock): array
     {
         DB::table('slots')
             ->whereIn('id', $slots->pluck('id'))
@@ -140,7 +141,7 @@ final class SlotPicker
             'updated_at' => $now,
         ])->all());
 
-        return $slots->map(fn (object $slot): StockTransition => new StockTransition((int) $slot->stock_unit_id, (int) $slot->id, SlotStatus::InStock, SlotStatus::Delivered))->values()->all();
+        return $slots->map(fn (object $slot): StockTransition => new StockTransition((int) $slot->stock_unit_id, (int) $slot->id, $from, SlotStatus::Delivered))->values()->all();
     }
 
     /**

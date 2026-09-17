@@ -5,12 +5,15 @@ namespace App\Inventory\Reveal;
 use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
+use App\Inventory\Dispatch\ApiDelivery;
+use App\Inventory\Dispatch\ApiDeliveryStatus;
 use App\Inventory\Dispatch\DeliveredContent;
 use App\Inventory\Dispatch\DeliveryTemplate;
 use App\Inventory\Dispatch\DispatchLineKind;
 use App\Inventory\Dispatch\DispatchResultContent;
 use App\Inventory\Dispatch\DispatchResultExport;
 use App\Inventory\Dispatch\DispatchResultFormat;
+use App\Inventory\Dispatch\SupersededDeliveries;
 use App\Inventory\Encryption\ContentCrypto;
 use App\Inventory\Encryption\EncryptedContent;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
@@ -244,38 +247,68 @@ class ContentReveal
     }
 
     /**
-     * Nội dung các Slot đã giao của một Phiếu xuất qua API, đã ghép Mẫu giao hàng, cho website hiển
-     * thị theo cách của nó. Tác nhân là Khoá API chứ không phải nhân viên: quyền đã kiểm ở tầng HTTP
-     * khi xác thực khoá, nên ở đây không có Vai trò nào để kiểm. Mỗi Slot ghi một dòng Nhật ký xem
-     * mã ngữ cảnh Giao hàng, kể cả khi website gửi lại một mã đơn đã có.
+     * Các lần Giao hàng của một Phiếu xuất qua API, cho website hiển thị theo cách của nó. Tác nhân
+     * là Khoá API chứ không phải nhân viên: quyền đã kiểm ở tầng HTTP khi xác thực khoá, nên ở đây
+     * không có Vai trò nào để kiểm.
      *
-     * Chỉ các Dòng xuất loại Giao bán: phần nhân viên Giao thêm, Giao thay hay Đổi hàng sau đó không
-     * thuộc đơn website đã gửi. Và chỉ các lần giao còn trong Hạn bảo hành: hết hạn thì website gửi
-     * lại mã đơn cũ chỉ nhận được thông tin phiếu, như nhân viên hết Xem mã được ở panel.
+     * Lần giao nào cũng được liệt kê kèm trạng thái, nhưng **nội dung** chỉ trả cho lần giao còn
+     * hiệu lực và còn trong Hạn bảo hành, và chỉ những lần ấy mới ghi Nhật ký xem mã:
      *
-     * @return list<DeliveredContent> theo thứ tự giao
+     * - lần giao đã bị Đổi hàng hoặc Giao thay thì mã cũ không dùng được nữa, trả ra chỉ làm khách
+     *   nhầm; nội dung nằm ở lần giao thay thế, cũng có trong danh sách này;
+     * - quá Hạn bảo hành thì website chỉ còn thấy bản ghi, như nhân viên hết Xem mã được ở panel.
+     *
+     * @param  bool  $everyLine  true thì mọi Dòng xuất (đọc lại phiếu cho trang đơn của khách);
+     *                           false thì chỉ loại Giao bán, tức phần website đã gửi
+     * @return list<ApiDelivery> theo thứ tự giao
      *
      * @throws KeyFingerprintMismatch
      */
-    public function revealApiDispatch(ApiKey $key, Dispatch $dispatch): array
+    public function revealApiDispatch(ApiKey $key, Dispatch $dispatch, bool $everyLine = false): array
     {
         $this->fingerprints->verify();
 
-        return DB::transaction(function () use ($key, $dispatch): array {
-            $today = CarbonImmutable::today();
-            $deliveries = $dispatch->deliveries()
-                ->where('dispatch_lines.kind', DispatchLineKind::Sale->value)
+        return DB::transaction(function () use ($key, $dispatch, $everyLine): array {
+            $query = $dispatch->deliveries()
                 ->orderBy('deliveries.id')
-                ->with(['slot', 'stockUnit.product.contentFields'])
-                ->get()
-                ->filter(fn (Delivery $delivery): bool => ! $today->gt($delivery->warrantyEndsOn()));
+                ->with(['slot', 'stockUnit.product.contentFields', 'replacement.defectReport']);
 
-            return $this->revealDeliveries(
-                RevealActor::apiKey((int) $key->getKey()),
-                $dispatch,
-                $deliveries,
-                "Đơn qua API theo Phiếu xuất #{$dispatch->id}",
-            );
+            if (! $everyLine) {
+                // Giao thêm, Giao thay và Đổi hàng là việc nhân viên làm sau đó, không thuộc đơn đã gửi.
+                $query->where('dispatch_lines.kind', DispatchLineKind::Sale->value);
+            }
+
+            $deliveries = $query->get();
+            $superseded = SupersededDeliveries::among($deliveries);
+            $today = CarbonImmutable::today();
+            $actor = RevealActor::apiKey((int) $key->getKey());
+            $reason = "Đơn qua API theo Phiếu xuất #{$dispatch->id}";
+
+            return $deliveries->map(function (Delivery $delivery) use ($dispatch, $actor, $reason, $today, $superseded): ApiDelivery {
+                $status = match (true) {
+                    isset($superseded[$delivery->id]) => ApiDeliveryStatus::Replaced,
+                    $delivery->slot->status === SlotStatus::Delivered => ApiDeliveryStatus::Active,
+                    // Slot đã giao chỉ rời trạng thái Đã giao bằng Huỷ hàng: Huỷ nhập đòi mọi Slot
+                    // của Đơn vị hàng còn Còn hàng, nên không với tới lần giao nào.
+                    default => ApiDeliveryStatus::Voided,
+                };
+                $content = null;
+
+                if ($status === ApiDeliveryStatus::Active && ! $today->gt($delivery->warrantyEndsOn())) {
+                    $this->log->record($actor, RevealContext::delivery($delivery), $reason, $delivery->slot);
+                    $content = $this->deliveredContent($delivery, $dispatch);
+                }
+
+                return new ApiDelivery(
+                    id: $delivery->id,
+                    productCode: $delivery->stockUnit->product->code,
+                    status: $status,
+                    replacesDeliveryId: $delivery->corrects_delivery_id ?? $delivery->replacement?->defectReport->delivery_id,
+                    expiresOn: $delivery->stockUnit->expires_on,
+                    warrantyEndsOn: $delivery->warrantyEndsOn(),
+                    content: $content,
+                );
+            })->values()->all();
         });
     }
 

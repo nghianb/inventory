@@ -13,3 +13,7 @@ Schedule::command('inventory:intake:purge')->hourly();
 
 // Ảnh Báo lỗi không còn Báo lỗi nào trỏ tới (tiến trình dừng giữa lúc lưu ảnh và commit).
 Schedule::command('inventory:defect-reports:purge')->hourly();
+
+// Phiếu xuất Đang giữ quá hạn Giữ hàng: nhả Slot về Còn hàng, phiếu sang Hết hạn giữ. Mỗi phút,
+// vì hạn Giữ hàng tính bằng phút; giữ lâu hơn cần thì hàng nằm chết trong kho.
+Schedule::command('inventory:dispatches:release-holds')->everyMinute();

@@ -234,6 +234,13 @@ class ProductResource extends Resource
                     ->counts('inStockSlots')
                     ->suffix(' slot')
                     ->sortable(),
+                // Hàng đang giữ cho đơn web vẫn ở trong kho: không có cột này thì nó trông như
+                // vừa bốc hơi khỏi cột Còn hàng.
+                TextColumn::make('held_slots_count')
+                    ->label('Đã giữ')
+                    ->counts('heldSlots')
+                    ->suffix(' slot')
+                    ->sortable(),
                 TextColumn::make('defective_stock_slots_count')
                     ->label('Tồn lỗi')
                     ->counts('defectiveStockSlots')

@@ -6,6 +6,7 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\RoleGate;
 use App\Inventory\Claims\SupplierClaims;
 use App\Inventory\Dispatch\AffectedDelivery;
+use App\Inventory\Dispatch\SlotHolds;
 use App\Models\Slot;
 use App\Models\StockUnit;
 use App\Models\User;
@@ -87,7 +88,9 @@ class StockDefect
      */
     public function canMarkDefective(User $actor, StockUnit $unit): bool
     {
-        return $this->roles->allows($actor) && $unit->status === StockUnitStatus::Active;
+        return $this->roles->allows($actor)
+            && $unit->status === StockUnitStatus::Active
+            && ! SlotHolds::anyHeldForUnit((int) $unit->getKey());
     }
 
     /**
@@ -106,6 +109,13 @@ class StockDefect
      */
     public function markDefectiveWithin(User $actor, StockUnit $lockedUnit, string $ledgerReason): void
     {
+        // Chuyển Lỗi lúc đang có Slot bị giữ thì Slot ấy vừa phải ghi Tổn thất hàng Lỗi (nó còn
+        // trong kho), vừa sắp được giao cho khách khi website xác nhận — một Slot không thể vừa là
+        // tổn thất vừa là hàng bán, và hàng đã biết là lỗi thì không giao. Hạn giữ tối đa một ngày.
+        if (SlotHolds::anyHeldForUnit((int) $lockedUnit->getKey())) {
+            throw new InvalidDefectMarking(SlotHolds::heldUnitProblem('Đánh dấu Lỗi'));
+        }
+
         $now = now();
         $lockedUnit->forceFill(['status' => StockUnitStatus::Defective, 'defective_at' => $now])->save();
 
