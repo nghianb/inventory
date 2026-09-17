@@ -45,6 +45,16 @@ class StaffManager
     }
 
     /**
+     * Kho đã có Quản trị chưa, kể cả Quản trị đang bị Khoá nhân viên. Để lệnh artisan từ
+     * chối sớm, trước khi bắt người vận hành gõ gì; luật thật vẫn nằm ở
+     * {@see self::createFirstQuanTri()}, nơi có khoá chống hai lần chạy song song.
+     */
+    public function hasQuanTri(): bool
+    {
+        return User::role(Role::QuanTri->value)->exists();
+    }
+
+    /**
      * Tạo Quản trị đầu tiên của kho. Chỉ gọi từ lệnh artisan trên server: kho chưa có
      * Quản trị nào nên không có ai trong app thực hiện được, actor để trống.
      *
@@ -198,7 +208,7 @@ class StaffManager
     {
         $this->lockQuanTriRole();
 
-        if (User::role(Role::QuanTri->value)->exists()) {
+        if ($this->hasQuanTri()) {
             throw new QuanTriAlreadyExists;
         }
     }

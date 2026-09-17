@@ -58,14 +58,15 @@ it('Quản trị đầu tiên phải bật 2FA trước khi vào được panel'
         ->assertRedirect(Filament::getPanel('admin')->getSetUpRequiredMultiFactorAuthenticationUrl());
 });
 
-it('từ chối khi kho đã có Quản trị và chỉ sang đường khác', function (bool $locked) {
+it('từ chối ngay khi kho đã có Quản trị, không hỏi gì', function (bool $locked) {
     $existing = staffMember(Role::QuanTri);
 
     if ($locked) {
         $existing->forceFill(['deactivated_at' => now()])->save();
     }
 
-    answerCreateFirstQuanTri()
+    $this->artisan('staff:create-first-quan-tri')
+        ->expectsOutputToContain('Kho đã có Quản trị.')
         ->expectsOutputToContain('trang Nhân viên')
         ->expectsOutputToContain('staff:recover-quan-tri')
         ->assertFailed();

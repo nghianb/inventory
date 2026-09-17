@@ -14,9 +14,9 @@ use SensitiveParameter;
 
 /**
  * Kho vừa cài xong chưa có nhân viên nào, mà chỉ Quản trị tạo được nhân viên: đây là
- * đường chính thức để có Quản trị đầu tiên, chạy trên server (ADR 0001). Hỏi tương tác
- * nên mật khẩu không nằm lại trong lịch sử shell. Quản trị mới phải bật 2FA ngay ở lần
- * đăng nhập đầu tiên, như mọi nhân viên khác.
+ * đường chính thức để có Quản trị đầu tiên, chạy trên server (ADR 0001). Mật khẩu chỉ
+ * hỏi tương tác và luôn nhập ẩn, nên không nằm lại trong lịch sử shell lẫn trên màn
+ * hình. Quản trị mới phải bật 2FA ngay ở lần đăng nhập đầu tiên, như mọi nhân viên khác.
  */
 #[Signature('staff:create-first-quan-tri')]
 #[Description('Tạo Quản trị đầu tiên của kho, khi kho chưa có Quản trị nào')]
@@ -24,11 +24,15 @@ class CreateFirstQuanTri extends Command
 {
     public function handle(StaffManager $staff): int
     {
+        if ($staff->hasQuanTri()) {
+            return $this->refuse(new QuanTriAlreadyExists);
+        }
+
         $name = (string) $this->ask('Tên');
         $email = (string) $this->ask('Email');
-        $password = (string) $this->secret('Mật khẩu ban đầu');
+        $password = (string) $this->secret('Mật khẩu ban đầu', fallback: false);
 
-        if ((string) $this->secret('Nhập lại mật khẩu ban đầu') !== $password) {
+        if ((string) $this->secret('Nhập lại mật khẩu ban đầu', fallback: false) !== $password) {
             $this->error('Hai lần nhập mật khẩu không giống nhau.');
 
             return self::FAILURE;
@@ -47,16 +51,25 @@ class CreateFirstQuanTri extends Command
         try {
             $quanTri = $staff->createFirstQuanTri($name, $email, $password);
         } catch (QuanTriAlreadyExists $exception) {
-            $this->error($exception->getMessage());
-            $this->line('  - Thêm Quản trị mới: trang Nhân viên trong panel.');
-            $this->line('  - Quản trị bị khoá hoặc mất 2FA: staff:recover-quan-tri');
-
-            return self::FAILURE;
+            return $this->refuse($exception);
         }
 
         $this->info("Đã tạo Quản trị {$quanTri->email}. Đăng nhập vào panel bằng mật khẩu vừa đặt: panel bắt bật 2FA ngay trước khi vào.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Một lối ra cho cả hai lần kiểm: hỏi sớm để khỏi bắt gõ hết rồi mới từ chối, và bắt
+     * lại lúc tạo phòng khi có Quản trị xuất hiện xen vào giữa lúc đang hỏi.
+     */
+    private function refuse(QuanTriAlreadyExists $exception): int
+    {
+        $this->error($exception->getMessage());
+        $this->line('  - Thêm Quản trị mới: trang Nhân viên trong panel.');
+        $this->line('  - Quản trị bị khoá hoặc mất 2FA: staff:recover-quan-tri');
+
+        return self::FAILURE;
     }
 
     /**
