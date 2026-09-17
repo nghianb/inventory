@@ -21,13 +21,13 @@ it('chỉ Quản trị vào được trang Nhân viên', function (Role $role, i
         ->get(StaffResource::getUrl('index'))
         ->assertStatus($status);
 })->with([
-    'Quản trị' => [Role::QuanTri, 200],
+    'Quản trị' => [Role::Owner, 200],
     'Nhập kho' => [Role::NhapKho, 403],
     'Bán hàng' => [Role::BanHang, 403],
 ]);
 
 it('Quản trị tạo nhân viên từ panel', function () {
-    $this->actingAs($admin = staffMember(Role::QuanTri));
+    $this->actingAs($admin = staffMember(Role::Owner));
 
     Livewire::test(ManageStaff::class)
         ->callAction(CreateAction::class, data: [
@@ -45,7 +45,7 @@ it('Quản trị tạo nhân viên từ panel', function () {
 });
 
 it('Quản trị đổi Vai trò, Khoá, mở khoá và reset 2FA từ panel', function () {
-    $this->actingAs(staffMember(Role::QuanTri));
+    $this->actingAs(staffMember(Role::Owner));
     $seller = staffMember(Role::BanHang);
 
     Livewire::test(ManageStaff::class)
@@ -70,7 +70,7 @@ it('Quản trị đổi Vai trò, Khoá, mở khoá và reset 2FA từ panel', f
 });
 
 it('panel báo lỗi thay vì Khoá Quản trị đang hoạt động cuối cùng', function () {
-    $this->actingAs($admin = staffMember(Role::QuanTri));
+    $this->actingAs($admin = staffMember(Role::Owner));
 
     Livewire::test(ManageStaff::class)
         ->callAction(TestAction::make('deactivate')->table($admin))
@@ -80,7 +80,7 @@ it('panel báo lỗi thay vì Khoá Quản trị đang hoạt động cuối cù
 });
 
 it('không có thao tác xoá nhân viên, kể cả với Quản trị', function () {
-    $this->actingAs($admin = staffMember(Role::QuanTri));
+    $this->actingAs($admin = staffMember(Role::Owner));
     $seller = staffMember(Role::BanHang);
 
     Livewire::test(ManageStaff::class)

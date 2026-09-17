@@ -44,7 +44,7 @@ beforeEach(function () {
     app(KeyFingerprints::class)->register();
     $this->travelTo(CarbonImmutable::parse('2026-09-17 10:00'));
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->seller = staffMember(Role::BanHang);
     $this->exposure = app(ContentExposure::class);
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');

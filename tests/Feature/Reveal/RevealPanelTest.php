@@ -1,6 +1,8 @@
 <?php
 
 use App\Filament\Resources\Batches\Pages\ViewBatch;
+use App\Filament\Resources\Dispatches\DispatchResource;
+use App\Filament\Resources\Dispatches\Widgets\DispatchRevealLogEntries;
 use App\Filament\Resources\RevealLogEntries\RevealLogEntryResource;
 use App\Filament\Resources\StockUnits\Pages\ViewStockUnit;
 use App\Filament\Resources\StockUnits\RelationManagers\RevealLogEntriesRelationManager;
@@ -12,10 +14,18 @@ use App\Inventory\Catalog\ProductCatalog;
 use App\Inventory\Catalog\ProductDraft;
 use App\Inventory\Catalog\ProductType;
 use App\Inventory\Catalog\SupplierDirectory;
+use App\Inventory\Dispatch\DispatchDraft;
+use App\Inventory\Dispatch\DispatchLineDraft;
+use App\Inventory\Dispatch\ManualDispatch;
+use App\Inventory\Dispatch\SalesChannelDirectory;
+use App\Inventory\Dispatch\SalesChannelDraft;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
+use App\Inventory\Reveal\ContentReveal;
+use App\Inventory\Reveal\RevealActor;
+use App\Inventory\Reveal\RevealContext;
 use App\Inventory\Reveal\RevealContextType;
 use App\Models\BatchLine;
 use App\Models\RevealLogEntry;
@@ -32,9 +42,9 @@ beforeEach(function () {
     $this->seed(RoleSeeder::class);
     app(KeyFingerprints::class)->register();
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->clerk = staffMember(Role::NhapKho);
-    $product = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
+    $this->product = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
         type: ProductType::OneTimeCode,
         name: 'Steam Wallet 100k',
         code: 'STEAM-100K',
@@ -45,7 +55,7 @@ beforeEach(function () {
     $this->batch = app(BatchIntake::class)->submit($this->clerk, new BatchDraft(
         supplier: app(SupplierDirectory::class)->create($this->admin, 'Kinguin'),
         receivedOn: CarbonImmutable::parse('2026-09-15'),
-        lines: [new BatchLineDraft($product, 95_000, "AAAA-BBBB\naaaa-bbbb")],
+        lines: [new BatchLineDraft($this->product, 95_000, "AAAA-BBBB\naaaa-bbbb")],
     ));
 });
 
@@ -54,7 +64,7 @@ it('chỉ Quản trị vào được Nhật ký xem mã', function (Role $role, 
         ->get(RevealLogEntryResource::getUrl('index'))
         ->assertStatus($status);
 })->with([
-    'Quản trị' => [Role::QuanTri, 200],
+    'Quản trị' => [Role::Owner, 200],
     'Nhập kho' => [Role::NhapKho, 403],
     'Bán hàng' => [Role::BanHang, 403],
 ]);
@@ -126,6 +136,64 @@ it('Quản trị không thấy nút xem nội dung trên Slot đã rời Còn h�
 
     Livewire::test(SlotsRelationManager::class, ['ownerRecord' => StockUnit::sole(), 'pageClass' => ViewStockUnit::class])
         ->assertActionHidden(TestAction::make('reveal')->table(Slot::sole()));
+});
+
+it('Quản trị thấy Đã được xem bởi trên trang Phiếu xuất: mọi lượt xem của Slot đã giao, bất kể Ngữ cảnh xem mã', function () {
+    app(BatchIntake::class)->confirm($this->clerk, $this->batch);
+    $reveal = app(ContentReveal::class);
+
+    // Lượt xem lúc hàng còn trong kho: Ngữ cảnh không phải Giao hàng nhưng vẫn là đã thấy mã của Slot.
+    $reveal->reveal(RevealActor::staff($this->admin), Slot::sole(), RevealContext::inStock(), 'Khách hỏi lại mã');
+
+    $seller = staffMember(Role::BanHang);
+    $channel = app(SalesChannelDirectory::class)->create($this->admin, new SalesChannelDraft('Zalo'));
+    $dispatch = app(ManualDispatch::class)->create($seller, new DispatchDraft($channel, 'SP-001', [new DispatchLineDraft($this->product, 1)], 'Anh Minh'));
+    $delivery = $dispatch->deliveries()->firstOrFail();
+    $reveal->revealDelivery($seller, $delivery);
+
+    // Slot của Đơn vị hàng khác, không nằm trong phiếu: lượt xem của nó không được lẫn vào.
+    $intake = app(BatchIntake::class);
+    $intake->confirm($this->clerk, $intake->submit($this->clerk, new BatchDraft(
+        supplier: app(SupplierDirectory::class)->create($this->admin, 'G2A'),
+        receivedOn: CarbonImmutable::parse('2026-09-15'),
+        lines: [new BatchLineDraft($this->product, 95_000, 'CCCC-DDDD')],
+    )));
+    $reveal->reveal(RevealActor::staff($this->admin), Slot::query()->whereKeyNot($delivery->slot_id)->sole(), RevealContext::inStock(), 'Kiểm tra hàng khác');
+
+    $this->actingAs($this->admin);
+
+    $this->get(DispatchResource::getUrl('view', ['record' => $dispatch]))
+        ->assertOk()
+        ->assertSee('Đã được xem bởi')
+        ->assertDontSee('AAAA-BBBB');
+
+    Livewire::test(DispatchRevealLogEntries::class, ['record' => $dispatch])
+        ->assertCanSeeTableRecords(RevealLogEntry::where('slot_id', $delivery->slot_id)->get())
+        ->assertSee(['Quản trị xem hàng Còn hàng', 'Giao hàng', 'Khách hỏi lại mã', $this->admin->name, $seller->name])
+        ->assertDontSee('Kiểm tra hàng khác')
+        ->assertDontSee('AAAA-BBBB');
+});
+
+it('Bán hàng và Nhập kho không thấy Đã được xem bởi trên trang Phiếu xuất', function () {
+    app(BatchIntake::class)->confirm($this->clerk, $this->batch);
+    $seller = staffMember(Role::BanHang);
+    $channel = app(SalesChannelDirectory::class)->create($this->admin, new SalesChannelDraft('Zalo'));
+    $dispatch = app(ManualDispatch::class)->create($seller, new DispatchDraft($channel, 'SP-001', [new DispatchLineDraft($this->product, 1)], 'Anh Minh'));
+    app(ContentReveal::class)->revealDelivery($seller, $dispatch->deliveries()->firstOrFail());
+
+    $this->actingAs($seller);
+
+    $this->get(DispatchResource::getUrl('view', ['record' => $dispatch]))
+        ->assertOk()
+        ->assertDontSee('Đã được xem bởi');
+
+    expect(DispatchRevealLogEntries::canView())->toBeFalse();
+
+    $this->actingAs($this->clerk);
+
+    $this->get(DispatchResource::getUrl('view', ['record' => $dispatch]))->assertForbidden();
+
+    expect(DispatchRevealLogEntries::canView())->toBeFalse();
 });
 
 it('người tạo Lô nhập tải CSV dòng bị bỏ ở màn xem trước và ngay sau xác nhận; người khác và lúc sau không thấy nút', function () {

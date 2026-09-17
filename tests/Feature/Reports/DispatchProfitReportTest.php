@@ -39,7 +39,7 @@ beforeEach(function () {
     $this->seed(RoleSeeder::class);
     app(KeyFingerprints::class)->register();
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->seller = staffMember(Role::BanHang);
     $this->report = app(DispatchProfitReport::class);
 

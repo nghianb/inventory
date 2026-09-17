@@ -37,7 +37,7 @@ beforeEach(function () {
     $this->seed(RoleSeeder::class);
     app(KeyFingerprints::class)->register();
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
     $this->product = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
         type: ProductType::OneTimeCode,
@@ -54,7 +54,7 @@ it('Quản trị và Nhập kho vào được trang Lô nhập, Bán hàng thì 
     $this->get(BatchResource::getUrl('create'))->assertStatus($seesBatches ? 200 : 403);
     $this->get(StockUnitResource::getUrl('index'))->assertOk();
 })->with([
-    'Quản trị' => [Role::QuanTri, true],
+    'Quản trị' => [Role::Owner, true],
     'Nhập kho' => [Role::NhapKho, true],
     'Bán hàng' => [Role::BanHang, false],
 ]);

@@ -37,7 +37,7 @@ beforeEach(function () {
     $this->seed(RoleSeeder::class);
     app(KeyFingerprints::class)->register();
 
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $this->seller = staffMember(Role::BanHang);
     $this->channel = app(SalesChannelDirectory::class)->create($admin, new SalesChannelDraft('Zalo'));
     $this->product = app(ProductCatalog::class)->create($admin, new ProductDraft(

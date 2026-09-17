@@ -40,7 +40,7 @@ beforeEach(function () {
     app(KeyFingerprints::class)->register();
     $this->travelTo(CarbonImmutable::parse('2026-09-15 10:00'));
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->stocker = staffMember(Role::NhapKho);
     $this->netflix = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
         type: ProductType::Account,
@@ -78,7 +78,7 @@ it('Quản trị và Nhập kho vào được trang Khiếu nại nhà cung cấ
     $this->get(SupplierClaimResource::getUrl('index'))->assertStatus($sees ? 200 : 403);
     $this->get(SupplierClaimResource::getUrl('create'))->assertStatus($sees ? 200 : 403);
 })->with([
-    'Quản trị' => [Role::QuanTri, true],
+    'Quản trị' => [Role::Owner, true],
     'Nhập kho' => [Role::NhapKho, true],
     'Bán hàng' => [Role::BanHang, false],
 ]);

@@ -29,7 +29,7 @@ beforeEach(function () {
     app(KeyFingerprints::class)->register();
 
     $this->intake = app(BatchIntake::class);
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->clerk = staffMember(Role::NhapKho);
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
     $this->product = app(ProductCatalog::class)->create($this->admin, new ProductDraft(

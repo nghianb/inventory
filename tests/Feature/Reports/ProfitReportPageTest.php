@@ -33,7 +33,7 @@ beforeEach(function () {
     $this->seed(RoleSeeder::class);
     app(KeyFingerprints::class)->register();
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->stocker = staffMember(Role::NhapKho);
     $this->seller = staffMember(Role::BanHang);
 
@@ -81,7 +81,7 @@ it('chỉ Quản trị vào được ba trang báo cáo Lãi/lỗ', function (?R
         $this->get($url)->assertStatus($sees ? 200 : 403);
     }
 })->with([
-    'Quản trị' => [Role::QuanTri, true],
+    'Quản trị' => [Role::Owner, true],
     'Nhập kho' => [Role::NhapKho, false],
     'Bán hàng' => [Role::BanHang, false],
     'không vai trò' => [null, false],

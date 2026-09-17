@@ -19,7 +19,7 @@ it('Quản trị và Nhập kho vào được trang Nhà cung cấp, Bán hàng 
         ->get(SupplierResource::getUrl('index'))
         ->assertStatus($status);
 })->with([
-    'Quản trị' => [Role::QuanTri, 200],
+    'Quản trị' => [Role::Owner, 200],
     'Nhập kho' => [Role::NhapKho, 200],
     'Bán hàng' => [Role::BanHang, 403],
 ]);

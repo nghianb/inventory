@@ -54,7 +54,7 @@ beforeEach(function () {
     $this->seed(RoleSeeder::class);
     app(KeyFingerprints::class)->register();
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->stocker = staffMember(Role::NhapKho);
     $this->seller = staffMember(Role::BanHang);
     $this->report = app(MovementReport::class);

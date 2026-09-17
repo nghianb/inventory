@@ -7,7 +7,6 @@ use App\Filament\Support\InventoryAction;
 use App\Models\RevealLogEntry;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -26,7 +25,6 @@ class RevealLogEntriesRelationManager extends RelationManager
 
     public function table(Table $table): Table
     {
-        return RevealLogEntryResource::configureColumns($table)
-            ->modifyQueryUsing(fn (Builder $query) => $query->with('user'));
+        return RevealLogEntryResource::configureColumns($table);
     }
 }

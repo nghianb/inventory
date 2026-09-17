@@ -11,18 +11,18 @@ beforeEach(function () {
     $this->seed(RoleSeeder::class);
 });
 
-function lockedOutQuanTri(string $email = 'chu@shop.test'): User
+function lockedOutOwner(string $email = 'chu@shop.test'): User
 {
     return tap(User::factory()->withTwoFactor()->create([
         'email' => $email,
         'deactivated_at' => now(),
-    ]))->assignRole(Role::QuanTri);
+    ]))->assignRole(Role::Owner);
 }
 
 it('mở khoá Quản trị từ server và ghi Nhật ký bảo mật', function () {
-    $admin = lockedOutQuanTri();
+    $admin = lockedOutOwner();
 
-    $this->artisan('staff:recover-quan-tri', ['email' => 'chu@shop.test', '--unlock' => true])
+    $this->artisan('staff:recover-owner', ['email' => 'chu@shop.test', '--unlock' => true])
         ->assertSuccessful();
 
     expect($admin->fresh()->isDeactivated())->toBeFalse()
@@ -35,9 +35,9 @@ it('mở khoá Quản trị từ server và ghi Nhật ký bảo mật', functio
 });
 
 it('reset 2FA của Quản trị từ server và ghi Nhật ký bảo mật', function () {
-    $admin = lockedOutQuanTri();
+    $admin = lockedOutOwner();
 
-    $this->artisan('staff:recover-quan-tri', ['email' => 'chu@shop.test', '--reset-2fa' => true])
+    $this->artisan('staff:recover-owner', ['email' => 'chu@shop.test', '--reset-2fa' => true])
         ->assertSuccessful();
 
     expect(AppAuthentication::make()->isEnabled($admin->fresh()))->toBeFalse()
@@ -50,9 +50,9 @@ it('reset 2FA của Quản trị từ server và ghi Nhật ký bảo mật', fu
 });
 
 it('mở khoá và reset 2FA cùng lúc', function () {
-    $admin = lockedOutQuanTri();
+    $admin = lockedOutOwner();
 
-    $this->artisan('staff:recover-quan-tri', ['email' => 'chu@shop.test', '--unlock' => true, '--reset-2fa' => true])
+    $this->artisan('staff:recover-owner', ['email' => 'chu@shop.test', '--unlock' => true, '--reset-2fa' => true])
         ->assertSuccessful();
 
     expect($admin->fresh()->isDeactivated())->toBeFalse()
@@ -67,7 +67,7 @@ it('từ chối khôi phục cho nhân viên không mang Vai trò Quản trị',
         'deactivated_at' => now(),
     ]))->assignRole(Role::BanHang);
 
-    $this->artisan('staff:recover-quan-tri', ['email' => 'binh@shop.test', '--unlock' => true])
+    $this->artisan('staff:recover-owner', ['email' => 'binh@shop.test', '--unlock' => true])
         ->assertFailed();
 
     expect($seller->fresh()->isDeactivated())->toBeTrue()
@@ -75,9 +75,9 @@ it('từ chối khôi phục cho nhân viên không mang Vai trò Quản trị',
 });
 
 it('báo lỗi khi email không tồn tại hoặc không chọn thao tác nào', function (array $arguments) {
-    lockedOutQuanTri();
+    lockedOutOwner();
 
-    $this->artisan('staff:recover-quan-tri', $arguments)->assertFailed();
+    $this->artisan('staff:recover-owner', $arguments)->assertFailed();
 
     expect(SecurityLogEntry::count())->toBe(0);
 })->with([

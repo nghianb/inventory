@@ -13,7 +13,7 @@ use Database\Seeders\RoleSeeder;
 beforeEach(function () {
     $this->seed(RoleSeeder::class);
     $this->channels = app(SalesChannelDirectory::class);
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
 });
 
 it('Quản trị khai báo Kênh bán thủ công với cờ bắt buộc mã đơn ngoài', function () {

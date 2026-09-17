@@ -30,7 +30,7 @@ class SalesChannelDirectory
      */
     public function create(User $actor, SalesChannelDraft $draft): SalesChannel
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         return self::save(new SalesChannel, $draft);
     }
@@ -41,7 +41,7 @@ class SalesChannelDirectory
      */
     public function update(User $actor, SalesChannel $channel, SalesChannelDraft $draft): SalesChannel
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         return self::save($channel, $draft);
     }
@@ -53,7 +53,7 @@ class SalesChannelDirectory
      */
     public function hide(User $actor, SalesChannel $channel): void
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         $channel->forceFill(['hidden_at' => $channel->hidden_at ?? now()])->save();
     }
@@ -63,7 +63,7 @@ class SalesChannelDirectory
      */
     public function unhide(User $actor, SalesChannel $channel): void
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         $channel->forceFill(['hidden_at' => null])->save();
     }

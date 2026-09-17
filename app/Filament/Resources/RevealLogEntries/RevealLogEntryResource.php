@@ -36,7 +36,6 @@ class RevealLogEntryResource extends Resource
     public static function table(Table $table): Table
     {
         return static::configureColumns($table)
-            ->modifyQueryUsing(fn (Builder $query) => $query->with('user'))
             ->filters([
                 SelectFilter::make('context')
                     ->label('Ngữ cảnh')
@@ -47,12 +46,14 @@ class RevealLogEntryResource extends Resource
     }
 
     /**
-     * Cột dùng chung cho màn Nhật ký xem mã và lịch sử xem trên chi tiết Đơn vị hàng.
+     * Cột dùng chung cho màn Nhật ký xem mã, lịch sử xem trên chi tiết Đơn vị hàng và mục Đã được
+     * xem bởi trên trang xem Phiếu xuất.
      */
     public static function configureColumns(Table $table): Table
     {
         return $table
             ->defaultSort('id', 'desc')
+            ->modifyQueryUsing(fn (Builder $query) => $query->with('user'))
             ->columns([
                 TextColumn::make('occurred_at')
                     ->label('Thời điểm')

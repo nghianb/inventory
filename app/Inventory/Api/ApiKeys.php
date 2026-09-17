@@ -43,7 +43,7 @@ class ApiKeys
      */
     public function issue(User $actor, SalesChannel $channel, ?string $label = null): IssuedApiKey
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         return $this->add($actor, $channel, $label, null, SecurityEvent::ApiKeyCreated);
     }
@@ -57,7 +57,7 @@ class ApiKeys
      */
     public function rotate(User $actor, ApiKey $key, ?string $label = null): IssuedApiKey
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         if ($key->isRevoked()) {
             throw new InvalidApiKey('Khoá API đã thu hồi.');
@@ -75,7 +75,7 @@ class ApiKeys
      */
     public function revoke(User $actor, ApiKey $key): ApiKey
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         return DB::transaction(function () use ($actor, $key): ApiKey {
             $current = ApiKey::query()->lockForUpdate()->findOrFail($key->getKey());
