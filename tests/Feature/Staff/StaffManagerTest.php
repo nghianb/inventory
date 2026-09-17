@@ -5,8 +5,8 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
 use App\Inventory\Security\SecurityEvent;
-use App\Inventory\Staff\LastActiveQuanTri;
-use App\Inventory\Staff\QuanTriAlreadyExists;
+use App\Inventory\Staff\LastActiveOwner;
+use App\Inventory\Staff\OwnerAlreadyExists;
 use App\Inventory\Staff\StaffManager;
 use App\Models\SecurityLogEntry;
 use App\Models\User;
@@ -22,33 +22,33 @@ beforeEach(function () {
 });
 
 it('tạo Quản trị đầu tiên của kho từ server và ghi Nhật ký bảo mật', function () {
-    $owner = $this->staff->createFirstQuanTri('Chủ shop', 'chu@shop.test', 'mat-khau-ban-dau');
+    $owner = $this->staff->createFirstOwner('Chủ shop', 'chu@shop.test', 'mat-khau-ban-dau');
 
     expect($owner->fresh())
         ->name->toBe('Chủ shop')
         ->email->toBe('chu@shop.test')
         ->and($owner->fresh()->isDeactivated())->toBeFalse()
         ->and(Hash::check('mat-khau-ban-dau', $owner->fresh()->password))->toBeTrue()
-        ->and($owner->hasRole(Role::QuanTri))->toBeTrue();
+        ->and($owner->hasRole(Role::Owner))->toBeTrue();
 
     $entry = SecurityLogEntry::where('event', SecurityEvent::StaffCreated)->sole();
 
     expect($entry)
         ->user_id->toBe($owner->id)
         ->actor_id->toBeNull()
-        ->details->toBe(['via' => 'artisan', 'roles' => ['quan-tri']])
+        ->details->toBe(['via' => 'artisan', 'roles' => ['owner']])
         ->and(json_encode($entry->toArray()))->not->toContain('mat-khau-ban-dau');
 });
 
 it('từ chối tạo Quản trị đầu tiên khi kho đã có Quản trị', function (bool $locked) {
-    $existing = staffMember(Role::QuanTri);
+    $existing = staffMember(Role::Owner);
 
     if ($locked) {
         $existing->forceFill(['deactivated_at' => now()])->save();
     }
 
-    expect(fn () => $this->staff->createFirstQuanTri('Chủ shop', 'chu@shop.test', 'mat-khau-ban-dau'))
-        ->toThrow(QuanTriAlreadyExists::class);
+    expect(fn () => $this->staff->createFirstOwner('Chủ shop', 'chu@shop.test', 'mat-khau-ban-dau'))
+        ->toThrow(OwnerAlreadyExists::class);
 
     expect(User::where('email', 'chu@shop.test')->exists())->toBeFalse()
         ->and(SecurityLogEntry::where('event', SecurityEvent::StaffCreated)->exists())->toBeFalse();
@@ -58,7 +58,7 @@ it('từ chối tạo Quản trị đầu tiên khi kho đã có Quản trị', 
 ]);
 
 it('Quản trị tạo nhân viên kèm Vai trò và ghi Nhật ký bảo mật', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
 
     $created = $this->staff->create($admin, 'Bình', 'binh@shop.test', 'mat-khau-ban-dau', [Role::NhapKho, Role::BanHang]);
 
@@ -67,7 +67,7 @@ it('Quản trị tạo nhân viên kèm Vai trò và ghi Nhật ký bảo mật'
         ->email->toBe('binh@shop.test')
         ->and(Hash::check('mat-khau-ban-dau', $created->fresh()->password))->toBeTrue()
         ->and($created->hasAllRoles([Role::NhapKho, Role::BanHang]))->toBeTrue()
-        ->and($created->hasRole(Role::QuanTri))->toBeFalse();
+        ->and($created->hasRole(Role::Owner))->toBeFalse();
 
     $entry = SecurityLogEntry::where('event', SecurityEvent::StaffCreated)->sole();
 
@@ -90,7 +90,7 @@ it('chỉ Quản trị tạo được nhân viên', function (Role $role) {
 ]);
 
 it('Quản trị đổi Vai trò của nhân viên và ghi Nhật ký bảo mật', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $seller = staffMember(Role::BanHang);
 
     $this->staff->changeRoles($admin, $seller, [Role::NhapKho]);
@@ -106,10 +106,10 @@ it('Quản trị đổi Vai trò của nhân viên và ghi Nhật ký bảo mậ
 it('chỉ Quản trị đổi được Vai trò', function (Role $role) {
     $seller = staffMember(Role::BanHang);
 
-    expect(fn () => $this->staff->changeRoles(staffMember($role), $seller, [Role::QuanTri]))
+    expect(fn () => $this->staff->changeRoles(staffMember($role), $seller, [Role::Owner]))
         ->toThrow(MissingRole::class);
 
-    expect($seller->fresh()->hasRole(Role::QuanTri))->toBeFalse()
+    expect($seller->fresh()->hasRole(Role::Owner))->toBeFalse()
         ->and(SecurityLogEntry::where('event', SecurityEvent::RolesChanged)->exists())->toBeFalse();
 })->with([
     'Nhập kho' => Role::NhapKho,
@@ -117,26 +117,26 @@ it('chỉ Quản trị đổi được Vai trò', function (Role $role) {
 ]);
 
 it('chặn gỡ Vai trò Quản trị của Quản trị đang hoạt động cuối cùng', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
 
     expect(fn () => $this->staff->changeRoles($admin, $admin, [Role::BanHang]))
-        ->toThrow(LastActiveQuanTri::class);
+        ->toThrow(LastActiveOwner::class);
 
-    expect($admin->fresh()->hasRole(Role::QuanTri))->toBeTrue()
+    expect($admin->fresh()->hasRole(Role::Owner))->toBeTrue()
         ->and(SecurityLogEntry::where('event', SecurityEvent::RolesChanged)->exists())->toBeFalse();
 });
 
 it('gỡ được Vai trò Quản trị khi còn Quản trị đang hoạt động khác', function () {
-    $owner = staffMember(Role::QuanTri);
-    $other = staffMember(Role::QuanTri);
+    $owner = staffMember(Role::Owner);
+    $other = staffMember(Role::Owner);
 
     $this->staff->changeRoles($owner, $other, [Role::BanHang]);
 
-    expect($other->fresh()->hasRole(Role::QuanTri))->toBeFalse();
+    expect($other->fresh()->hasRole(Role::Owner))->toBeFalse();
 });
 
 it('Quản trị Khoá nhân viên và ghi Nhật ký bảo mật', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $seller = staffMember(Role::BanHang);
 
     $this->staff->deactivate($admin, $seller);
@@ -162,7 +162,7 @@ it('chỉ Quản trị Khoá được nhân viên', function (Role $role) {
 ]);
 
 it('Khoá nhân viên cắt ngay phiên đang mở', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $seller = staffMember(Role::BanHang);
     $panelUrl = Filament::getPanel('admin')->getUrl();
 
@@ -178,7 +178,7 @@ it('Khoá nhân viên cắt ngay phiên đang mở', function () {
 });
 
 it('nhân viên bị khoá không đăng nhập được', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $seller = tap(User::factory()->withTwoFactor()->create(['email' => 'binh@shop.test']))->assignRole(Role::BanHang);
     $this->staff->deactivate($admin, $seller);
 
@@ -192,26 +192,26 @@ it('nhân viên bị khoá không đăng nhập được', function () {
 });
 
 it('chặn Khoá Quản trị đang hoạt động cuối cùng', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
 
     expect(fn () => $this->staff->deactivate($admin, $admin))
-        ->toThrow(LastActiveQuanTri::class);
+        ->toThrow(LastActiveOwner::class);
 
     expect($admin->fresh()->isDeactivated())->toBeFalse()
         ->and(SecurityLogEntry::where('event', SecurityEvent::StaffDeactivated)->exists())->toBeFalse();
 });
 
 it('Quản trị đã bị khoá không tính là Quản trị đang hoạt động', function () {
-    $owner = staffMember(Role::QuanTri);
-    $other = staffMember(Role::QuanTri);
+    $owner = staffMember(Role::Owner);
+    $other = staffMember(Role::Owner);
     $this->staff->deactivate($owner, $other);
 
     expect(fn () => $this->staff->changeRoles($owner, $owner, [Role::BanHang]))
-        ->toThrow(LastActiveQuanTri::class);
+        ->toThrow(LastActiveOwner::class);
 });
 
 it('Quản trị reset 2FA của nhân viên, buộc thiết lập lại ở lần đăng nhập sau', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $seller = staffMember(Role::BanHang);
     $oldSecret = $seller->app_authentication_secret;
 
@@ -245,7 +245,7 @@ it('chỉ Quản trị reset được 2FA', function (Role $role) {
 ]);
 
 it('Quản trị mở khoá nhân viên và ghi Nhật ký bảo mật', function () {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $seller = staffMember(Role::BanHang);
     $this->staff->deactivate($admin, $seller);
 
@@ -258,7 +258,7 @@ it('Quản trị mở khoá nhân viên và ghi Nhật ký bảo mật', functio
 });
 
 it('chỉ Quản trị mở khoá được nhân viên', function (Role $role) {
-    $admin = staffMember(Role::QuanTri);
+    $admin = staffMember(Role::Owner);
     $seller = staffMember(Role::BanHang);
     $this->staff->deactivate($admin, $seller);
 

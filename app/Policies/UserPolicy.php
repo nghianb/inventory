@@ -16,17 +16,17 @@ class UserPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->roles->allows($user, Role::QuanTri);
+        return $this->roles->allows($user, Role::Owner);
     }
 
     public function view(User $user, User $staff): bool
     {
-        return $this->roles->allows($user, Role::QuanTri);
+        return $this->roles->allows($user, Role::Owner);
     }
 
     public function create(User $user): bool
     {
-        return $this->roles->allows($user, Role::QuanTri);
+        return $this->roles->allows($user, Role::Owner);
     }
 
     public function update(User $user, User $staff): bool

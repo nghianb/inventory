@@ -43,7 +43,7 @@ beforeEach(function () {
     app(KeyFingerprints::class)->register();
     $this->travelTo(CarbonImmutable::parse('2026-09-15 10:00'));
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->stocker = staffMember(Role::NhapKho);
     $this->seller = staffMember(Role::BanHang);
     $this->report = app(StockReport::class);

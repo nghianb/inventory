@@ -50,7 +50,7 @@ beforeEach(function () {
     app(KeyFingerprints::class)->register();
     $this->travelTo(CarbonImmutable::parse('2026-09-15 10:00'));
 
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->seller = staffMember(Role::BanHang);
     $this->shopee = app(SalesChannelDirectory::class)->create($this->admin, new SalesChannelDraft('Shopee', requiresExternalRef: true));
     $this->zalo = app(SalesChannelDirectory::class)->create($this->admin, new SalesChannelDraft('Zalo'));
@@ -76,7 +76,7 @@ it('Quản trị và Bán hàng vào được Phiếu xuất, Nhập kho thì kh
     $this->get(DispatchResource::getUrl('create'))->assertStatus($dispatches);
     $this->get(SalesChannelResource::getUrl('index'))->assertStatus($channels);
 })->with([
-    'Quản trị' => [Role::QuanTri, 200, 200],
+    'Quản trị' => [Role::Owner, 200, 200],
     'Bán hàng' => [Role::BanHang, 200, 403],
     'Nhập kho' => [Role::NhapKho, 403, 403],
 ]);

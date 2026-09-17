@@ -30,7 +30,7 @@ class StaffManager
      */
     public function create(User $actor, string $name, string $email, #[SensitiveParameter] string $password, array $roles): User
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         return DB::transaction(function () use ($actor, $name, $email, $password, $roles): User {
             $staff = User::create(['name' => $name, 'email' => $email, 'password' => $password]);
@@ -47,33 +47,33 @@ class StaffManager
     /**
      * Kho đã có Quản trị chưa, kể cả Quản trị đang bị Khoá nhân viên. Để lệnh artisan từ
      * chối sớm, trước khi bắt người vận hành gõ gì; luật thật vẫn nằm ở
-     * {@see self::createFirstQuanTri()}, nơi có khoá chống hai lần chạy song song.
+     * {@see self::createFirstOwner()}, nơi có khoá chống hai lần chạy song song.
      */
-    public function hasQuanTri(): bool
+    public function hasOwner(): bool
     {
-        return User::role(Role::QuanTri->value)->exists();
+        return User::role(Role::Owner->value)->exists();
     }
 
     /**
      * Tạo Quản trị đầu tiên của kho. Chỉ gọi từ lệnh artisan trên server: kho chưa có
      * Quản trị nào nên không có ai trong app thực hiện được, actor để trống.
      *
-     * @throws QuanTriAlreadyExists
+     * @throws OwnerAlreadyExists
      */
-    public function createFirstQuanTri(string $name, string $email, #[SensitiveParameter] string $password): User
+    public function createFirstOwner(string $name, string $email, #[SensitiveParameter] string $password): User
     {
         return DB::transaction(function () use ($name, $email, $password): User {
-            $this->ensureNoQuanTri();
+            $this->ensureNoOwner();
 
-            $quanTri = User::create(['name' => $name, 'email' => $email, 'password' => $password]);
-            $quanTri->syncRoles([Role::QuanTri]);
+            $owner = User::create(['name' => $name, 'email' => $email, 'password' => $password]);
+            $owner->syncRoles([Role::Owner]);
 
-            $this->log->record(SecurityEvent::StaffCreated, $quanTri, details: [
-                'roles' => self::roleNames([Role::QuanTri]),
+            $this->log->record(SecurityEvent::StaffCreated, $owner, details: [
+                'roles' => self::roleNames([Role::Owner]),
                 'via' => 'artisan',
             ]);
 
-            return $quanTri;
+            return $owner;
         });
     }
 
@@ -83,15 +83,15 @@ class StaffManager
      * @param  list<Role>  $roles
      *
      * @throws MissingRole
-     * @throws LastActiveQuanTri
+     * @throws LastActiveOwner
      */
     public function changeRoles(User $actor, User $staff, array $roles): void
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         DB::transaction(function () use ($actor, $staff, $roles): void {
-            if (! in_array(Role::QuanTri, $roles, true)) {
-                $this->ensureNotLastActiveQuanTri($staff);
+            if (! in_array(Role::Owner, $roles, true)) {
+                $this->ensureNotLastActiveOwner($staff);
             }
 
             $from = self::roleNames($staff->roles()->pluck('name')->map(fn (string $name): Role => Role::from($name))->all());
@@ -110,14 +110,14 @@ class StaffManager
      * (middleware Authenticate của panel) và cookie "ghi nhớ" cũ mất hiệu lực.
      *
      * @throws MissingRole
-     * @throws LastActiveQuanTri
+     * @throws LastActiveOwner
      */
     public function deactivate(User $actor, User $staff): void
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         DB::transaction(function () use ($actor, $staff): void {
-            $this->ensureNotLastActiveQuanTri($staff);
+            $this->ensureNotLastActiveOwner($staff);
 
             $staff->forceFill([
                 'deactivated_at' => now(),
@@ -133,7 +133,7 @@ class StaffManager
      */
     public function reactivate(User $actor, User $staff): void
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         DB::transaction(fn () => $this->unlock($staff, actor: $actor));
     }
@@ -145,7 +145,7 @@ class StaffManager
      */
     public function resetTwoFactor(User $actor, User $staff): void
     {
-        $this->roles->authorize($actor, Role::QuanTri);
+        $this->roles->authorize($actor, Role::Owner);
 
         DB::transaction(fn () => $this->clearTwoFactor($staff, actor: $actor));
     }
@@ -156,21 +156,21 @@ class StaffManager
      *
      * @throws MissingRole nếu nhân viên không mang Vai trò Quản trị
      */
-    public function recoverQuanTriAccess(User $quanTri, bool $reactivate, bool $resetTwoFactor): void
+    public function recoverOwnerAccess(User $owner, bool $reactivate, bool $resetTwoFactor): void
     {
-        if (! $quanTri->hasRole(Role::QuanTri)) {
-            throw new MissingRole($quanTri, [Role::QuanTri]);
+        if (! $owner->hasRole(Role::Owner)) {
+            throw new MissingRole($owner, [Role::Owner]);
         }
 
-        DB::transaction(function () use ($quanTri, $reactivate, $resetTwoFactor): void {
+        DB::transaction(function () use ($owner, $reactivate, $resetTwoFactor): void {
             $details = ['via' => 'artisan'];
 
             if ($reactivate) {
-                $this->unlock($quanTri, details: $details);
+                $this->unlock($owner, details: $details);
             }
 
             if ($resetTwoFactor) {
-                $this->clearTwoFactor($quanTri, details: $details);
+                $this->clearTwoFactor($owner, details: $details);
             }
         });
     }
@@ -202,32 +202,32 @@ class StaffManager
      * Quản trị bị khoá vẫn tính là đã có: kho chỉ thiếu Quản trị đúng một lần, ngay sau
      * khi cài. Phải gọi trong transaction.
      *
-     * @throws QuanTriAlreadyExists
+     * @throws OwnerAlreadyExists
      */
-    private function ensureNoQuanTri(): void
+    private function ensureNoOwner(): void
     {
-        $this->lockQuanTriRole();
+        $this->lockOwnerRole();
 
-        if ($this->hasQuanTri()) {
-            throw new QuanTriAlreadyExists;
+        if ($this->hasOwner()) {
+            throw new OwnerAlreadyExists;
         }
     }
 
     /**
      * Phải gọi trong transaction.
      *
-     * @throws LastActiveQuanTri
+     * @throws LastActiveOwner
      */
-    private function ensureNotLastActiveQuanTri(User $staff): void
+    private function ensureNotLastActiveOwner(User $staff): void
     {
-        $this->lockQuanTriRole();
+        $this->lockOwnerRole();
 
-        $activeQuanTriIds = User::role(Role::QuanTri->value)
+        $activeOwnerIds = User::role(Role::Owner->value)
             ->whereNull('deactivated_at')
             ->pluck('id');
 
-        if ($activeQuanTriIds->contains($staff->getKey()) && $activeQuanTriIds->count() === 1) {
-            throw new LastActiveQuanTri($staff);
+        if ($activeOwnerIds->contains($staff->getKey()) && $activeOwnerIds->count() === 1) {
+            throw new LastActiveOwner($staff);
         }
     }
 
@@ -236,10 +236,10 @@ class StaffManager
      * chạy tuần tự; đếm sau khi có khoá mới thấy thay đổi vừa commit của thao tác trước.
      * Phải gọi trong transaction.
      */
-    private function lockQuanTriRole(): void
+    private function lockOwnerRole(): void
     {
         RoleModel::query()
-            ->where('name', Role::QuanTri->value)
+            ->where('name', Role::Owner->value)
             ->lockForUpdate()
             ->first();
     }

@@ -44,7 +44,7 @@ beforeEach(function () {
     app(KeyFingerprints::class)->register();
 
     $this->intake = app(BatchIntake::class);
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
 });
 
@@ -53,7 +53,7 @@ beforeEach(function () {
  */
 function steamWallet(string $code = 'STEAM-100K'): Product
 {
-    return app(ProductCatalog::class)->create(staffMember(Role::QuanTri), new ProductDraft(
+    return app(ProductCatalog::class)->create(staffMember(Role::Owner), new ProductDraft(
         type: ProductType::OneTimeCode,
         name: "Steam Wallet {$code}",
         code: $code,
@@ -67,7 +67,7 @@ function steamWallet(string $code = 'STEAM-100K'): Product
  */
 function garenaCard(): Product
 {
-    return app(ProductCatalog::class)->create(staffMember(Role::QuanTri), new ProductDraft(
+    return app(ProductCatalog::class)->create(staffMember(Role::Owner), new ProductDraft(
         type: ProductType::OneTimeCode,
         name: 'Thẻ Garena 100k',
         code: 'GARENA-100K',
@@ -84,7 +84,7 @@ function garenaCard(): Product
  */
 function streamingAccount(string $code = 'NETFLIX-1M', int $defaultSlots = 4): Product
 {
-    return app(ProductCatalog::class)->create(staffMember(Role::QuanTri), new ProductDraft(
+    return app(ProductCatalog::class)->create(staffMember(Role::Owner), new ProductDraft(
         type: ProductType::Account,
         name: "Tài khoản {$code}",
         code: $code,

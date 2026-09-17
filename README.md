@@ -16,11 +16,11 @@ for k in CONTENT HMAC BACKUP; do
 done
 docker compose run --rm app php artisan migrate --seed
 docker compose run --rm app php artisan inventory:keys:register
-docker compose run --rm app php artisan staff:create-first-quan-tri
+docker compose run --rm app php artisan staff:create-first-owner
 docker compose up -d
 ```
 
-`staff:create-first-quan-tri` hỏi tên, email và mật khẩu ban đầu ngay trên terminal, nên mật khẩu không nằm lại trong lịch sử shell. Lệnh chạy được đúng một lần: kho đã có Quản trị (kể cả Quản trị đang bị Khoá nhân viên) thì nó từ chối, vì từ đó Quản trị tự tạo nhân viên ở trang Nhân viên.
+`staff:create-first-owner` hỏi tên, email và mật khẩu ban đầu ngay trên terminal, nên mật khẩu không nằm lại trong lịch sử shell. Lệnh chạy được đúng một lần: kho đã có Quản trị (kể cả Quản trị đang bị Khoá nhân viên) thì nó từ chối, vì từ đó Quản trị tự tạo nhân viên ở trang Nhân viên.
 
 Panel ở <http://localhost:8080/admin>. Mọi nhân viên phải bật 2FA (TOTP) ngay sau lần đăng nhập đầu tiên.
 
@@ -170,7 +170,7 @@ Khoá nội dung, khoá HMAC và khoá backup nằm trong `.env`, tách khỏi `
 Khi Quản trị tự khoá mình ngoài hệ thống (bị Khoá nhân viên, mất thiết bị 2FA), người vận hành server chạy:
 
 ```bash
-docker compose run --rm app php artisan staff:recover-quan-tri chu@shop.test --unlock --reset-2fa
+docker compose run --rm app php artisan staff:recover-owner chu@shop.test --unlock --reset-2fa
 ```
 
 Chỉ áp dụng cho nhân viên mang Vai trò Quản trị; mỗi thao tác ghi Nhật ký bảo mật.

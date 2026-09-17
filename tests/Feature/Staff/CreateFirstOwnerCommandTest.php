@@ -18,12 +18,12 @@ beforeEach(function () {
  * Chạy lệnh và trả lời đủ bốn câu hỏi. Mật khẩu chỉ nhập tương tác nên không có cách nào
  * truyền qua tham số.
  */
-function answerCreateFirstQuanTri(
+function answerCreateFirstOwner(
     string $email = 'chu@shop.test',
     string $password = 'mat-khau-ban-dau',
     ?string $again = null,
 ): PendingCommand {
-    return test()->artisan('staff:create-first-quan-tri')
+    return test()->artisan('staff:create-first-owner')
         ->expectsQuestion('Tên', 'Chủ shop')
         ->expectsQuestion('Email', $email)
         ->expectsQuestion('Mật khẩu ban đầu', $password)
@@ -31,44 +31,44 @@ function answerCreateFirstQuanTri(
 }
 
 it('hỏi tương tác rồi tạo Quản trị đầu tiên của kho', function () {
-    answerCreateFirstQuanTri()->assertSuccessful();
+    answerCreateFirstOwner()->assertSuccessful();
 
-    $quanTri = User::sole();
+    $owner = User::sole();
 
-    expect($quanTri)
+    expect($owner)
         ->name->toBe('Chủ shop')
         ->email->toBe('chu@shop.test')
-        ->and($quanTri->hasRole(Role::QuanTri))->toBeTrue()
-        ->and($quanTri->isDeactivated())->toBeFalse()
-        ->and(Hash::check('mat-khau-ban-dau', $quanTri->password))->toBeTrue()
+        ->and($owner->hasRole(Role::Owner))->toBeTrue()
+        ->and($owner->isDeactivated())->toBeFalse()
+        ->and(Hash::check('mat-khau-ban-dau', $owner->password))->toBeTrue()
         ->and(SecurityLogEntry::where('event', SecurityEvent::StaffCreated)->sole())
-        ->user_id->toBe($quanTri->id)
+        ->user_id->toBe($owner->id)
         ->actor_id->toBeNull();
 });
 
 it('Quản trị đầu tiên phải bật 2FA trước khi vào được panel', function () {
-    answerCreateFirstQuanTri()->assertSuccessful();
+    answerCreateFirstOwner()->assertSuccessful();
 
-    $quanTri = User::sole();
+    $owner = User::sole();
 
-    expect(AppAuthentication::make()->isEnabled($quanTri))->toBeFalse();
+    expect(AppAuthentication::make()->isEnabled($owner))->toBeFalse();
 
-    $this->actingAs($quanTri)
+    $this->actingAs($owner)
         ->get(Filament::getPanel('admin')->getUrl())
         ->assertRedirect(Filament::getPanel('admin')->getSetUpRequiredMultiFactorAuthenticationUrl());
 });
 
 it('từ chối ngay khi kho đã có Quản trị, không hỏi gì', function (bool $locked) {
-    $existing = staffMember(Role::QuanTri);
+    $existing = staffMember(Role::Owner);
 
     if ($locked) {
         $existing->forceFill(['deactivated_at' => now()])->save();
     }
 
-    $this->artisan('staff:create-first-quan-tri')
+    $this->artisan('staff:create-first-owner')
         ->expectsOutputToContain('Kho đã có Quản trị.')
         ->expectsOutputToContain('trang Nhân viên')
-        ->expectsOutputToContain('staff:recover-quan-tri')
+        ->expectsOutputToContain('staff:recover-owner')
         ->assertFailed();
 
     expect(User::count())->toBe(1)
@@ -79,7 +79,7 @@ it('từ chối ngay khi kho đã có Quản trị, không hỏi gì', function 
 ]);
 
 it('từ chối dữ liệu không hợp lệ và không tạo ai', function (string $email, string $password, ?string $again, string $message) {
-    answerCreateFirstQuanTri($email, $password, $again)
+    answerCreateFirstOwner($email, $password, $again)
         ->expectsOutputToContain($message)
         ->assertFailed();
 

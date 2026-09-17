@@ -15,9 +15,9 @@ beforeEach(function () {
 it('seeder tạo đúng ba Vai trò, không có quyền lẻ, chạy lại không sinh trùng', function () {
     $this->seed(RoleSeeder::class);
 
-    expect(RoleModel::pluck('name')->sort()->values()->all())->toBe(['ban-hang', 'nhap-kho', 'quan-tri'])
+    expect(RoleModel::pluck('name')->sort()->values()->all())->toBe(['ban-hang', 'nhap-kho', 'owner'])
         ->and(Permission::count())->toBe(0)
-        ->and(Role::QuanTri->label())->toBe('Quản trị')
+        ->and(Role::Owner->label())->toBe('Quản trị')
         ->and(Role::NhapKho->label())->toBe('Nhập kho')
         ->and(Role::BanHang->label())->toBe('Bán hàng');
 });
@@ -31,12 +31,12 @@ it('một nhân viên mang được nhiều Vai trò', function () {
 
     expect($gate->allows($user, Role::NhapKho))->toBeTrue()
         ->and($gate->allows($user, Role::BanHang))->toBeTrue()
-        ->and($gate->allows($user, Role::QuanTri))->toBeFalse();
+        ->and($gate->allows($user, Role::Owner))->toBeFalse();
 });
 
 it('Quản trị luôn qua mọi kiểm tra Vai trò', function () {
     $admin = User::factory()->create();
-    $admin->assignRole(Role::QuanTri);
+    $admin->assignRole(Role::Owner);
 
     $gate = app(RoleGate::class);
 

@@ -18,7 +18,7 @@ beforeEach(function () {
     $this->seed(RoleSeeder::class);
     $this->keys = app(ApiKeys::class);
     $this->channels = app(SalesChannelDirectory::class);
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
     $this->website = $this->channels->create($this->admin, new SalesChannelDraft('Website', SalesChannelType::Api, requiresExternalRef: true));
 });
 

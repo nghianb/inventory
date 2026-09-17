@@ -7,14 +7,14 @@ namespace App\Inventory\Access;
  */
 enum Role: string
 {
-    case QuanTri = 'quan-tri';
+    case Owner = 'owner';
     case NhapKho = 'nhap-kho';
     case BanHang = 'ban-hang';
 
     public function label(): string
     {
         return match ($this) {
-            self::QuanTri => 'Quản trị',
+            self::Owner => 'Quản trị',
             self::NhapKho => 'Nhập kho',
             self::BanHang => 'Bán hàng',
         };

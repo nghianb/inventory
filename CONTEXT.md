@@ -158,6 +158,7 @@ Nhật ký chỉ-ghi-thêm mọi lần chuyển trạng thái của **Slot** và
 
 **Vai trò** (Role):
 Nhóm quyền gán cho một nhân viên. Có ba vai trò: **Quản trị** (chủ shop, mọi quyền), **Nhập kho** (nhập hàng, làm việc với **Nhà cung cấp**) và **Bán hàng** (xuất kho và xử lý sau giao). Một nhân viên có thể mang nhiều vai trò; không gán quyền lẻ cho từng người. Luôn còn ít nhất một Quản trị đang hoạt động.
+_Trong code_: **Quản trị** là `Role::Owner`, giá trị `owner` (không phải `admin`, vốn dễ nhầm với **Người vận hành server**). **Nhập kho** và **Bán hàng** vẫn là `Role::NhapKho`, `Role::BanHang`.
 
 **Ngữ cảnh xem mã** (Reveal context):
 Bản ghi mà qua đó nội dung đầy đủ của một **Slot** được hiển thị hoặc tải về: một lần **Giao hàng**, **Đổi hàng**, **Báo lỗi**, **Khiếu nại nhà cung cấp** hoặc **Lô nhập**. Lý do xem suy ra từ ngữ cảnh. Nội dung chỉ xem được qua một ngữ cảnh, trừ **Quản trị** xem hàng Còn hàng kèm lý do tự do.

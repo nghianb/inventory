@@ -34,7 +34,7 @@ beforeEach(function () {
     app(KeyFingerprints::class)->register();
 
     $this->reveal = app(ContentReveal::class);
-    $this->admin = staffMember(Role::QuanTri);
+    $this->admin = staffMember(Role::Owner);
 
     $product = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
         type: ProductType::OneTimeCode,
