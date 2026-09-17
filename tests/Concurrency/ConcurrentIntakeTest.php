@@ -3,9 +3,7 @@
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
@@ -44,16 +42,16 @@ afterEach(function () {
     $this->artisan('migrate:fresh');
 });
 
-function concurrentProduct(ProductType $type, string $code): Product
+function concurrentProduct(StockForm $form, string $code): Product
 {
-    return app(ProductCatalog::class)->create(test()->admin, new ProductDraft(
-        type: $type,
-        name: $code,
-        code: $code,
-        fields: $type === ProductType::OneTimeCode
+    return productOf(
+        $form,
+        $form === StockForm::OneTimeCode
             ? [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)]
             : [new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, sensitive: false, dedupeKey: true), new ContentFieldDraft('password', 'Mật khẩu')],
-    ));
+        $code,
+        $code,
+    );
 }
 
 function concurrentBatch(BatchLineDraft $line, string $receivedOn = '2026-09-15'): Batch
@@ -102,8 +100,8 @@ function confirmInParallel(User $actor, array $batches): array
 it('hai Lô nhập xác nhận song song cùng Mã dùng một lần không chèn trùng Khoá chống trùng', function () {
     $codes = implode("\n", array_map(fn (int $i): string => sprintf('CODE-%05d', $i), range(1, 3_000)));
     $batches = [
-        concurrentBatch(new BatchLineDraft(concurrentProduct(ProductType::OneTimeCode, 'STEAM-A'), 1_000, $codes)),
-        concurrentBatch(new BatchLineDraft(concurrentProduct(ProductType::OneTimeCode, 'STEAM-B'), 2_000, $codes)),
+        concurrentBatch(new BatchLineDraft(concurrentProduct(StockForm::OneTimeCode, 'STEAM-A'), 1_000, $codes)),
+        concurrentBatch(new BatchLineDraft(concurrentProduct(StockForm::OneTimeCode, 'STEAM-B'), 2_000, $codes)),
     ];
 
     expect(confirmInParallel($this->admin, $batches))->toBe(['ok', 'ok']);
@@ -118,7 +116,7 @@ it('hai Lô nhập xác nhận song song cùng Mã dùng một lần không chè
 });
 
 it('hai Lô nhập song song cùng nhập lại một Tài khoản hết hạn thì chỉ một Đơn vị hàng mới chiếm khoá', function () {
-    $netflix = concurrentProduct(ProductType::Account, 'NETFLIX-1M');
+    $netflix = concurrentProduct(StockForm::Account, 'NETFLIX-1M');
     $this->intake->confirm($this->admin, concurrentBatch(
         new BatchLineDraft($netflix, 100_000, "old@shop.test\tpw", expiry: ExpiryRule::on(CarbonImmutable::parse('2026-09-20'))),
     ));
@@ -127,7 +125,7 @@ it('hai Lô nhập song song cùng nhập lại một Tài khoản hết hạn t
 
     $batches = [
         concurrentBatch(new BatchLineDraft($netflix, 120_000, "old@shop.test\tpw-a"), '2026-09-21'),
-        concurrentBatch(new BatchLineDraft(concurrentProduct(ProductType::Account, 'NETFLIX-3M'), 300_000, "old@shop.test\tpw-b"), '2026-09-21'),
+        concurrentBatch(new BatchLineDraft(concurrentProduct(StockForm::Account, 'NETFLIX-3M'), 300_000, "old@shop.test\tpw-b"), '2026-09-21'),
     ];
 
     expect(BatchLine::query()->whereIn('batch_id', array_map(fn (Batch $batch) => $batch->id, $batches))->sum('renewal_count'))->toBe(2)

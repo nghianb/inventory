@@ -4,9 +4,7 @@ use App\Filament\Pages\DispatchFreezePage;
 use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\CorrectionDraft;
 use App\Inventory\Dispatch\CorrectiveDelivery;
@@ -52,13 +50,13 @@ beforeEach(function () {
     $this->manual = app(ManualDispatch::class);
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
     $this->zalo = app(SalesChannelDirectory::class)->create($this->admin, new SalesChannelDraft('Zalo'));
-    $this->steam = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+    $this->steam = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        'Steam Wallet 100k',
+        'STEAM-100K',
         warrantyDays: 7,
-    ));
+    );
 
     stockUp($this->steam, "CODE-1\nCODE-2\nCODE-3\nCODE-4");
 });

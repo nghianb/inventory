@@ -4,9 +4,7 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
@@ -36,16 +34,16 @@ beforeEach(function () {
     $this->reveal = app(ContentReveal::class);
     $this->admin = staffMember(Role::Owner);
 
-    $product = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Thẻ Garena 100k',
-        code: 'GARENA-100K',
-        fields: [
+    $product = productOf(
+        StockForm::OneTimeCode,
+        [
             new ContentFieldDraft('serial', 'Serial', sensitive: false),
             new ContentFieldDraft('pin', 'Mã thẻ', ContentFieldType::Number, pattern: '\d{12}', dedupeKey: true),
             new ContentFieldDraft('note', 'Ghi chú', required: false),
         ],
-    ));
+        'Thẻ Garena 100k',
+        'GARENA-100K',
+    );
 
     $intake = app(BatchIntake::class);
     $batch = $intake->submit($this->admin, new BatchDraft(

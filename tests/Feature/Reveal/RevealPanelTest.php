@@ -10,9 +10,7 @@ use App\Filament\Resources\StockUnits\RelationManagers\SlotsRelationManager;
 use App\Filament\Resources\StockUnits\StockUnitResource;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
@@ -44,12 +42,12 @@ beforeEach(function () {
 
     $this->admin = staffMember(Role::Owner);
     $this->clerk = staffMember(Role::NhapKho);
-    $this->product = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
-    ));
+    $this->product = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        'Steam Wallet 100k',
+        'STEAM-100K',
+    );
 
     // Dòng 2 trùng dòng 1: một Đơn vị hàng, một dòng bị bỏ.
     $this->batch = app(BatchIntake::class)->submit($this->clerk, new BatchDraft(

@@ -7,9 +7,7 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\AffectedDelivery;
 use App\Inventory\Dispatch\DispatchDraft;
@@ -53,17 +51,17 @@ beforeEach(function () {
     $this->seller = staffMember(Role::BanHang);
     $this->defects = app(StockDefect::class);
     $this->stock = app(SellableStock::class);
-    $this->netflix = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::Account,
-        name: 'Netflix 1 tháng',
-        code: 'NETFLIX-1M',
-        fields: [
+    $this->netflix = productOf(
+        StockForm::Account,
+        [
             new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, sensitive: false, dedupeKey: true),
             new ContentFieldDraft('password', 'Mật khẩu'),
         ],
+        'Netflix 1 tháng',
+        'NETFLIX-1M',
         defaultSlots: 3,
         warrantyDays: 30,
-    ));
+    );
 
     $intake = app(BatchIntake::class);
     $intake->confirm($this->admin, $intake->submit($this->admin, new BatchDraft(

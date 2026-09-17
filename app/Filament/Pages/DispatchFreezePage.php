@@ -7,7 +7,7 @@ use App\Filament\Support\InventoryAction;
 use App\Filament\Support\NavGroup;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Dispatch\AffectedDelivery;
 use App\Inventory\Dispatch\DispatchFreeze;
 use App\Inventory\Dispatch\DispatchStatus;
@@ -356,7 +356,7 @@ class DispatchFreezePage extends Page implements HasTable
                 SelectFilter::make('product')
                     ->label('Sản phẩm')
                     ->options(fn (): array => Product::query()
-                        ->where('type', ProductType::Account)
+                        ->whereRelation('productType', 'form', StockForm::Account)
                         ->orderBy('name')
                         ->pluck('name', 'id')
                         ->all())

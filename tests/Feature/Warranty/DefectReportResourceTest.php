@@ -9,9 +9,7 @@ use App\Filament\Resources\StockUnits\StockUnitResource;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
@@ -56,17 +54,17 @@ beforeEach(function () {
     $this->admin = staffMember(Role::Owner);
     $this->seller = staffMember(Role::BanHang);
     $this->shopee = app(SalesChannelDirectory::class)->create($this->admin, new SalesChannelDraft('Shopee', requiresExternalRef: true));
-    $this->netflix = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::Account,
-        name: 'Netflix 1 tháng',
-        code: 'NETFLIX-1M',
-        fields: [
+    $this->netflix = productOf(
+        StockForm::Account,
+        [
             new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, sensitive: false, dedupeKey: true),
             new ContentFieldDraft('password', 'Mật khẩu'),
         ],
+        'Netflix 1 tháng',
+        'NETFLIX-1M',
         defaultSlots: 3,
         warrantyDays: 30,
-    ));
+    );
 
     $intake = app(BatchIntake::class);
     $intake->confirm($this->admin, $intake->submit($this->admin, new BatchDraft(
@@ -299,13 +297,13 @@ it('Đổi hàng ở trang Báo lỗi: hiện Hạn bảo hành kế thừa, đ�
 });
 
 it('Đổi hàng sang Sản phẩm khác bắt buộc lý do; không có Slot phủ Hạn bảo hành thì phải chấp nhận Slot hạn ngắn hơn', function () {
-    $garena = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Garena 50k',
-        code: 'GARENA-50K',
-        fields: [new ContentFieldDraft('code', 'Mã', dedupeKey: true)],
+    $garena = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã', dedupeKey: true)],
+        'Garena 50k',
+        'GARENA-50K',
         warrantyDays: 30,
-    ));
+    );
     panelStock($garena, 'G-1', ExpiryRule::on(CarbonImmutable::parse('2026-10-01')));
     $delivery = panelOrder('SP-001', 1, 'Anh Minh')->deliveries()->firstOrFail();
     [$report] = app(DefectReporting::class)->report($this->seller, [$delivery], new DefectReportDraft('Bị khoá'));

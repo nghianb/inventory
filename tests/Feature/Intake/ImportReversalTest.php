@@ -4,9 +4,7 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
@@ -41,23 +39,22 @@ beforeEach(function () {
     $this->admin = staffMember(Role::Owner);
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
 
-    $catalog = app(ProductCatalog::class);
-    $this->codes = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
-    ));
-    $this->accounts = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::Account,
-        name: 'Netflix 1 tháng',
-        code: 'NETFLIX-1M',
-        fields: [
+    $this->codes = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        'Steam Wallet 100k',
+        'STEAM-100K',
+    );
+    $this->accounts = productOf(
+        StockForm::Account,
+        [
             new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, sensitive: false, dedupeKey: true),
             new ContentFieldDraft('password', 'Mật khẩu'),
         ],
+        'Netflix 1 tháng',
+        'NETFLIX-1M',
         defaultSlots: 2,
-    ));
+    );
 });
 
 /**

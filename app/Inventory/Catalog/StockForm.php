@@ -3,11 +3,16 @@
 namespace App\Inventory\Catalog;
 
 use App\Inventory\Encryption\Normalization;
+use App\Models\ProductType;
 
 /**
- * Loại Sản phẩm: mỗi Đơn vị hàng là một Mã dùng một lần hoặc một Tài khoản.
+ * Dạng hàng: hàng của một Loại sản phẩm nằm trong kho dưới hình thức nào — Mã dùng một lần
+ * hay Tài khoản. Quyết định một Đơn vị hàng chia được mấy Slot.
+ *
+ * Không phải Loại sản phẩm: đó là {@see ProductType}, khuôn khai Trường nội dung
+ * dùng chung cho nhiều Sản phẩm.
  */
-enum ProductType: string
+enum StockForm: string
 {
     case OneTimeCode = 'one-time-code';
     case Account = 'account';

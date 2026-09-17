@@ -5,45 +5,42 @@ namespace App\Filament\Resources\Products;
 use App\Filament\Resources\Products\Pages\CreateProduct;
 use App\Filament\Resources\Products\Pages\EditProduct;
 use App\Filament\Resources\Products\Pages\ListProducts;
+use App\Filament\Resources\ProductTypes\ProductTypeResource;
 use App\Filament\Support\InventoryAction;
 use App\Filament\Support\NavGroup;
-use App\Inventory\Catalog\ContentFieldDraft;
-use App\Inventory\Catalog\ContentFieldType;
 use App\Inventory\Catalog\ProductCatalog;
 use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Dispatch\DeliveryTemplate;
-use App\Inventory\Encryption\Normalization;
-use App\Models\ContentField;
 use App\Models\Product;
+use App\Models\ProductType;
 use BackedEnum;
-use Closure;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
-use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use UnitEnum;
 
 /**
- * Sản phẩm trong panel. Adapter mỏng: mọi thao tác gọi ProductCatalog, nơi kiểm tra
- * Vai trò, cấu hình hợp lệ và khoá cấu hình khi đã có hàng. Form chỉ khoá sẵn các ô
- * tương ứng để Quản trị không phải đoán.
+ * Sản phẩm trong panel. Adapter mỏng: mọi thao tác gọi ProductCatalog, nơi kiểm tra Vai trò,
+ * cấu hình hợp lệ và khoá cấu hình khi đã có hàng.
+ *
+ * Trường nội dung, Dạng hàng và chuẩn hoá Khoá chống trùng không có mặt ở đây: chúng thuộc
+ * Loại sản phẩm ({@see ProductTypeResource}). Sản phẩm chỉ ghi đè được Mẫu giao hàng.
  */
 class ProductResource extends Resource
 {
@@ -67,9 +64,6 @@ class ProductResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        $hasStock = fn (Get $get): bool => (bool) $get('has_stock');
-        $fieldLocked = fn (Get $get): bool => (bool) $get('../../has_stock') && (bool) $get('persisted');
-
         // Một mạch cuộn: mỗi khối một card chiếm trọn bề ngang. Phải tự khai cột vì trang
         // resource ép lưới 2 cột khi form không khai (CreateRecord và EditRecord::defaultForm),
         // làm card Thông tin chỉ ăn nửa bề ngang.
@@ -83,31 +77,27 @@ class ProductResource extends Resource
                 ->warning()
                 ->visible(fn (Get $get): bool => (bool) $get('has_stock') || (bool) $get('has_dispatch'))
                 ->description(fn (Get $get): string => collect([
-                    $get('has_stock')
-                        ? 'Sản phẩm đã có hàng: không đổi được Loại, hai tuỳ chọn chuẩn hoá, Khoá chống trùng, và định danh, kiểu, regex, cờ bắt buộc, cờ nhạy cảm của các Trường nội dung đã lưu; cũng không xoá được trường đã lưu. Vẫn thêm được trường tuỳ chọn và đổi tên hiển thị.'
-                        : null,
-                    $get('has_dispatch')
-                        ? ProductCatalog::DISPATCH_LOCKS_CODE
-                        : null,
+                    $get('has_stock') ? ProductCatalog::STOCK_LOCKS_PRODUCT_TYPE : null,
+                    $get('has_dispatch') ? ProductCatalog::DISPATCH_LOCKS_CODE : null,
                 ])->filter()->implode(' ')),
             Section::make('Thông tin')
                 ->columns(2)
                 ->schema([
-                    Select::make('type')
-                        ->label('Loại')
-                        ->options(collect(ProductType::cases())->mapWithKeys(fn (ProductType $type): array => [$type->value => $type->label()])->all())
+                    Select::make('product_type_id')
+                        ->label('Loại sản phẩm')
+                        ->helperText('Loại khai Dạng hàng và Trường nội dung của hàng thuộc Sản phẩm này.')
+                        // Loại đã Ngừng dùng không nhận Sản phẩm mới, nhưng Sản phẩm đang thuộc nó
+                        // vẫn phải thấy Loại của chính mình, không thì ô Loại trống trơn khi Sửa.
+                        ->options(fn (?Product $record): array => ProductType::query()
+                            ->where(fn (Builder $query) => $query->notDiscontinued()->orWhereKey($record?->product_type_id))
+                            ->orderBy('name')
+                            ->get()
+                            ->mapWithKeys(fn (ProductType $type): array => [$type->id => "{$type->name} ({$type->form->label()})"])
+                            ->all())
+                        ->searchable()
                         ->required()
                         ->live()
-                        ->afterStateUpdated(function (?string $state, Set $set): void {
-                            if ($state === null) {
-                                return;
-                            }
-
-                            $normalization = ProductType::from($state)->defaultNormalization();
-                            $set('case_insensitive', $normalization->caseInsensitive);
-                            $set('strip_separators', $normalization->stripSeparators);
-                        })
-                        ->disabled($hasStock)
+                        ->disabled(fn (Get $get): bool => (bool) $get('has_stock'))
                         ->dehydrated(),
                     TextInput::make('name')
                         ->label('Tên')
@@ -128,7 +118,7 @@ class ProductResource extends Resource
                         ->minValue(1)
                         ->default(1)
                         ->required()
-                        ->visible(fn (Get $get): bool => $get('type') === ProductType::Account->value),
+                        ->visible(fn (Get $get): bool => self::chosenType($get)?->form === StockForm::Account),
                     TextInput::make('warranty_days')
                         ->label('Thời hạn bảo hành')
                         ->suffix('ngày')
@@ -150,44 +140,16 @@ class ProductResource extends Resource
                         ->integer()
                         ->minValue(0),
                 ]),
-            // Trường nội dung là việc chính khi khai một Sản phẩm nên leo lên ngay dưới Thông tin;
-            // hai khối dưới có mặc định dùng được ngay nên bị đẩy xuống đáy và thu gọn sẵn.
-            Section::make('Trường nội dung')
-                ->key('content-fields')
-                ->description('Nội dung của mỗi Đơn vị hàng thuộc Sản phẩm này.')
-                ->schema([self::contentFields($fieldLocked)]),
-            Section::make('Chuẩn hoá Khoá chống trùng')
-                ->key('normalization')
-                ->description('Áp khi so trùng; nội dung giao khách vẫn là chuỗi gốc.')
-                // Mặc định theo loại Sản phẩm đã dùng được ngay; khối đang mang giá trị khác mặc
-                // định thì mở sẵn, để Sửa không giấu mất thứ mình từng đổi.
-                // Đọc bản ghi chứ không đọc state sống: ô Loại là live(), nên closure đọc state
-                // sẽ đóng sập khối ngay khi Quản trị vừa mở tay ra để sửa.
-                ->collapsed(fn (?Product $record): bool => $record === null
-                    || $record->normalization() == $record->type->defaultNormalization())
-                ->columns(2)
-                ->schema([
-                    Toggle::make('case_insensitive')
-                        ->label('Không phân biệt hoa thường')
-                        ->default(true)
-                        ->disabled($hasStock)
-                        ->dehydrated(),
-                    Toggle::make('strip_separators')
-                        ->label('Bỏ gạch ngang và khoảng trắng bên trong')
-                        ->default(false)
-                        ->disabled($hasStock)
-                        ->dehydrated(),
-                ]),
             Section::make('Mẫu giao hàng')
                 ->key('template')
-                ->description('Văn bản ghép nội dung một Slot thành tin nhắn gửi khách. Để trống thì mỗi Trường nội dung một dòng "Tên trường: giá trị".')
+                ->description('Văn bản ghép nội dung một Slot thành tin nhắn gửi khách. Để trống thì dùng mẫu của Loại sản phẩm; Loại cũng không có mẫu thì mỗi Trường nội dung một dòng "Tên trường: giá trị".')
                 ->collapsed(fn (?Product $record): bool => blank($record?->delivery_template))
                 ->schema([
                     Textarea::make('delivery_template')
                         ->hiddenLabel()
                         ->rows(6)
                         ->helperText(fn (Get $get): string => 'Biến: '.collect([
-                            ...array_map(fn (array $field): string => (string) ($field['key'] ?? ''), array_values((array) $get('fields'))),
+                            ...self::chosenType($get)?->contentFields->pluck('key')->all() ?? [],
                             ...DeliveryTemplate::BUILT_IN,
                         ])->filter()->map(fn (string $name): string => "{{{$name}}}")->implode(', ').'. Hạn sử dụng, Hạn bảo hành hiện dạng ngày/tháng/năm; mã đơn là mã đơn ngoài của Phiếu xuất.')
                         ->placeholder("Cảm ơn bạn đã mua {{san_pham}} (đơn {{ma_don}})\nTài khoản: {{username}}\nBảo hành đến {{han_bao_hanh}}"),
@@ -196,69 +158,20 @@ class ProductResource extends Resource
     }
 
     /**
-     * Repeater Trường nội dung: 4 cột mỗi dòng, nhãn ẩn vì card bao ngoài đã mang tên khối.
-     *
-     * @param  Closure(Get): bool  $fieldLocked  trường đã lưu của Sản phẩm đã có hàng
+     * Loại sản phẩm đang chọn trong form; null khi chưa chọn.
      */
-    private static function contentFields(Closure $fieldLocked): Repeater
+    private static function chosenType(Get $get): ?ProductType
     {
-        return Repeater::make('fields')
-            ->hiddenLabel()
-            ->helperText('Sản phẩm đã có hàng chỉ thêm được trường tuỳ chọn hoặc đổi tên hiển thị.')
-            ->minItems(1)
-            ->defaultItems(1)
-            ->reorderable(false)
-            ->deletable(fn (Get $get): bool => ! $get('has_stock'))
-            ->columns(4)
-            ->schema([
-                Hidden::make('persisted')->default(false),
-                TextInput::make('key')
-                    ->label('Định danh')
-                    ->helperText('Chữ thường không dấu, ví dụ username.')
-                    ->required()
-                    ->maxLength(64)
-                    ->disabled($fieldLocked)
-                    ->dehydrated(),
-                TextInput::make('label')
-                    ->label('Tên hiển thị')
-                    ->required()
-                    ->maxLength(255),
-                Select::make('type')
-                    ->label('Kiểu')
-                    ->options(collect(ContentFieldType::cases())->mapWithKeys(fn (ContentFieldType $type): array => [$type->value => $type->label()])->all())
-                    ->default(ContentFieldType::Text->value)
-                    ->required()
-                    ->disabled($fieldLocked)
-                    ->dehydrated(),
-                TextInput::make('pattern')
-                    ->label('Regex')
-                    ->helperText('Tuỳ chọn, phải khớp toàn bộ giá trị.')
-                    ->maxLength(255)
-                    ->disabled($fieldLocked)
-                    ->dehydrated(),
-                Toggle::make('required')
-                    ->label('Bắt buộc')
-                    ->default(true)
-                    ->disabled($fieldLocked)
-                    ->dehydrated(),
-                Toggle::make('sensitive')
-                    ->label('Nhạy cảm')
-                    ->helperText('Mã hoá và che hoàn toàn.')
-                    ->default(true)
-                    ->disabled($fieldLocked)
-                    ->dehydrated(),
-                Toggle::make('dedupe_key')
-                    ->label('Khoá chống trùng')
-                    ->default(false)
-                    ->disabled(fn (Get $get): bool => (bool) $get('../../has_stock'))
-                    ->dehydrated(),
-            ]);
+        return filled($get('product_type_id'))
+            ? ProductType::query()->with('contentFields')->find($get('product_type_id'))
+            : null;
     }
 
     public static function table(Table $table): Table
     {
         return $table
             ->defaultSort('name')
+            ->modifyQueryUsing(fn (Builder $query) => $query->with('productType'))
             ->columns([
                 TextColumn::make('code')
                     ->label('Mã sản phẩm')
@@ -268,10 +181,14 @@ class ProductResource extends Resource
                     ->label('Tên')
                     ->searchable()
                     ->sortable(),
-                TextColumn::make('type')
-                    ->label('Loại')
+                TextColumn::make('productType.name')
+                    ->label('Loại sản phẩm')
+                    ->searchable()
+                    ->sortable(),
+                TextColumn::make('form')
+                    ->label('Dạng hàng')
                     ->badge()
-                    ->formatStateUsing(fn (ProductType $state): string => $state->label()),
+                    ->state(fn (Product $record): string => $record->form()->label()),
                 TextColumn::make('warranty_days')
                     ->label('Bảo hành')
                     ->suffix(' ngày'),
@@ -363,26 +280,14 @@ class ProductResource extends Resource
         return [
             'has_stock' => $product->hasStock(),
             'has_dispatch' => $product->hasDispatch(),
-            'type' => $product->type->value,
+            'product_type_id' => $product->product_type_id,
             'name' => $product->name,
             'code' => $product->code,
             'default_slots' => $product->default_slots,
             'warranty_days' => $product->warranty_days,
             'min_remaining_days' => $product->min_remaining_days,
             'low_stock_threshold' => $product->low_stock_threshold,
-            'case_insensitive' => $product->case_insensitive,
-            'strip_separators' => $product->strip_separators,
             'delivery_template' => $product->delivery_template,
-            'fields' => $product->contentFields->map(fn (ContentField $field): array => [
-                'persisted' => true,
-                'key' => $field->key,
-                'label' => $field->label,
-                'type' => $field->type->value,
-                'pattern' => $field->pattern,
-                'required' => $field->required,
-                'sensitive' => $field->sensitive,
-                'dedupe_key' => $field->is_dedupe_key,
-            ])->all(),
         ];
     }
 
@@ -391,26 +296,17 @@ class ProductResource extends Resource
      */
     public static function draftFromForm(array $data): ProductDraft
     {
-        $type = ProductType::from($data['type']);
+        $type = ProductType::query()->with('contentFields')->findOrFail($data['product_type_id']);
 
         return new ProductDraft(
-            type: $type,
+            productType: $type,
             name: $data['name'],
             code: $data['code'],
-            fields: array_values(array_map(fn (array $field): ContentFieldDraft => new ContentFieldDraft(
-                key: $field['key'],
-                label: $field['label'],
-                type: ContentFieldType::from($field['type']),
-                pattern: filled($field['pattern'] ?? null) ? $field['pattern'] : null,
-                required: (bool) $field['required'],
-                sensitive: (bool) $field['sensitive'],
-                dedupeKey: (bool) $field['dedupe_key'],
-            ), $data['fields'])),
-            defaultSlots: $type === ProductType::Account ? (int) $data['default_slots'] : 1,
+            // Ô Số slot mặc định ẩn hẳn với Dạng hàng Mã dùng một lần: nó luôn đúng một slot.
+            defaultSlots: $type->form === StockForm::Account ? (int) $data['default_slots'] : 1,
             warrantyDays: (int) $data['warranty_days'],
             minRemainingDays: (int) $data['min_remaining_days'],
             lowStockThreshold: filled($data['low_stock_threshold'] ?? null) ? (int) $data['low_stock_threshold'] : null,
-            normalization: new Normalization((bool) $data['case_insensitive'], (bool) $data['strip_separators']),
             deliveryTemplate: $data['delivery_template'] ?? null,
         );
     }

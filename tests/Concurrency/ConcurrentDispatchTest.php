@@ -2,9 +2,7 @@
 
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
@@ -40,12 +38,12 @@ beforeEach(function () {
     $admin = staffMember(Role::Owner);
     $this->seller = staffMember(Role::BanHang);
     $this->channel = app(SalesChannelDirectory::class)->create($admin, new SalesChannelDraft('Zalo'));
-    $this->product = app(ProductCatalog::class)->create($admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('code', 'Mã thẻ', sensitive: false, dedupeKey: true)],
-    ));
+    $this->product = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã thẻ', sensitive: false, dedupeKey: true)],
+        'Steam Wallet 100k',
+        'STEAM-100K',
+    );
 
     $intake = app(BatchIntake::class);
     $intake->confirm($admin, $intake->submit($admin, new BatchDraft(

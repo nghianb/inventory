@@ -3,7 +3,7 @@
 namespace App\Inventory\Intake;
 
 use App\Inventory\Catalog\ContentPattern;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Encryption\ContentCrypto;
 use App\Inventory\Stock\StockUnitStatus;
 use App\Models\ContentField;
@@ -13,7 +13,7 @@ use Carbon\CarbonImmutable;
 use DateTimeImmutable;
 
 /**
- * Phân loại từng dòng của một Dòng nhập theo cấu hình hiện tại của Sản phẩm: hợp lệ, nhập
+ * Phân loại từng dòng của một Dòng nhập theo khai báo hiện tại của Loại sản phẩm: hợp lệ, nhập
  * lại Tài khoản hợp lệ, lỗi định dạng, trùng trong file (dòng xuất hiện sau), trùng trong
  * kho. Gộp giá trị theo tầng Dòng nhập → cột file. Không ghi gì.
  */
@@ -33,6 +33,7 @@ class LineClassifier
         $fields = $product->contentFields->values()->all();
         $dedupeKey = $product->dedupeKeyField()->key;
         $normalization = $product->normalization();
+        $form = $product->form();
 
         $lines = [];
         $firstSeen = [];
@@ -47,7 +48,7 @@ class LineClassifier
                 continue;
             }
 
-            $overrides = self::overrides($product->type, $row->overrides, $defaults);
+            $overrides = self::overrides($form, $row->overrides, $defaults);
 
             if (is_string($overrides)) {
                 $lines[] = new ClassifiedLine($number, LineClass::Invalid, $overrides);
@@ -74,7 +75,7 @@ class LineClassifier
             $lines[] = new ClassifiedLine($number, LineClass::Valid, null, $values, $hash, $slots, $expiresOn, $unitCost);
         }
 
-        $holders = self::keyHolders($product->type, array_keys($firstSeen));
+        $holders = self::keyHolders($form, array_keys($firstSeen));
 
         return array_map(function (ClassifiedLine $line) use ($holders): ClassifiedLine {
             if ($line->class !== LineClass::Valid || ! array_key_exists((string) $line->dedupeHash, $holders)) {
@@ -95,7 +96,7 @@ class LineClassifier
      * @param  list<string>  $hashes
      * @return array<string, ?int> hash → id Đơn vị hàng nhập lại được, null nếu khoá đang bị chiếm
      */
-    private static function keyHolders(ProductType $kind, array $hashes): array
+    private static function keyHolders(StockForm $kind, array $hashes): array
     {
         $today = CarbonImmutable::today();
         $holders = [];
@@ -108,7 +109,7 @@ class LineClassifier
                 ->get(['id', 'dedupe_hash', 'status', 'expires_on']);
 
             foreach ($units as $unit) {
-                $renewable = $kind === ProductType::Account
+                $renewable = $kind === StockForm::Account
                     && ($unit->status === StockUnitStatus::Voided || $unit->expires_on?->lt($today) === true);
 
                 $holders[$unit->dedupe_hash] = $renewable ? $unit->id : null;
@@ -158,7 +159,7 @@ class LineClassifier
      * @param  array<string, string>  $overrides
      * @return array{int, ?string, int}|string [số slot, Hạn sử dụng, Giá vốn], hoặc lý do lỗi định dạng
      */
-    private static function overrides(ProductType $type, array $overrides, LineDefaults $defaults): array|string
+    private static function overrides(StockForm $type, array $overrides, LineDefaults $defaults): array|string
     {
         $slots = $defaults->slots;
         $raw = self::trim($overrides[SourceReader::COLUMN_SLOTS] ?? '');
@@ -168,7 +169,7 @@ class LineClassifier
                 return sprintf('Cột slot phải là số nguyên từ 1 đến %s.', number_format(self::MAX_SLOTS, 0, ',', '.'));
             }
 
-            if ($type === ProductType::OneTimeCode && (int) $raw !== 1) {
+            if ($type === StockForm::OneTimeCode && (int) $raw !== 1) {
                 return 'Mã dùng một lần luôn có đúng 1 slot.';
             }
 

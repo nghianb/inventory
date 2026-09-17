@@ -2,34 +2,22 @@
 
 namespace App\Inventory\Catalog;
 
-use App\Inventory\Encryption\Normalization;
+use App\Models\ProductType;
 
 /**
- * Toàn bộ cấu hình của một Sản phẩm khi tạo hoặc sửa.
+ * Toàn bộ cấu hình riêng của một Sản phẩm khi tạo hoặc sửa. Dạng hàng, Trường nội dung và
+ * chuẩn hoá Khoá chống trùng không nằm ở đây: chúng thuộc Loại sản phẩm.
  */
 final readonly class ProductDraft
 {
-    /**
-     * @param  list<ContentFieldDraft>  $fields  theo thứ tự hiển thị
-     */
     public function __construct(
-        public ProductType $type,
+        public ProductType $productType,
         public string $name,
         public string $code,
-        public array $fields,
         public int $defaultSlots = 1,
         public int $warrantyDays = 0,
         public int $minRemainingDays = 0,
         public ?int $lowStockThreshold = null,
-        public ?Normalization $normalization = null,
         public ?string $deliveryTemplate = null,
     ) {}
-
-    /**
-     * Tuỳ chọn chuẩn hoá đã chọn, hoặc mặc định theo loại Sản phẩm.
-     */
-    public function normalization(): Normalization
-    {
-        return $this->normalization ?? $this->type->defaultNormalization();
-    }
 }

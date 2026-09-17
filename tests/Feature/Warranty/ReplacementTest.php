@@ -5,8 +5,7 @@ use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
 use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\CorrectionDraft;
 use App\Inventory\Dispatch\CorrectiveDelivery;
@@ -65,25 +64,24 @@ beforeEach(function () {
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
     $this->shopee = app(SalesChannelDirectory::class)->create($this->admin, new SalesChannelDraft('Shopee', requiresExternalRef: true));
 
-    $catalog = app(ProductCatalog::class);
-    $this->steam = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+    $this->steam = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        'Steam Wallet 100k',
+        'STEAM-100K',
         warrantyDays: 7,
-    ));
-    $this->netflix = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::Account,
-        name: 'Netflix 1 tháng',
-        code: 'NETFLIX-1M',
-        fields: [
+    );
+    $this->netflix = productOf(
+        StockForm::Account,
+        [
             new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, sensitive: false, dedupeKey: true),
             new ContentFieldDraft('password', 'Mật khẩu'),
         ],
+        'Netflix 1 tháng',
+        'NETFLIX-1M',
         defaultSlots: 3,
         warrantyDays: 30,
-    ));
+    );
 });
 
 function replacementStock(Product $product, string $content, ?ExpiryRule $expiry = null): void
@@ -114,14 +112,14 @@ function confirmedDefect(Delivery $delivery, DefectScope $scope = DefectScope::U
 
 function codeProduct(string $name, string $code, int $warrantyDays = 30, int $minRemainingDays = 0): Product
 {
-    return app(ProductCatalog::class)->create(test()->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: $name,
-        code: $code,
-        fields: [new ContentFieldDraft('code', 'Mã', sensitive: false, dedupeKey: true)],
+    return productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã', sensitive: false, dedupeKey: true)],
+        $name,
+        $code,
         warrantyDays: $warrantyDays,
         minRemainingDays: $minRemainingDays,
-    ));
+    );
 }
 
 it('Xác nhận Báo lỗi đặt Kết quả xử lý Chờ đổi và vào danh sách Chờ đổi; Không đổi bắt buộc lý do', function () {

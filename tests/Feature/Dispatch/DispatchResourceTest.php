@@ -10,9 +10,7 @@ use App\Filament\Resources\SalesChannels\Pages\ManageSalesChannels;
 use App\Filament\Resources\SalesChannels\SalesChannelResource;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
@@ -54,12 +52,12 @@ beforeEach(function () {
     $this->seller = staffMember(Role::BanHang);
     $this->shopee = app(SalesChannelDirectory::class)->create($this->admin, new SalesChannelDraft('Shopee', requiresExternalRef: true));
     $this->zalo = app(SalesChannelDirectory::class)->create($this->admin, new SalesChannelDraft('Zalo'));
-    $this->steam = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
-    ));
+    $this->steam = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        'Steam Wallet 100k',
+        'STEAM-100K',
+    );
 
     $intake = app(BatchIntake::class);
     $intake->confirm($this->admin, $intake->submit($this->admin, new BatchDraft(

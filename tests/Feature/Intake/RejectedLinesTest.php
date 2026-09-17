@@ -4,9 +4,7 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
@@ -32,16 +30,16 @@ beforeEach(function () {
     $this->admin = staffMember(Role::Owner);
     $this->clerk = staffMember(Role::NhapKho);
     $this->supplier = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');
-    $this->product = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Thẻ Garena 100k',
-        code: 'GARENA-100K',
-        fields: [
+    $this->product = productOf(
+        StockForm::OneTimeCode,
+        [
             new ContentFieldDraft('serial', 'Serial', sensitive: false),
             new ContentFieldDraft('pin', 'Mã thẻ', ContentFieldType::Number, pattern: '\d{12}', dedupeKey: true),
             new ContentFieldDraft('note', 'Ghi chú', required: false),
         ],
-    ));
+        'Thẻ Garena 100k',
+        'GARENA-100K',
+    );
 });
 
 function garenaBatchBy(User $actor, BatchLineDraft $line): Batch

@@ -85,7 +85,7 @@ class CreateBatch extends CreateRecord
      */
     private static function line(array $line, ?TemporaryUploadedFile $upload): BatchLineDraft
     {
-        $product = Product::query()->with('contentFields')->findOrFail($line['product_id']);
+        $product = Product::query()->with(['contentFields', 'productType'])->findOrFail($line['product_id']);
         $unitCost = (int) $line['unit_cost'];
         $slots = filled($line['slots'] ?? null) ? (int) $line['slots'] : null;
         $expiry = match ($line['expiry_mode'] ?? 'none') {

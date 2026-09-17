@@ -6,7 +6,7 @@ use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
 use App\Inventory\Catalog\ProductCatalog;
 use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
@@ -48,28 +48,34 @@ beforeEach(function () {
     $this->seller = staffMember(Role::BanHang);
     $this->report = app(StockReport::class);
 
-    $catalog = app(ProductCatalog::class);
-    $netflix = fn (?int $lowStockThreshold) => new ProductDraft(
-        type: ProductType::Account,
-        name: 'Netflix 1 tháng',
-        code: 'NETFLIX-1M',
-        fields: [
+    $this->netflix = productOf(
+        StockForm::Account,
+        [
             new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, sensitive: false, dedupeKey: true),
             new ContentFieldDraft('password', 'Mật khẩu'),
         ],
+        'Netflix 1 tháng',
+        'NETFLIX-1M',
         defaultSlots: 3,
         warrantyDays: 30,
         minRemainingDays: 5,
-        lowStockThreshold: $lowStockThreshold,
+        lowStockThreshold: 5,
     );
-    $this->netflix = $catalog->create($this->admin, $netflix(5));
-    $this->setNetflixThreshold = fn (?int $threshold) => $catalog->update($this->admin, $this->netflix->fresh(), $netflix($threshold));
-    $this->steam = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam 100K',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+    $this->setNetflixThreshold = fn (?int $threshold) => app(ProductCatalog::class)->update($this->admin, $this->netflix->fresh(), new ProductDraft(
+        productType: $this->netflix->productType,
+        name: 'Netflix 1 tháng',
+        code: 'NETFLIX-1M',
+        defaultSlots: 3,
+        warrantyDays: 30,
+        minRemainingDays: 5,
+        lowStockThreshold: $threshold,
     ));
+    $this->steam = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        'Steam 100K',
+        'STEAM-100K',
+    );
 
     $directory = app(SupplierDirectory::class);
     $this->kinguin = $directory->create($this->admin, 'Kinguin');
@@ -267,13 +273,13 @@ it('Sản phẩm Ngừng bán không có Tồn bán được; Slot còn giao đ�
 });
 
 it('cảnh báo tồn kho gồm Sản phẩm sắp hết hoặc có hàng hết hạn trong N ngày', function () {
-    $steamLow = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam 200K',
-        code: 'STEAM-200K',
-        fields: [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+    $steamLow = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        'Steam 200K',
+        'STEAM-200K',
         lowStockThreshold: 0,
-    ));
+    );
 
     $alerts = fn (int $days) => array_keys(stockRows($this->report->rows($this->seller, new StockReportFilter(expiringWithinDays: $days, alertsOnly: true))));
 

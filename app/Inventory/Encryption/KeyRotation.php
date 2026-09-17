@@ -164,7 +164,7 @@ final class KeyRotation
             $units = StockUnit::query()
                 ->whereIn('id', $ids)
                 ->where($column, '<>', $key->version)
-                ->with('product.contentFields')
+                ->with(['product.contentFields', 'product.productType'])
                 ->lockForUpdate()
                 ->get();
 

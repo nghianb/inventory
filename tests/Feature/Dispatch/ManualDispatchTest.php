@@ -7,7 +7,7 @@ use App\Inventory\Catalog\ContentFieldType;
 use App\Inventory\Catalog\LockedProductConfiguration;
 use App\Inventory\Catalog\ProductCatalog;
 use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Dispatch\DeliveredContent;
 use App\Inventory\Dispatch\DispatchDraft;
@@ -65,27 +65,37 @@ beforeEach(function () {
     $this->shopee = $channels->create($this->admin, new SalesChannelDraft('Shopee', requiresExternalRef: true));
     $this->zalo = $channels->create($this->admin, new SalesChannelDraft('Zalo'));
 
-    $catalog = app(ProductCatalog::class);
-    $this->steam = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam Wallet 100k',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+    $this->steam = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        'Steam Wallet 100k',
+        'STEAM-100K',
         warrantyDays: 7,
-    ));
-    $this->netflix = $catalog->create($this->admin, netflixDispatchDraft());
-});
-
-function netflixDispatchDraft(mixed ...$overrides): ProductDraft
-{
-    return new ProductDraft(...[
-        'type' => ProductType::Account,
-        'name' => 'Netflix 1 tháng',
-        'code' => 'NETFLIX-1M',
-        'fields' => [
+    );
+    $this->netflix = productOf(
+        StockForm::Account,
+        [
             new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, sensitive: false, dedupeKey: true),
             new ContentFieldDraft('password', 'Mật khẩu'),
         ],
+        'Netflix 1 tháng',
+        'NETFLIX-1M',
+        defaultSlots: 2,
+        warrantyDays: 30,
+        lowStockThreshold: 2,
+    );
+});
+
+/**
+ * Cấu hình hiện tại của Sản phẩm Netflix, để Sửa sản phẩm chỉ đổi đúng thứ cần đổi. Giữ nguyên
+ * Loại sản phẩm của nó: Trường nội dung và Dạng hàng nằm ở Loại, không nằm trong ProductDraft.
+ */
+function netflixDispatchDraft(mixed ...$overrides): ProductDraft
+{
+    return new ProductDraft(...[
+        'productType' => test()->netflix->productType,
+        'name' => 'Netflix 1 tháng',
+        'code' => 'NETFLIX-1M',
         'defaultSlots' => 2,
         'warrantyDays' => 30,
         'lowStockThreshold' => 2,
@@ -289,13 +299,13 @@ it('Thứ tự xuất: Tài khoản đã giao dở trước, rồi Hạn sử d�
 });
 
 it('bỏ qua Slot không đạt Hạn còn lại tối thiểu, quá Hạn sử dụng hoặc của Đơn vị hàng không Hoạt động', function () {
-    $garena = app(ProductCatalog::class)->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Garena 50k',
-        code: 'GARENA-50K',
-        fields: [new ContentFieldDraft('serial', 'Serial', sensitive: false, dedupeKey: true)],
+    $garena = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('serial', 'Serial', sensitive: false, dedupeKey: true)],
+        'Garena 50k',
+        'GARENA-50K',
         minRemainingDays: 3,
-    ));
+    );
     $this->travelTo(CarbonImmutable::parse('2026-09-01 09:00'));
     dispatchStock($garena, 'QUAHAN', ExpiryRule::on(CarbonImmutable::parse('2026-09-14')));
     dispatchStock($garena, 'CON2NGAY', ExpiryRule::on(CarbonImmutable::parse('2026-09-17')));
@@ -441,10 +451,9 @@ it('màn kết quả ghép nội dung theo Mẫu giao hàng của từng Sản p
 
 it('biến Hạn sử dụng của hàng không có hạn hiện "Không thời hạn"; Hạn bảo hành = ngày giao + thời hạn bảo hành', function () {
     app(ProductCatalog::class)->update($this->admin, $this->steam, new ProductDraft(
-        type: ProductType::OneTimeCode,
+        productType: $this->steam->productType,
         name: 'Steam Wallet 100k',
         code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('serial', 'Serial', sensitive: false), new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
         warrantyDays: 7,
         deliveryTemplate: '{{code}} | {{han_su_dung}} | {{han_bao_hanh}}',
     ));

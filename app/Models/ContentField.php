@@ -4,12 +4,13 @@ namespace App\Models;
 
 use App\Inventory\Catalog\ContentFieldType;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Trường nội dung do một Sản phẩm khai báo.
+ * Trường nội dung do một Loại sản phẩm khai báo, dùng chung cho mọi Sản phẩm của Loại.
  *
  * @property int $id
- * @property int $product_id
+ * @property int $product_type_id
  * @property string $key
  * @property string $label
  * @property ContentFieldType $type
@@ -18,6 +19,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property bool $sensitive
  * @property bool $is_dedupe_key
  * @property int $position
+ * @property-read ProductType $productType
  */
 class ContentField extends Model
 {
@@ -35,5 +37,13 @@ class ContentField extends Model
             'is_dedupe_key' => 'boolean',
             'position' => 'integer',
         ];
+    }
+
+    /**
+     * @return BelongsTo<ProductType, $this>
+     */
+    public function productType(): BelongsTo
+    {
+        return $this->belongsTo(ProductType::class);
     }
 }

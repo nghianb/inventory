@@ -5,9 +5,7 @@ use App\Filament\Widgets\StockAlerts;
 use App\Inventory\Access\Role;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
-use App\Inventory\Catalog\ProductCatalog;
-use App\Inventory\Catalog\ProductDraft;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
@@ -31,33 +29,32 @@ beforeEach(function () {
     $this->stocker = staffMember(Role::NhapKho);
     $this->seller = staffMember(Role::BanHang);
 
-    $catalog = app(ProductCatalog::class);
     // Netflix: 3 Slot Tồn bán được, Ngưỡng sắp hết 5.
-    $this->netflix = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::Account,
-        name: 'Netflix 1 tháng',
-        code: 'NETFLIX-1M',
-        fields: [
+    $this->netflix = productOf(
+        StockForm::Account,
+        [
             new ContentFieldDraft('username', 'Tên đăng nhập', ContentFieldType::Email, sensitive: false, dedupeKey: true),
             new ContentFieldDraft('password', 'Mật khẩu'),
         ],
+        'Netflix 1 tháng',
+        'NETFLIX-1M',
         defaultSlots: 3,
         lowStockThreshold: 5,
-    ));
+    );
     // Steam: không có ngưỡng, một mã hết hạn trong 3 ngày.
-    $this->steam = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Steam 100K',
-        code: 'STEAM-100K',
-        fields: [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
-    ));
+    $this->steam = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã thẻ', dedupeKey: true)],
+        'Steam 100K',
+        'STEAM-100K',
+    );
     // Spotify: không có hàng, không có ngưỡng: không cảnh báo.
-    $this->spotify = $catalog->create($this->admin, new ProductDraft(
-        type: ProductType::OneTimeCode,
-        name: 'Spotify 1 tháng',
-        code: 'SPOTIFY-1M',
-        fields: [new ContentFieldDraft('code', 'Mã', dedupeKey: true)],
-    ));
+    $this->spotify = productOf(
+        StockForm::OneTimeCode,
+        [new ContentFieldDraft('code', 'Mã', dedupeKey: true)],
+        'Spotify 1 tháng',
+        'SPOTIFY-1M',
+    );
 
     $intake = app(BatchIntake::class);
     $this->kinguin = app(SupplierDirectory::class)->create($this->admin, 'Kinguin');

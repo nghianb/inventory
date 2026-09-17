@@ -5,7 +5,7 @@ namespace App\Inventory\Intake;
 use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Access\RoleGate;
-use App\Inventory\Catalog\ProductType;
+use App\Inventory\Catalog\StockForm;
 use App\Inventory\Encryption\ContentCrypto;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Inventory\Encryption\KeyFingerprints;
@@ -100,7 +100,7 @@ class BatchIntake
                         'separator' => $draftLine->separator,
                         'source' => $draftLine->source,
                         'file_name' => $draftLine->fileName,
-                        'slots' => $draftLine->product->type === ProductType::Account ? $draftLine->slots : null,
+                        'slots' => $draftLine->product->form() === StockForm::Account ? $draftLine->slots : null,
                         'expires_on' => $draftLine->expiry?->date?->toDateString(),
                         'expires_after_days' => $draftLine->expiry?->days,
                     ])->save();
@@ -258,13 +258,14 @@ class BatchIntake
                 throw self::stockDuplicatesNeedAcknowledgement($stockDuplicates);
             }
 
-            // Cùng khoá hàng ProductCatalog dùng khi sửa: không nhập theo cấu hình đang bị đổi.
+            // Cùng khoá hàng ProductCatalog và ProductTypeCatalog dùng khi sửa: không nhập theo
+            // khai báo đang bị đổi.
             // Khoá theo thứ tự id để hai Lô nhập chung Sản phẩm không deadlock.
             $products = Product::query()
                 ->whereIn('id', $current->lines->pluck('product_id'))
                 ->orderBy('id')
                 ->lockForUpdate()
-                ->with('contentFields')
+                ->with(['contentFields', 'productType'])
                 ->get()
                 ->keyBy('id')
                 ->all();
@@ -510,7 +511,7 @@ class BatchIntake
      */
     private function recordPreview(Batch $batch): void
     {
-        $lines = $batch->lines()->with('product.contentFields')->get();
+        $lines = $batch->lines()->with(['product.contentFields', 'product.productType'])->get();
         $results = $this->classifyBatch($batch, $lines, $lines->mapWithKeys(fn (BatchLine $line): array => [$line->product_id => $line->product])->all());
 
         foreach ($lines as $line) {
@@ -547,7 +548,7 @@ class BatchIntake
         $name = $line->product->name;
 
         try {
-            $rows = count($this->reader->read($line->product->loadMissing('contentFields'), $line->content, $line->source, $line->separator)->rows);
+            $rows = count($this->reader->read($line->product->loadMissing(['contentFields', 'productType']), $line->content, $line->source, $line->separator)->rows);
         } catch (InvalidBatch $exception) {
             throw new InvalidBatch("Dòng nhập \"{$name}\": {$exception->getMessage()}");
         }
@@ -590,7 +591,7 @@ class BatchIntake
                     return $row;
                 }
 
-                $key = $product->type->value.':'.$row->dedupeHash;
+                $key = $product->form()->value.':'.$row->dedupeHash;
 
                 if (isset($seen[$key])) {
                     return $row->asFileDuplicate(sprintf('Trùng Khoá chống trùng với dòng %d của Dòng nhập "%s".', ...$seen[$key]));
@@ -646,7 +647,7 @@ class BatchIntake
                 return [
                     'batch_line_id' => $line->id,
                     'product_id' => $product->id,
-                    'kind' => $product->type->value,
+                    'kind' => $product->form()->value,
                     'status' => StockUnitStatus::Active->value,
                     'unit_cost' => $row->unitCost,
                     'slot_count' => $row->slots,
@@ -719,7 +720,7 @@ class BatchIntake
                 'UPDATE stock_units SET holds_dedupe_key = false, updated_at = ? WHERE id IN (%s) AND kind = ? AND holds_dedupe_key AND (status = ? OR expires_on < ?) RETURNING id',
                 implode(', ', array_fill(0, count($ids), '?')),
             ),
-            [now(), ...$ids, ProductType::Account->value, StockUnitStatus::Voided->value, CarbonImmutable::today()->toDateString()],
+            [now(), ...$ids, StockForm::Account->value, StockUnitStatus::Voided->value, CarbonImmutable::today()->toDateString()],
         );
 
         return array_fill_keys(array_map(fn (object $row): int => (int) $row->id, $released), true);
@@ -775,7 +776,7 @@ class BatchIntake
     {
         $sample = MaskedContent::of($product->contentFields, $row->values);
 
-        if ($product->type === ProductType::Account) {
+        if ($product->form() === StockForm::Account) {
             $sample['Số slot'] = (string) $row->slots;
         }
 
@@ -797,7 +798,7 @@ class BatchIntake
         return new LineDefaults(
             receivedOn: $batch->received_on,
             unitCost: $line->unit_cost,
-            slots: $product->type === ProductType::OneTimeCode ? 1 : ($line->slots ?? $product->default_slots),
+            slots: $product->form() === StockForm::OneTimeCode ? 1 : ($line->slots ?? $product->default_slots),
             expiresOn: $expiry?->resolve($batch->received_on),
         );
     }
@@ -910,7 +911,7 @@ class BatchIntake
                 throw new InvalidBatch("Dòng nhập \"{$name}\" chưa chọn ký tự phân tách.");
             }
 
-            if ($line->slots !== null && $line->product->type === ProductType::OneTimeCode && $line->slots !== 1) {
+            if ($line->slots !== null && $line->product->form() === StockForm::OneTimeCode && $line->slots !== 1) {
                 throw new InvalidBatch("Mã dùng một lần luôn có đúng 1 slot (Dòng nhập \"{$name}\").");
             }
 
