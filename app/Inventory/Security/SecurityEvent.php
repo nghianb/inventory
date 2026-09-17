@@ -20,6 +20,8 @@ enum SecurityEvent: string
     case ApiKeyCreated = 'api_key_created';
     case ApiKeyRotated = 'api_key_rotated';
     case ApiKeyRevoked = 'api_key_revoked';
+    case DispatchFrozen = 'dispatch_frozen';
+    case DispatchUnfrozen = 'dispatch_unfrozen';
 
     public function label(): string
     {
@@ -37,6 +39,8 @@ enum SecurityEvent: string
             self::ApiKeyCreated => 'Tạo Khoá API',
             self::ApiKeyRotated => 'Xoay Khoá API',
             self::ApiKeyRevoked => 'Thu hồi Khoá API',
+            self::DispatchFrozen => 'Bật Tạm dừng xuất kho',
+            self::DispatchUnfrozen => 'Tắt Tạm dừng xuất kho',
         };
     }
 }

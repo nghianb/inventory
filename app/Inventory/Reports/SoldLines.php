@@ -38,8 +38,9 @@ final class SoldLines
      * `dispatches`, kèm Giá vốn và số Slot khách thực nhận. Chưa gom nhóm và chưa tách theo đã ghi Giá
      * bán hay chưa: người gọi làm tiếp.
      *
-     * Chỉ Giao bán và Giao thêm. Dòng xuất loại Đổi hàng và Giao thay không có Giá bán theo thiết kế:
-     * Giá vốn của Đổi hàng là **Chi phí đổi hàng**, còn Slot Giao thay đã được quy về Dòng xuất gốc.
+     * Chỉ Giao bán, Giao thêm và Ghi nhận giao bù — ba loại ứng với tiền khách trả. Dòng xuất loại
+     * Đổi hàng và Giao thay không có Giá bán theo thiết kế: Giá vốn của Đổi hàng là **Chi phí đổi
+     * hàng**, còn Slot Giao thay đã được quy về Dòng xuất gốc.
      */
     public static function inPeriod(ProfitReportFilter $filter): QueryBuilder
     {
@@ -47,7 +48,7 @@ final class SoldLines
             ->fromSub(self::byLine($filter), 'line_deliveries')
             ->join('dispatch_lines', 'dispatch_lines.id', '=', 'line_deliveries.line_id')
             ->join('dispatches', 'dispatches.id', '=', 'dispatch_lines.dispatch_id')
-            ->whereIn('dispatch_lines.kind', [DispatchLineKind::Sale->value, DispatchLineKind::Additional->value])
+            ->whereIn('dispatch_lines.kind', DispatchLineKind::salePriceValues())
             ->where('line_deliveries.first_delivered_at', '>=', $filter->startsAt())
             ->where('line_deliveries.first_delivered_at', '<', $filter->endsBefore())
             // Lọc Sản phẩm phải áp ngay ở đây, không chỉ ở lúc gom theo Sản phẩm: dòng 'Chưa có Giá

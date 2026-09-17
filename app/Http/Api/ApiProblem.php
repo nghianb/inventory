@@ -40,6 +40,15 @@ final class ApiProblem
         return self::response(404, 'dispatch_not_found', "Không có Phiếu xuất nào với mã đơn ngoài \"{$ref}\".");
     }
 
+    /**
+     * Kho đang Tạm dừng xuất kho: không giữ hay giao gì cho tới khi Quản trị mở lại. Không kèm lý do
+     * tạm dừng — đó là chuyện nội bộ của shop; website chỉ cần biết để ngừng nhận đơn và thử lại sau.
+     */
+    public static function frozen(): JsonResponse
+    {
+        return self::response(503, 'dispatch_frozen', 'Kho đang Tạm dừng xuất kho; không giữ hay giao hàng được lúc này.');
+    }
+
     public static function unauthorized(): JsonResponse
     {
         return self::response(401, 'unauthorized', 'Khoá API không hợp lệ hoặc đã bị thu hồi.');

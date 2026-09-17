@@ -11,6 +11,7 @@ use App\Inventory\Dispatch\ApiDispatchResult;
 use App\Inventory\Dispatch\ApiOrder;
 use App\Inventory\Dispatch\ApiOrderLine;
 use App\Inventory\Dispatch\DispatchConflict;
+use App\Inventory\Dispatch\DispatchFrozen;
 use App\Inventory\Dispatch\DispatchLineKind;
 use App\Inventory\Dispatch\DispatchNotFound;
 use App\Inventory\Dispatch\DispatchProblem;
@@ -91,6 +92,9 @@ class DispatchController extends Controller
             return ApiProblem::response(409, 'dispatch_conflict', $exception->getMessage(), ['dispatch_id' => $exception->dispatchId]);
         } catch (DispatchNotFound $exception) {
             return ApiProblem::dispatchNotFound($exception->externalRef);
+        } catch (DispatchFrozen) {
+            // Quản trị đã dừng toàn kho: đơn chưa mất gì, website gửi lại được sau khi kho mở lại.
+            return ApiProblem::frozen();
         } catch (KeyFingerprintMismatch $exception) {
             // Khoá mã hoá không khớp DB: kho từ chối mọi đường ghi cho tới khi Quản trị xử lý.
             return ApiProblem::response(503, 'inventory_unavailable', $exception->getMessage());
