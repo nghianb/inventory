@@ -17,6 +17,8 @@ enum SecurityEvent: string
     case StaffReactivated = 'staff_reactivated';
     case TwoFactorReset = 'two_factor_reset';
     case KeyFingerprintRegistered = 'key_fingerprint_registered';
+    case KeyRotationStarted = 'key_rotation_started';
+    case KeyRotationFinished = 'key_rotation_finished';
     case ApiKeyCreated = 'api_key_created';
     case ApiKeyRotated = 'api_key_rotated';
     case ApiKeyRevoked = 'api_key_revoked';
@@ -36,6 +38,8 @@ enum SecurityEvent: string
             self::StaffReactivated => 'Mở khoá nhân viên',
             self::TwoFactorReset => 'Reset 2FA',
             self::KeyFingerprintRegistered => 'Đăng ký dấu vân tay khoá mã hoá',
+            self::KeyRotationStarted => 'Bắt đầu xoay khoá mã hoá',
+            self::KeyRotationFinished => 'Xoay xong khoá mã hoá',
             self::ApiKeyCreated => 'Tạo Khoá API',
             self::ApiKeyRotated => 'Xoay Khoá API',
             self::ApiKeyRevoked => 'Thu hồi Khoá API',

@@ -27,16 +27,18 @@ final class KeyFingerprints
      * Đăng ký dấu vân tay của các khoá đang cấu hình mà DB chưa có. Không ghi đè dấu vân
      * tay đã có; mỗi khoá mới đăng ký ghi một dòng Nhật ký bảo mật.
      *
+     * @param  ?KeyPurpose  $only  chỉ đăng ký một loại khoá, để lệnh xoay khoá không đăng ký nhầm
+     *                             phiên bản mới của loại khoá khác đang dở dang trong `.env`
      * @return list<VersionedKey> các khoá vừa đăng ký
      *
      * @throws KeyFingerprintMismatch một khoá khác cùng loại và phiên bản đã được đăng ký
      * @throws InvalidKeyConfiguration
      */
-    public function register(): array
+    public function register(?KeyPurpose $only = null): array
     {
         $keys = [];
 
-        foreach (KeyPurpose::cases() as $purpose) {
+        foreach ($only === null ? KeyPurpose::cases() : [$only] as $purpose) {
             array_push($keys, $this->keys->current($purpose), ...$this->keys->previous($purpose));
         }
 
@@ -105,6 +107,17 @@ final class KeyFingerprints
     }
 
     /**
+     * Phiên bản mới nhất của một loại khoá đã đăng ký trong DB, hoặc null khi chưa có phiên bản
+     * nào. Lệnh xoay khoá dùng để ghi "phiên bản cũ" vào Nhật ký bảo mật.
+     */
+    public function latestVersion(KeyPurpose $purpose): ?int
+    {
+        $versions = array_keys($this->registered()[$purpose->value] ?? []);
+
+        return $versions === [] ? null : max($versions);
+    }
+
+    /**
      * @return array<string, array<int, string>> dấu vân tay theo loại khoá rồi phiên bản
      */
     private function registered(): array
@@ -145,7 +158,13 @@ final class KeyFingerprints
         );
     }
 
-    private static function fingerprint(VersionedKey $key): string
+    /**
+     * HMAC của một chuỗi cố định bằng chính khoá: nhận ra khoá mà không lộ giá trị khoá, nên
+     * ghi được vào Nhật ký bảo mật.
+     *
+     * @internal chỉ module Mã hoá dùng; nhận VersionedKey nên ngoài module cũng không gọi được.
+     */
+    public static function fingerprint(VersionedKey $key): string
     {
         return hash_hmac('sha256', self::FINGERPRINT_MESSAGE, $key->material);
     }

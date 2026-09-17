@@ -27,9 +27,14 @@ final class DedupeLookup
      *                             vấn không thu hẹp gì và quét cả kho
      *
      * @throws InvalidKeyConfiguration
+     * @throws DedupeHashesStale kho còn lẫn hash cũ và hash mới nên kết quả không đáng tin
      */
     public function matchingUnits(#[SensitiveParameter] string $value): ?Builder
     {
+        if (KeyRotation::hasStaleDedupeHashes()) {
+            throw new DedupeHashesStale;
+        }
+
         $productIdsByHash = Product::query()
             ->get(['id', 'case_insensitive', 'strip_separators'])
             ->reject(fn (Product $product): bool => $product->normalization()->apply($value) === '')
