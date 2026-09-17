@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\Products;
 
-use App\Filament\Resources\Products\Pages\ManageProducts;
+use App\Filament\Resources\Products\Pages\CreateProduct;
+use App\Filament\Resources\Products\Pages\EditProduct;
+use App\Filament\Resources\Products\Pages\ListProducts;
 use App\Filament\Support\InventoryAction;
 use App\Filament\Support\NavGroup;
 use App\Inventory\Catalog\ContentFieldDraft;
@@ -26,6 +28,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -69,6 +72,21 @@ class ProductResource extends Resource
         return $schema->components([
             Hidden::make('has_stock')->default(false),
             Hidden::make('has_dispatch')->default(false),
+            // Hai mốc khoá khác nhau và không trùng nhau: một Sản phẩm có thể đã có hàng mà chưa
+            // từng xuất. Một hộp duy nhất, nội dung dựng theo trạng thái thật, thay vì để Quản trị
+            // phát hiện giới hạn bằng cách đâm vào nó. Trang Tạo không bao giờ thấy hộp này.
+            Callout::make('Cấu hình bị khoá')
+                ->warning()
+                ->visible(fn (Get $get): bool => (bool) $get('has_stock') || (bool) $get('has_dispatch'))
+                ->description(fn (Get $get): string => collect([
+                    $get('has_stock')
+                        ? 'Sản phẩm đã có hàng: không đổi được Loại, hai tuỳ chọn chuẩn hoá, Khoá chống trùng, và định danh, kiểu, regex, cờ bắt buộc, cờ nhạy cảm của các Trường nội dung đã lưu; cũng không xoá được trường đã lưu. Vẫn thêm được trường tuỳ chọn và đổi tên hiển thị.'
+                        : null,
+                    $get('has_dispatch')
+                        ? 'Sản phẩm đã có Phiếu xuất: không đổi được Mã sản phẩm.'
+                        : null,
+                ])->filter()->implode(' '))
+                ->columnSpanFull(),
             Section::make('Thông tin')
                 ->columns(2)
                 ->schema([
@@ -129,34 +147,8 @@ class ProductResource extends Resource
                         ->integer()
                         ->minValue(0),
                 ]),
-            Section::make('Chuẩn hoá Khoá chống trùng')
-                ->description('Áp khi so trùng; nội dung giao khách vẫn là chuỗi gốc.')
-                ->columns(2)
-                ->schema([
-                    Toggle::make('case_insensitive')
-                        ->label('Không phân biệt hoa thường')
-                        ->default(true)
-                        ->disabled($hasStock)
-                        ->dehydrated(),
-                    Toggle::make('strip_separators')
-                        ->label('Bỏ gạch ngang và khoảng trắng bên trong')
-                        ->default(false)
-                        ->disabled($hasStock)
-                        ->dehydrated(),
-                ]),
-            Section::make('Mẫu giao hàng')
-                ->description('Văn bản ghép nội dung một Slot thành tin nhắn gửi khách. Để trống thì mỗi Trường nội dung một dòng "Tên trường: giá trị".')
-                ->schema([
-                    Textarea::make('delivery_template')
-                        ->hiddenLabel()
-                        ->rows(6)
-                        ->helperText(fn (Get $get): string => 'Biến: '.collect([
-                            ...array_map(fn (array $field): string => (string) ($field['key'] ?? ''), array_values((array) $get('fields'))),
-                            ...DeliveryTemplate::BUILT_IN,
-                        ])->filter()->map(fn (string $name): string => "{{{$name}}}")->implode(', ').'. Hạn sử dụng, Hạn bảo hành hiện dạng ngày/tháng/năm; mã đơn là mã đơn ngoài của Phiếu xuất.')
-                        ->placeholder("Cảm ơn bạn đã mua {{san_pham}} (đơn {{ma_don}})\nTài khoản: {{username}}\nBảo hành đến {{han_bao_hanh}}"),
-                ])
-                ->columnSpanFull(),
+            // Trường nội dung là việc chính khi khai một Sản phẩm nên leo lên ngay dưới Thông tin;
+            // hai khối dưới có mặc định dùng được ngay nên thu gọn sẵn.
             Repeater::make('fields')
                 ->label('Trường nội dung')
                 ->helperText('Sản phẩm đã có hàng chỉ thêm được trường tuỳ chọn hoặc đổi tên hiển thị.')
@@ -209,6 +201,43 @@ class ProductResource extends Resource
                         ->disabled(fn (Get $get): bool => (bool) $get('../../has_stock'))
                         ->dehydrated(),
                 ]),
+            Section::make('Chuẩn hoá Khoá chống trùng')
+                ->key('normalization')
+                ->description('Áp khi so trùng; nội dung giao khách vẫn là chuỗi gốc.')
+                // Mặc định theo loại Sản phẩm đã dùng được ngay; khối đang mang giá trị khác mặc
+                // định thì mở sẵn, để Sửa không giấu mất thứ mình từng đổi.
+                ->collapsed(fn (Get $get): bool => blank($get('type')) || new Normalization(
+                    (bool) $get('case_insensitive'),
+                    (bool) $get('strip_separators'),
+                ) == ProductType::from((string) $get('type'))->defaultNormalization())
+                ->columns(2)
+                ->schema([
+                    Toggle::make('case_insensitive')
+                        ->label('Không phân biệt hoa thường')
+                        ->default(true)
+                        ->disabled($hasStock)
+                        ->dehydrated(),
+                    Toggle::make('strip_separators')
+                        ->label('Bỏ gạch ngang và khoảng trắng bên trong')
+                        ->default(false)
+                        ->disabled($hasStock)
+                        ->dehydrated(),
+                ]),
+            Section::make('Mẫu giao hàng')
+                ->key('template')
+                ->description('Văn bản ghép nội dung một Slot thành tin nhắn gửi khách. Để trống thì mỗi Trường nội dung một dòng "Tên trường: giá trị".')
+                ->collapsed(fn (Get $get): bool => blank($get('delivery_template')))
+                ->schema([
+                    Textarea::make('delivery_template')
+                        ->hiddenLabel()
+                        ->rows(6)
+                        ->helperText(fn (Get $get): string => 'Biến: '.collect([
+                            ...array_map(fn (array $field): string => (string) ($field['key'] ?? ''), array_values((array) $get('fields'))),
+                            ...DeliveryTemplate::BUILT_IN,
+                        ])->filter()->map(fn (string $name): string => "{{{$name}}}")->implode(', ').'. Hạn sử dụng, Hạn bảo hành hiện dạng ngày/tháng/năm; mã đơn là mã đơn ngoài của Phiếu xuất.')
+                        ->placeholder("Cảm ơn bạn đã mua {{san_pham}} (đơn {{ma_don}})\nTài khoản: {{username}}\nBảo hành đến {{han_bao_hanh}}"),
+                ])
+                ->columnSpanFull(),
         ]);
     }
 
@@ -263,37 +292,52 @@ class ProductResource extends Resource
                     ->color(fn (Product $record): string => $record->isDiscontinued() ? 'gray' : 'success'),
             ])
             ->recordActions([
-                EditAction::make()
-                    ->mutateRecordDataUsing(fn (Product $record): array => self::formData($record))
-                    ->using(fn (EditAction $action, Product $record, array $data, ProductCatalog $catalog): Product => InventoryAction::attempt(
-                        $action,
-                        fn () => $catalog->update(InventoryAction::actor(), $record, self::draftFromForm($data)),
-                    )),
-                Action::make('discontinue')
-                    ->label('Ngừng bán')
-                    ->icon(Heroicon::OutlinedNoSymbol)
-                    ->color('warning')
-                    ->requiresConfirmation()
-                    ->modalDescription('Không Giữ hàng hay Giao hàng mới cho Sản phẩm; Đổi hàng của các lần giao cũ vẫn dùng được.')
-                    ->visible(fn (Product $record): bool => InventoryAction::actor()->can('discontinue', $record))
-                    ->action(function (Action $action, Product $record, ProductCatalog $catalog): void {
-                        InventoryAction::attempt($action, fn () => $catalog->discontinue(InventoryAction::actor(), $record));
-
-                        Notification::make()->success()->title('Đã Ngừng bán Sản phẩm.')->send();
-                    }),
-                DeleteAction::make()
-                    ->modalDescription('Chỉ xoá được Sản phẩm chưa từng có hàng.')
-                    ->using(fn (DeleteAction $action, Product $record, ProductCatalog $catalog) => InventoryAction::attempt(
-                        $action,
-                        fn () => $catalog->delete(InventoryAction::actor(), $record),
-                    )),
+                // Không modal: Filament tự trỏ nút này sang trang Sửa vì resource có trang 'edit'.
+                EditAction::make(),
+                self::discontinueAction(),
+                self::deleteAction(),
             ]);
+    }
+
+    /**
+     * Ngừng bán đứng ở cả hàng của bảng (xử lý vài Sản phẩm một lượt) lẫn header trang Sửa
+     * (người đang sửa không phải quay ra danh sách).
+     */
+    public static function discontinueAction(): Action
+    {
+        return Action::make('discontinue')
+            ->label('Ngừng bán')
+            ->icon(Heroicon::OutlinedNoSymbol)
+            ->color('warning')
+            ->requiresConfirmation()
+            ->modalDescription('Không Giữ hàng hay Giao hàng mới cho Sản phẩm; Đổi hàng của các lần giao cũ vẫn dùng được.')
+            ->visible(fn (Product $record): bool => InventoryAction::actor()->can('discontinue', $record))
+            ->action(function (Action $action, Product $record, ProductCatalog $catalog): void {
+                InventoryAction::attempt($action, fn () => $catalog->discontinue(InventoryAction::actor(), $record));
+
+                Notification::make()->success()->title('Đã Ngừng bán Sản phẩm.')->send();
+            });
+    }
+
+    public static function deleteAction(): DeleteAction
+    {
+        return DeleteAction::make()
+            ->modalDescription('Chỉ xoá được Sản phẩm chưa từng có hàng.')
+            // Filament đọc giá trị trả về làm cờ thành công, mà ProductCatalog::delete() trả về
+            // void: thiếu `true` ở đây thì xoá xong vẫn hiện thông báo thất bại và không điều hướng.
+            ->using(function (DeleteAction $action, Product $record, ProductCatalog $catalog): bool {
+                InventoryAction::attempt($action, fn () => $catalog->delete(InventoryAction::actor(), $record));
+
+                return true;
+            });
     }
 
     public static function getPages(): array
     {
         return [
-            'index' => ManageProducts::route('/'),
+            'index' => ListProducts::route('/'),
+            'create' => CreateProduct::route('/tao'),
+            'edit' => EditProduct::route('/{record}/sua'),
         ];
     }
 
