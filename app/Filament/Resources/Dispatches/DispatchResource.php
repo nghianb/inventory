@@ -8,6 +8,7 @@ use App\Filament\Resources\Dispatches\Pages\ListDispatches;
 use App\Filament\Resources\Dispatches\Pages\ViewDispatch;
 use App\Filament\Resources\Dispatches\Widgets\DispatchDeliveries;
 use App\Filament\Resources\Dispatches\Widgets\DispatchRevealLogEntries;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Dispatch\DispatchDraft;
 use App\Inventory\Dispatch\DispatchLineDraft;
 use App\Inventory\Dispatch\DispatchStatus;
@@ -45,6 +46,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
+use UnitEnum;
 
 /**
  * Phiếu xuất trong panel (phương án A của prototype): form Filament chuẩn → modal xác nhận →
@@ -56,6 +58,10 @@ class DispatchResource extends Resource
     protected static ?string $model = Dispatch::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPaperAirplane;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::XuatHang;
+
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $modelLabel = 'phiếu xuất';
 

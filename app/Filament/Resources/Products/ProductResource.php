@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Products;
 
 use App\Filament\Resources\Products\Pages\ManageProducts;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Catalog\ContentFieldDraft;
 use App\Inventory\Catalog\ContentFieldType;
 use App\Inventory\Catalog\ProductCatalog;
@@ -33,6 +34,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use UnitEnum;
 
 /**
  * Sản phẩm trong panel. Adapter mỏng: mọi thao tác gọi ProductCatalog, nơi kiểm tra
@@ -44,6 +46,10 @@ class ProductResource extends Resource
     protected static ?string $model = Product::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCube;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::KhoHang;
+
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $modelLabel = 'sản phẩm';
 

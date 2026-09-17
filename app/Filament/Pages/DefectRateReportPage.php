@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Reports\DefectRateReport;
 use App\Inventory\Reports\DefectRateReportFilter;
 use App\Inventory\Reports\DefectRateReportRow;
@@ -28,6 +29,7 @@ use Filament\Tables\Table;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Url;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use UnitEnum;
 
 /**
  * Báo cáo Tỉ lệ lỗi theo Nhà cung cấp. Adapter mỏng: số liệu, quyền và giá trị từng ô nằm ở
@@ -42,9 +44,13 @@ class DefectRateReportPage extends Page implements HasTable
 {
     use InteractsWithTable;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedExclamationTriangle;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedChartPie;
 
-    protected static ?string $navigationLabel = 'Báo cáo tỉ lệ lỗi';
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::BaoCao;
+
+    protected static ?int $navigationSort = 50;
+
+    protected static ?string $navigationLabel = 'Tỉ lệ lỗi';
 
     protected static ?string $title = 'Báo cáo tỉ lệ lỗi theo nhà cung cấp';
 

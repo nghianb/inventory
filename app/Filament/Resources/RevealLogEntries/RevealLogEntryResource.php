@@ -6,6 +6,7 @@ use App\Filament\Resources\Batches\BatchResource;
 use App\Filament\Resources\RevealLogEntries\Pages\ManageRevealLogEntries;
 use App\Filament\Resources\StockUnits\StockUnitResource;
 use App\Filament\Resources\SupplierClaims\SupplierClaimResource;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Reveal\RevealContextType;
 use App\Models\RevealLogEntry;
 use BackedEnum;
@@ -15,6 +16,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use UnitEnum;
 
 /**
  * Xem Nhật ký xem mã. Chỉ đọc; quyền nằm ở RevealLogEntryPolicy.
@@ -24,6 +26,10 @@ class RevealLogEntryResource extends Resource
     protected static ?string $model = RevealLogEntry::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedEye;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::NhatKy;
+
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $modelLabel = 'dòng Nhật ký xem mã';
 

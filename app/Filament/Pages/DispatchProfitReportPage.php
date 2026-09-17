@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Resources\SupplierClaims\SupplierClaimResource;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Reports\DispatchProfitReport;
 use App\Inventory\Reports\DispatchProfitRow;
 use App\Inventory\Reports\ProfitReportFilter;
@@ -27,6 +28,7 @@ use Filament\Tables\Table;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Url;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use UnitEnum;
 
 /**
  * Chi tiết Lãi/lỗ theo Phiếu xuất. Adapter mỏng trên DispatchProfitReport, cùng kiểu với
@@ -37,6 +39,10 @@ class DispatchProfitReportPage extends Page implements HasTable
     use InteractsWithTable;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedReceiptPercent;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::BaoCao;
+
+    protected static ?int $navigationSort = 40;
 
     protected static ?string $navigationLabel = 'Lãi/lỗ theo phiếu xuất';
 

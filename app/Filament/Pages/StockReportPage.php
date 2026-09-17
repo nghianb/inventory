@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Resources\SupplierClaims\SupplierClaimResource;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Reports\ReportFormat;
 use App\Inventory\Reports\StockReport;
 use App\Inventory\Reports\StockReportFilter;
@@ -27,6 +28,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Livewire\Attributes\Url;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use UnitEnum;
 
 /**
  * Báo cáo Tồn kho. Adapter mỏng: số liệu, quyền và cột theo Vai trò nằm ở StockReport; bộ lọc của
@@ -39,7 +41,11 @@ class StockReportPage extends Page implements HasTable
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedChartBar;
 
-    protected static ?string $navigationLabel = 'Báo cáo tồn kho';
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::BaoCao;
+
+    protected static ?int $navigationSort = 10;
+
+    protected static ?string $navigationLabel = 'Tồn kho';
 
     protected static ?string $title = 'Báo cáo tồn kho';
 

@@ -8,6 +8,7 @@ use App\Filament\Resources\SupplierClaims\Pages\ListSupplierClaims;
 use App\Filament\Resources\SupplierClaims\Pages\ViewSupplierClaim;
 use App\Filament\Resources\SupplierClaims\RelationManagers\ClaimUnitsRelationManager;
 use App\Filament\Resources\SupplierClaims\Widgets\UnclaimedDefectiveUnits;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Claims\SupplierClaims;
 use App\Inventory\Claims\SupplierClaimStatus;
 use App\Models\Batch;
@@ -30,6 +31,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use UnitEnum;
 
 /**
  * Khiếu nại nhà cung cấp trong panel. Adapter mỏng: tạo, sửa Nháp, gửi, giải quyết và huỷ gọi
@@ -41,6 +43,10 @@ class SupplierClaimResource extends Resource
     protected static ?string $model = SupplierClaim::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedReceiptRefund;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::NhapHang;
+
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $modelLabel = 'khiếu nại nhà cung cấp';
 

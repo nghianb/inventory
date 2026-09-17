@@ -5,6 +5,7 @@ namespace App\Filament\Resources\SalesChannels;
 use App\Filament\Resources\ApiKeys\ApiKeyResource;
 use App\Filament\Resources\SalesChannels\Pages\ManageSalesChannels;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Dispatch\SalesChannelDirectory;
 use App\Inventory\Dispatch\SalesChannelDraft;
 use App\Inventory\Dispatch\SalesChannelType;
@@ -23,6 +24,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use UnitEnum;
 
 /**
  * Kênh bán trong panel, chỉ Quản trị. Adapter mỏng: mọi thao tác gọi SalesChannelDirectory.
@@ -34,6 +36,10 @@ class SalesChannelResource extends Resource
     protected static ?string $model = SalesChannel::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedShoppingBag;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::XuatHang;
+
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $modelLabel = 'kênh bán';
 

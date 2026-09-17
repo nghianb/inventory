@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Resources\SupplierClaims\SupplierClaimResource;
 use App\Filament\Support\InventoryAction;
+use App\Filament\Support\NavGroup;
 use App\Inventory\Reports\ProfitReportFilter;
 use App\Inventory\Reports\ReportFormat;
 use App\Inventory\Reports\SupplierLossReport;
@@ -26,6 +27,7 @@ use Filament\Tables\Table;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Url;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use UnitEnum;
 
 /**
  * Báo cáo lỗ theo Nhà cung cấp. Adapter mỏng trên SupplierLossReport, cùng kiểu với
@@ -35,7 +37,11 @@ class SupplierLossReportPage extends Page implements HasTable
 {
     use InteractsWithTable;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingStorefront;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedArrowTrendingDown;
+
+    protected static string|UnitEnum|null $navigationGroup = NavGroup::BaoCao;
+
+    protected static ?int $navigationSort = 60;
 
     protected static ?string $navigationLabel = 'Lỗ theo nhà cung cấp';
 
