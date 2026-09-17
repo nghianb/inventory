@@ -7,6 +7,7 @@ use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\Role;
 use App\Inventory\Staff\LastActiveQuanTri;
 use App\Inventory\Staff\StaffManager;
+use App\Inventory\Staff\StaffRules;
 use App\Models\User;
 use BackedEnum;
 use Closure;
@@ -22,7 +23,6 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
-use Illuminate\Validation\Rules\Password;
 
 /**
  * Quản lý nhân viên trong panel. Adapter mỏng: mọi thao tác gọi StaffManager,
@@ -51,19 +51,19 @@ class StaffResource extends Resource
             TextInput::make('name')
                 ->label('Tên')
                 ->required()
-                ->maxLength(255),
+                ->maxLength(StaffRules::MAX_LENGTH),
             TextInput::make('email')
                 ->label('Email')
                 ->email()
                 ->required()
-                ->maxLength(255)
+                ->maxLength(StaffRules::MAX_LENGTH)
                 ->unique(User::class, 'email'),
             TextInput::make('password')
                 ->label('Mật khẩu ban đầu')
                 ->password()
                 ->revealable()
                 ->required()
-                ->rule(Password::default()),
+                ->rule(StaffRules::password()),
             self::rolesField(),
         ]);
     }

@@ -15,8 +15,9 @@ use Spatie\Permission\Models\Role as RoleModel;
 
 /**
  * Quản lý nhân viên: chỉ Quản trị tạo nhân viên, đổi Vai trò, Khoá nhân viên và
- * reset 2FA. Mỗi thao tác ghi Nhật ký bảo mật. Không có thao tác xoá nhân viên.
- * Kho luôn còn ít nhất một Quản trị đang hoạt động.
+ * reset 2FA. Ngoại lệ duy nhất là Quản trị đầu tiên của kho, do lệnh artisan trên
+ * server tạo lúc chưa có Quản trị nào để mà cho phép. Mỗi thao tác ghi Nhật ký bảo
+ * mật. Không có thao tác xoá nhân viên. Kho luôn còn ít nhất một Quản trị đang hoạt động.
  */
 class StaffManager
 {
@@ -40,6 +41,29 @@ class StaffManager
             ]);
 
             return $staff;
+        });
+    }
+
+    /**
+     * Tạo Quản trị đầu tiên của kho. Chỉ gọi từ lệnh artisan trên server: kho chưa có
+     * Quản trị nào nên không có ai trong app thực hiện được, actor để trống.
+     *
+     * @throws QuanTriAlreadyExists
+     */
+    public function createFirstQuanTri(string $name, string $email, #[SensitiveParameter] string $password): User
+    {
+        return DB::transaction(function () use ($name, $email, $password): User {
+            $this->ensureNoQuanTri();
+
+            $quanTri = User::create(['name' => $name, 'email' => $email, 'password' => $password]);
+            $quanTri->syncRoles([Role::QuanTri]);
+
+            $this->log->record(SecurityEvent::StaffCreated, $quanTri, details: [
+                'roles' => self::roleNames([Role::QuanTri]),
+                'via' => 'artisan',
+            ]);
+
+            return $quanTri;
         });
     }
 
@@ -165,18 +189,28 @@ class StaffManager
     }
 
     /**
-     * Mọi thao tác có thể làm giảm số Quản trị đang hoạt động khoá cùng một hàng
-     * (Vai trò Quản trị) nên chạy tuần tự; đếm sau khi có khoá mới thấy thay đổi
-     * vừa commit của thao tác trước. Phải gọi trong transaction.
+     * Quản trị bị khoá vẫn tính là đã có: kho chỉ thiếu Quản trị đúng một lần, ngay sau
+     * khi cài. Phải gọi trong transaction.
+     *
+     * @throws QuanTriAlreadyExists
+     */
+    private function ensureNoQuanTri(): void
+    {
+        $this->lockQuanTriRole();
+
+        if (User::role(Role::QuanTri->value)->exists()) {
+            throw new QuanTriAlreadyExists;
+        }
+    }
+
+    /**
+     * Phải gọi trong transaction.
      *
      * @throws LastActiveQuanTri
      */
     private function ensureNotLastActiveQuanTri(User $staff): void
     {
-        RoleModel::query()
-            ->where('name', Role::QuanTri->value)
-            ->lockForUpdate()
-            ->first();
+        $this->lockQuanTriRole();
 
         $activeQuanTriIds = User::role(Role::QuanTri->value)
             ->whereNull('deactivated_at')
@@ -185,6 +219,19 @@ class StaffManager
         if ($activeQuanTriIds->contains($staff->getKey()) && $activeQuanTriIds->count() === 1) {
             throw new LastActiveQuanTri($staff);
         }
+    }
+
+    /**
+     * Mọi thao tác đụng tới số Quản trị của kho khoá cùng một hàng (Vai trò Quản trị) nên
+     * chạy tuần tự; đếm sau khi có khoá mới thấy thay đổi vừa commit của thao tác trước.
+     * Phải gọi trong transaction.
+     */
+    private function lockQuanTriRole(): void
+    {
+        RoleModel::query()
+            ->where('name', Role::QuanTri->value)
+            ->lockForUpdate()
+            ->first();
     }
 
     /**
