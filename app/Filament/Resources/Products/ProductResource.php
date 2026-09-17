@@ -337,6 +337,7 @@ class ProductResource extends Resource
     {
         return DeleteAction::make()
             ->modalDescription('Chỉ xoá được Sản phẩm chưa từng có hàng.')
+            ->successNotificationTitle('Đã xoá Sản phẩm.')
             // Filament đọc giá trị trả về làm cờ thành công, mà ProductCatalog::delete() trả về
             // void: thiếu `true` ở đây thì xoá xong vẫn hiện thông báo thất bại và không điều hướng.
             ->using(function (DeleteAction $action, Product $record, ProductCatalog $catalog): bool {

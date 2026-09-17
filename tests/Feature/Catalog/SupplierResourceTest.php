@@ -40,7 +40,8 @@ it('Nhập kho tạo, sửa và xoá Nhà cung cấp từ panel', function () {
     expect($supplier->fresh())->name->toBe('Kinguin Business')->note->toBeNull();
 
     Livewire::test(ManageSuppliers::class)
-        ->callAction(TestAction::make('delete')->table($supplier));
+        ->callAction(TestAction::make('delete')->table($supplier))
+        ->assertNotified('Đã xoá Nhà cung cấp.');
 
     expect(Supplier::count())->toBe(0);
 });
