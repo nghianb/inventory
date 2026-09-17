@@ -79,6 +79,17 @@ class Product extends Model
     }
 
     /**
+     * Slot Đã giữ của Sản phẩm: đang giam cho một Phiếu xuất nên không thuộc Tồn bán được, nhưng
+     * vẫn nằm trong kho. Tách khỏi Còn hàng để hàng đang giữ không trông như đã bốc hơi.
+     *
+     * @return HasManyThrough<Slot, StockUnit, $this>
+     */
+    public function heldSlots(): HasManyThrough
+    {
+        return $this->hasManyThrough(Slot::class, StockUnit::class)->where('slots.status', SlotStatus::Reserved);
+    }
+
+    /**
      * Tồn lỗi: Slot Còn hàng của Đơn vị hàng Lỗi, không thuộc Tồn bán được.
      *
      * @return HasManyThrough<Slot, StockUnit, $this>

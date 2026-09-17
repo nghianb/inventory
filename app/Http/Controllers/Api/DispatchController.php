@@ -5,51 +5,98 @@ namespace App\Http\Controllers\Api;
 use App\Http\Api\ApiProblem;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\AuthenticateApiKey;
+use App\Inventory\Dispatch\ApiDelivery;
 use App\Inventory\Dispatch\ApiDispatch;
 use App\Inventory\Dispatch\ApiDispatchResult;
 use App\Inventory\Dispatch\ApiOrder;
 use App\Inventory\Dispatch\ApiOrderLine;
-use App\Inventory\Dispatch\DeliveredContent;
 use App\Inventory\Dispatch\DispatchConflict;
 use App\Inventory\Dispatch\DispatchLineKind;
+use App\Inventory\Dispatch\DispatchNotFound;
 use App\Inventory\Dispatch\DispatchProblem;
 use App\Inventory\Dispatch\InvalidDispatch;
 use App\Inventory\Dispatch\OutOfStock;
 use App\Inventory\Dispatch\Shortage;
 use App\Inventory\Encryption\KeyFingerprintMismatch;
 use App\Models\DispatchLine;
+use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Đơn của website: giữ và giao ngay trong một lần gọi, trả nội dung từng Slot. Adapter mỏng — mọi
- * quy tắc (idempotency theo mã đơn ngoài, giữ đủ hoặc thất bại, Nhật ký xem mã) nằm trong
- * {@see ApiDispatch}; ở đây chỉ dựng input và đổi lỗi nghiệp vụ thành mã HTTP.
+ * Đơn của website: giữ và giao ngay, hoặc giữ hàng rồi xác nhận / huỷ; cộng đường đọc lại phiếu cho
+ * trang đơn của khách. Adapter mỏng — mọi quy tắc (idempotency theo mã đơn ngoài, giữ đủ hoặc thất
+ * bại, hạn Giữ hàng, Nhật ký xem mã) nằm trong {@see ApiDispatch}; ở đây chỉ dựng input và đổi lỗi
+ * nghiệp vụ thành mã HTTP.
  */
 class DispatchController extends Controller
 {
     public function store(Request $request, ApiDispatch $dispatches): JsonResponse
     {
         $order = self::orderFrom($request, $problems);
+        $hold = $request->input('hold', false);
+
+        if (! is_bool($hold)) {
+            $problems[] = 'Trường "hold" phải là true hoặc false.';
+        }
 
         if ($problems !== []) {
             return ApiProblem::invalid($problems);
         }
 
+        return self::attempt(fn (): ApiDispatchResult => $dispatches->create(AuthenticateApiKey::key($request), $order, (bool) $hold), mayCreate: true);
+    }
+
+    /**
+     * Xác nhận đơn đang giữ: kho giao hàng và trả nội dung.
+     */
+    public function confirm(Request $request, string $ref, ApiDispatch $dispatches): JsonResponse
+    {
+        return self::attempt(fn (): ApiDispatchResult => $dispatches->confirm(AuthenticateApiKey::key($request), $ref));
+    }
+
+    /**
+     * Huỷ đơn đang giữ: kho nhả Slot về Còn hàng.
+     */
+    public function cancel(Request $request, string $ref, ApiDispatch $dispatches): JsonResponse
+    {
+        return self::attempt(fn (): ApiDispatchResult => $dispatches->cancel(AuthenticateApiKey::key($request), $ref));
+    }
+
+    /**
+     * Đọc lại phiếu cho trang đơn của khách.
+     */
+    public function show(Request $request, string $ref, ApiDispatch $dispatches): JsonResponse
+    {
+        return self::attempt(fn (): ApiDispatchResult => $dispatches->read(AuthenticateApiKey::key($request), $ref));
+    }
+
+    /**
+     * Chạy một thao tác của module Kho và đổi lỗi nghiệp vụ thành mã HTTP. Một chỗ duy nhất, để bốn
+     * đường vào không trả bốn kiểu lỗi khác nhau cho cùng một chuyện.
+     *
+     * @param  Closure(): ApiDispatchResult  $action
+     * @param  bool  $mayCreate  chỉ đường gửi đơn mới sinh ra Phiếu xuất, nên chỉ nó trả 201 được;
+     *                           xác nhận, huỷ và đọc lại luôn thao tác trên phiếu đã có
+     */
+    private static function attempt(Closure $action, bool $mayCreate = false): JsonResponse
+    {
         try {
-            $result = $dispatches->create(AuthenticateApiKey::key($request), $order);
+            $result = $action();
         } catch (InvalidDispatch $exception) {
             return ApiProblem::invalid(array_map(fn (DispatchProblem $problem): string => $problem->message, $exception->problems));
         } catch (OutOfStock $exception) {
             return ApiProblem::response(409, 'out_of_stock', $exception->getMessage(), ['shortages' => self::shortages($exception)]);
         } catch (DispatchConflict $exception) {
             return ApiProblem::response(409, 'dispatch_conflict', $exception->getMessage(), ['dispatch_id' => $exception->dispatchId]);
+        } catch (DispatchNotFound $exception) {
+            return ApiProblem::dispatchNotFound($exception->externalRef);
         } catch (KeyFingerprintMismatch $exception) {
             // Khoá mã hoá không khớp DB: kho từ chối mọi đường ghi cho tới khi Quản trị xử lý.
             return ApiProblem::response(503, 'inventory_unavailable', $exception->getMessage());
         }
 
-        return response()->json(self::payload($result), $result->replayed ? 200 : 201);
+        return response()->json(self::payload($result), $mayCreate && ! $result->replayed ? 201 : 200);
     }
 
     /**
@@ -134,7 +181,7 @@ class DispatchController extends Controller
     }
 
     /**
-     * Phiếu xuất trả cho website: thông tin đơn, các Dòng xuất của đơn và nội dung từng Slot đã giao.
+     * Phiếu xuất trả cho website: thông tin đơn, các Dòng xuất của đơn và các lần Giao hàng.
      *
      * @return array<string, mixed>
      */
@@ -148,6 +195,8 @@ class DispatchController extends Controller
             'status' => $dispatch->status->value,
             'sales_channel' => $dispatch->salesChannel->name,
             'created_at' => $dispatch->created_at?->toIso8601String(),
+            'hold_expires_at' => $dispatch->hold_expires_at?->toIso8601String(),
+            // Chỉ phần website đã gửi: Dòng xuất do nhân viên thêm sau đó không thuộc đơn ấy.
             'lines' => $dispatch->lines
                 ->filter(fn (DispatchLine $line): bool => $line->kind === DispatchLineKind::Sale)
                 ->map(fn (DispatchLine $line): array => [
@@ -157,14 +206,27 @@ class DispatchController extends Controller
                 ])
                 ->values()
                 ->all(),
-            'deliveries' => array_map(fn (DeliveredContent $slot): array => [
-                'id' => $slot->deliveryId,
-                'product_code' => $slot->productCode,
-                'text' => $slot->message,
-                'fields' => $slot->values,
-                'expires_on' => $slot->expiresOn?->toDateString(),
-                'warranty_ends_on' => $slot->warrantyEndsOn->toDateString(),
-            ], $result->slots),
+            'deliveries' => array_map(self::delivery(...), $result->deliveries),
         ]];
+    }
+
+    /**
+     * Một lần Giao hàng. `text` và `fields` chỉ có khi lần giao còn hiệu lực và còn trong Hạn bảo
+     * hành; `status` nói vì sao không có, để website hiển thị đúng thay vì tưởng kho mất dữ liệu.
+     *
+     * @return array<string, mixed>
+     */
+    private static function delivery(ApiDelivery $delivery): array
+    {
+        return [
+            'id' => $delivery->id,
+            'product_code' => $delivery->productCode,
+            'status' => $delivery->status->value,
+            'replaces_delivery_id' => $delivery->replacesDeliveryId,
+            'text' => $delivery->content?->message,
+            'fields' => $delivery->content?->values,
+            'expires_on' => $delivery->expiresOn?->toDateString(),
+            'warranty_ends_on' => $delivery->warrantyEndsOn->toDateString(),
+        ];
     }
 }

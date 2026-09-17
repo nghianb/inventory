@@ -25,6 +25,16 @@ Route::prefix('v1')
         // Số Slot Tồn bán được theo Mã sản phẩm. Chỉ tham khảo, không giữ hàng.
         Route::get('stock', StockController::class);
 
-        // Một đơn của website: giữ và giao ngay. Idempotent theo (Kênh bán, mã đơn ngoài).
+        // Một đơn của website. Mặc định giữ và giao ngay; "hold": true thì chỉ Giữ hàng và chờ
+        // website xác nhận. Idempotent theo (Kênh bán, mã đơn ngoài).
         Route::post('dispatches', [DispatchController::class, 'store']);
+
+        // Luồng hai bước trên một phiếu đã có. Phiếu được trỏ tới bằng chính mã đơn ngoài của
+        // website (urlencode nếu mã có ký tự lạ), để website không phải lưu thêm id của kho.
+        Route::post('dispatches/{ref}/confirm', [DispatchController::class, 'confirm']);
+        Route::post('dispatches/{ref}/cancel', [DispatchController::class, 'cancel']);
+
+        // Đọc lại phiếu cho trang đơn của khách: mọi lần giao kèm trạng thái, nội dung chỉ trả cho
+        // lần giao còn hiệu lực và còn trong Hạn bảo hành.
+        Route::get('dispatches/{ref}', [DispatchController::class, 'show']);
     });

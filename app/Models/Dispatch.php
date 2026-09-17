@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
  * @property ?int $created_by nhân viên tạo phiếu; null khi phiếu đến từ API
  * @property ?int $created_by_api_key_id Khoá API tạo phiếu; null khi nhân viên tạo trong panel
  * @property ?CarbonImmutable $completed_at
+ * @property ?CarbonImmutable $hold_expires_at hạn Giữ hàng của phiếu Đang giữ; null khi phiếu giữ và giao một bước
  * @property ?CarbonImmutable $result_revealed_at
  * @property ?int $result_by nhân viên của lần xuất kho gần nhất (tạo phiếu hoặc Giao thêm), người duy nhất xem được màn kết quả; null khi phiếu đến từ API
  * @property ?int $result_from_line_id Dòng xuất đầu tiên của lần Giao thêm gần nhất; null khi màn kết quả là của lần tạo phiếu
@@ -49,6 +50,7 @@ class Dispatch extends Model
             'created_by' => 'integer',
             'created_by_api_key_id' => 'integer',
             'completed_at' => 'immutable_datetime',
+            'hold_expires_at' => 'immutable_datetime',
             'result_revealed_at' => 'immutable_datetime',
             'result_by' => 'integer',
             'result_from_line_id' => 'integer',

@@ -4,6 +4,7 @@ namespace App\Inventory\Stock;
 
 use App\Inventory\Access\MissingRole;
 use App\Inventory\Access\RoleGate;
+use App\Inventory\Dispatch\SlotHolds;
 use App\Inventory\Warranty\DefectReportStatus;
 use App\Models\DefectReport;
 use App\Models\Slot;
@@ -65,7 +66,9 @@ class StockVoid
      */
     public function canVoidUnit(User $actor, StockUnit $unit): bool
     {
-        return $this->roles->allows($actor) && $unit->status === StockUnitStatus::Active;
+        return $this->roles->allows($actor)
+            && $unit->status === StockUnitStatus::Active
+            && ! SlotHolds::anyHeldForUnit((int) $unit->getKey());
     }
 
     /**
@@ -77,6 +80,11 @@ class StockVoid
     public function voidSlotWithin(User $actor, int $slotId, VoidReason $reason, string $ledgerReason): void
     {
         $slot = Slot::query()->lockForUpdate()->findOrFail($slotId);
+
+        // Nói rõ vì sao, thay vì để nhân viên đoán: Slot đang được giữ cho một khách chờ thanh toán.
+        if ($slot->status === SlotStatus::Reserved) {
+            throw new InvalidVoid('Slot đang được giữ cho một Phiếu xuất; chờ hết hạn giữ hoặc để website huỷ đơn rồi Huỷ hàng.');
+        }
 
         if (! self::isVoidable($slot)) {
             throw new InvalidVoid('Chỉ Huỷ hàng được Slot Còn hàng hoặc Đã giao.');
@@ -111,6 +119,12 @@ class StockVoid
 
         if ($unit->status !== StockUnitStatus::Active) {
             throw new InvalidVoid('Chỉ Huỷ hàng được Đơn vị hàng Hoạt động.');
+        }
+
+        // Huỷ cả Đơn vị hàng chỉ đụng Slot Còn hàng, nên Slot đang giữ sẽ ở lại trạng thái Đã giữ
+        // trên một Đơn vị hàng đã huỷ, rồi hết hạn giữ lại quay về Còn hàng thành hàng chết.
+        if (SlotHolds::anyHeldForUnit((int) $unit->getKey())) {
+            throw new InvalidVoid(SlotHolds::heldUnitProblem('Huỷ hàng'));
         }
 
         $now = now();

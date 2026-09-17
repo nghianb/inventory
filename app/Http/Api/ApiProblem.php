@@ -32,6 +32,14 @@ final class ApiProblem
         return self::response(422, 'invalid_request', 'Yêu cầu không hợp lệ.', ['problems' => $problems]);
     }
 
+    /**
+     * Mã đơn ngoài chưa thuộc Phiếu xuất nào trong Kênh bán của Khoá API: website gửi đơn trước đã.
+     */
+    public static function dispatchNotFound(string $ref): JsonResponse
+    {
+        return self::response(404, 'dispatch_not_found', "Không có Phiếu xuất nào với mã đơn ngoài \"{$ref}\".");
+    }
+
     public static function unauthorized(): JsonResponse
     {
         return self::response(401, 'unauthorized', 'Khoá API không hợp lệ hoặc đã bị thu hồi.');

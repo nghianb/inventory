@@ -29,6 +29,15 @@ function staffMember(Role ...$roles): User
 }
 
 /**
+ * Request vào API xuất kho, đã gắn Khoá API. Cần `$this->secret` trong beforeEach; truyền khoá khác
+ * để thử một khoá cụ thể. Test nào cần gọi *không* kèm header thì tự dựng request, đừng qua đây.
+ */
+function apiAs(?string $secret = null): TestCase
+{
+    return test()->withHeaders(['Authorization' => 'Bearer '.($secret ?? test()->secret)]);
+}
+
+/**
  * Nhập và xác nhận một Lô nhập một Dòng nhập vào kho, để test có hàng mà giao. Cần `$this->admin`
  * (Quản trị hoặc Nhập kho) và `$this->supplier` trong beforeEach.
  */
