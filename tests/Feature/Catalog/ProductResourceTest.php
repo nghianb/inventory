@@ -205,6 +205,10 @@ it('form xếp Trường nội dung lên ngay dưới Thông tin và thu gọn s
     // Khối đang mang giá trị khác mặc định thì mở sẵn, không ai phải bấm mở mới thấy mình đã đổi gì.
     Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
         ->assertSchemaComponentExists('normalization', checkComponentUsing: $collapsed(false))
+        ->assertSchemaComponentExists('template', checkComponentUsing: $collapsed(false))
+        // Ô Loại là live(): đổi nó không được đóng sập khối đang mở dở.
+        ->fillForm(['type' => ProductType::Account->value])
+        ->assertSchemaComponentExists('normalization', checkComponentUsing: $collapsed(false))
         ->assertSchemaComponentExists('template', checkComponentUsing: $collapsed(false));
 });
 

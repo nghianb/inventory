@@ -83,7 +83,7 @@ class ProductResource extends Resource
                         ? 'Sản phẩm đã có hàng: không đổi được Loại, hai tuỳ chọn chuẩn hoá, Khoá chống trùng, và định danh, kiểu, regex, cờ bắt buộc, cờ nhạy cảm của các Trường nội dung đã lưu; cũng không xoá được trường đã lưu. Vẫn thêm được trường tuỳ chọn và đổi tên hiển thị.'
                         : null,
                     $get('has_dispatch')
-                        ? 'Sản phẩm đã có Phiếu xuất: không đổi được Mã sản phẩm.'
+                        ? ProductCatalog::DISPATCH_LOCKS_CODE
                         : null,
                 ])->filter()->implode(' '))
                 ->columnSpanFull(),
@@ -112,9 +112,9 @@ class ProductResource extends Resource
                         ->maxLength(255),
                     TextInput::make('code')
                         ->label('Mã sản phẩm')
-                        ->helperText(fn (Get $get): string => $get('has_dispatch')
-                            ? 'Sản phẩm đã có Phiếu xuất: không đổi được Mã sản phẩm.'
-                            : 'Chữ in hoa không dấu, chữ số, dấu chấm, gạch ngang, gạch dưới. Ví dụ NETFLIX-1M.')
+                        // Ô bị khoá thì hộp Cấu hình bị khoá đã nói lý do ngay đầu trang; ở đây
+                        // chỉ nhắc dạng mã, không lặp lại câu ấy lần thứ hai trên cùng màn hình.
+                        ->helperText('Chữ in hoa không dấu, chữ số, dấu chấm, gạch ngang, gạch dưới. Ví dụ NETFLIX-1M.')
                         ->required()
                         ->maxLength(64)
                         ->disabled(fn (Get $get): bool => (bool) $get('has_dispatch'))
@@ -206,10 +206,10 @@ class ProductResource extends Resource
                 ->description('Áp khi so trùng; nội dung giao khách vẫn là chuỗi gốc.')
                 // Mặc định theo loại Sản phẩm đã dùng được ngay; khối đang mang giá trị khác mặc
                 // định thì mở sẵn, để Sửa không giấu mất thứ mình từng đổi.
-                ->collapsed(fn (Get $get): bool => blank($get('type')) || new Normalization(
-                    (bool) $get('case_insensitive'),
-                    (bool) $get('strip_separators'),
-                ) == ProductType::from((string) $get('type'))->defaultNormalization())
+                // Đọc bản ghi chứ không đọc state sống: ô Loại là live(), nên closure đọc state
+                // sẽ đóng sập khối ngay khi Quản trị vừa mở tay ra để sửa.
+                ->collapsed(fn (?Product $record): bool => $record === null
+                    || $record->normalization() == $record->type->defaultNormalization())
                 ->columns(2)
                 ->schema([
                     Toggle::make('case_insensitive')
@@ -226,7 +226,7 @@ class ProductResource extends Resource
             Section::make('Mẫu giao hàng')
                 ->key('template')
                 ->description('Văn bản ghép nội dung một Slot thành tin nhắn gửi khách. Để trống thì mỗi Trường nội dung một dòng "Tên trường: giá trị".')
-                ->collapsed(fn (Get $get): bool => blank($get('delivery_template')))
+                ->collapsed(fn (?Product $record): bool => blank($record?->delivery_template))
                 ->schema([
                     Textarea::make('delivery_template')
                         ->hiddenLabel()

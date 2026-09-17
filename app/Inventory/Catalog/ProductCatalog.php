@@ -17,6 +17,12 @@ use Illuminate\Support\Facades\DB;
  */
 class ProductCatalog
 {
+    /**
+     * Panel hiện đúng câu này để giải thích ô Mã sản phẩm bị khoá; giữ một bản để lời giải
+     * thích không trôi khỏi quy tắc thật.
+     */
+    public const DISPATCH_LOCKS_CODE = 'Sản phẩm đã có Phiếu xuất: không đổi được Mã sản phẩm.';
+
     private const CODE_FORMAT = '/^[A-Z0-9][A-Z0-9._-]*$/';
 
     private const FIELD_KEY_FORMAT = '/^[a-z][a-z0-9_]*$/';
@@ -56,7 +62,7 @@ class ProductCatalog
             // Kênh bán loại API tham chiếu Sản phẩm bằng Mã sản phẩm. Xuất kho khoá chia sẻ hàng
             // Sản phẩm, nên phiếu đang tạo cũng được tính.
             if ($draft->code !== $current->code && $current->hasDispatch()) {
-                throw new LockedProductConfiguration('Sản phẩm đã có Phiếu xuất: không đổi được Mã sản phẩm.');
+                throw new LockedProductConfiguration(self::DISPATCH_LOCKS_CODE);
             }
 
             if ($current->hasStock()) {
@@ -70,6 +76,9 @@ class ProductCatalog
     /**
      * Sản phẩm đã có hàng chỉ được thêm trường tuỳ chọn hoặc đổi tên hiển thị; các
      * cấu hình không ảnh hưởng hàng đã nhập (tên, slot mặc định, hạn...) vẫn sửa được.
+     *
+     * Callout "Cấu hình bị khoá" ở ProductResource::form() liệt kê lại đúng danh sách này
+     * bằng lời. Đổi guard ở đây thì sửa luôn câu bên đó, không thì hộp nói dối Quản trị.
      *
      * @throws LockedProductConfiguration
      */

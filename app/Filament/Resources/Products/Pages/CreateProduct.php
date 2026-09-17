@@ -3,12 +3,11 @@
 namespace App\Filament\Resources\Products\Pages;
 
 use App\Filament\Resources\Products\ProductResource;
+use App\Filament\Support\HandlesBusinessErrors;
 use App\Filament\Support\InventoryAction;
 use App\Inventory\Catalog\ProductCatalog;
-use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
-use Throwable;
 
 /**
  * Khai báo một Sản phẩm mới. Trang riêng chứ không phải modal: form có repeater Trường
@@ -19,6 +18,8 @@ use Throwable;
  */
 class CreateProduct extends CreateRecord
 {
+    use HandlesBusinessErrors;
+
     protected static string $resource = ProductResource::class;
 
     /** Mỗi Sản phẩm có bộ Trường nội dung riêng nên form reset sạch chẳng tiết kiệm gì. */
@@ -29,18 +30,10 @@ class CreateProduct extends CreateRecord
      */
     protected function handleRecordCreation(array $data): Model
     {
-        try {
-            return app(ProductCatalog::class)->create(InventoryAction::actor(), ProductResource::draftFromForm($data));
-        } catch (Throwable $exception) {
-            if (! InventoryAction::isBusinessError($exception)) {
-                throw $exception;
-            }
-
-            Notification::make()->danger()->title($exception->getMessage())->send();
-            $this->halt(shouldRollbackDatabaseTransaction: true);
-
-            throw $exception;
-        }
+        return $this->attempt(fn (): Model => app(ProductCatalog::class)->create(
+            InventoryAction::actor(),
+            ProductResource::draftFromForm($data),
+        ));
     }
 
     protected function getCreatedNotificationTitle(): ?string

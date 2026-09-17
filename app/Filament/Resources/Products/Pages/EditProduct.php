@@ -3,14 +3,13 @@
 namespace App\Filament\Resources\Products\Pages;
 
 use App\Filament\Resources\Products\ProductResource;
+use App\Filament\Support\HandlesBusinessErrors;
 use App\Filament\Support\InventoryAction;
 use App\Inventory\Catalog\ProductCatalog;
 use App\Models\Product;
 use Filament\Actions\Action;
-use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
-use Throwable;
 
 /**
  * Sửa cấu hình một Sản phẩm. Trang riêng chứ không phải modal, và Sửa mới là cái mở
@@ -21,6 +20,8 @@ use Throwable;
  */
 class EditProduct extends EditRecord
 {
+    use HandlesBusinessErrors;
+
     protected static string $resource = ProductResource::class;
 
     /**
@@ -56,18 +57,11 @@ class EditProduct extends EditRecord
     {
         assert($record instanceof Product);
 
-        try {
-            return app(ProductCatalog::class)->update(InventoryAction::actor(), $record, ProductResource::draftFromForm($data));
-        } catch (Throwable $exception) {
-            if (! InventoryAction::isBusinessError($exception)) {
-                throw $exception;
-            }
-
-            Notification::make()->danger()->title($exception->getMessage())->send();
-            $this->halt(shouldRollbackDatabaseTransaction: true);
-
-            throw $exception;
-        }
+        return $this->attempt(fn (): Model => app(ProductCatalog::class)->update(
+            InventoryAction::actor(),
+            $record,
+            ProductResource::draftFromForm($data),
+        ));
     }
 
     protected function getSavedNotificationTitle(): ?string
