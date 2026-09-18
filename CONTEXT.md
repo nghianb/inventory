@@ -26,7 +26,7 @@ _Avoid_: acc, nick
 
 **Đơn vị hàng** (Stock unit):
 Một thứ cụ thể nằm trong kho: một **Mã dùng một lần** hoặc một **Tài khoản**. Có trạng thái Hoạt động, Lỗi, Đã huỷ hoặc Đã huỷ nhập; khi Lỗi hoặc Đã huỷ thì mọi **Slot** còn trong kho của nó không bán được. Mang **Giá vốn** của cả đơn vị.
-_Avoid_: item, hàng (khi nói chung chung)
+_Avoid_: item, hàng (khi nói chung chung), đơn vị sản phẩm (lẫn với **Sản phẩm** và **Loại sản phẩm**)
 
 **Trường nội dung** (Content field):
 Một phần nội dung của **Đơn vị hàng** do **Loại sản phẩm** khai báo, ví dụ Serial và Mã thẻ của thẻ nạp, hay username và password của **Tài khoản**. Mỗi trường có cờ nhạy cảm, mặc định bật: trường nhạy cảm được mã hoá và che hoàn toàn; trường không nhạy cảm (ví dụ Serial thẻ nạp) hiển thị và tìm kiếm được. Một trường được chọn làm **Khoá chống trùng**. Định danh và tên hiển thị dùng chung một không gian tên duy nhất trong một Loại sản phẩm (so sau khi trim, không phân biệt hoa thường), vì nội dung giao khách và dạng che đánh chỉ mục theo tên hiển thị, còn cột file nhập khớp theo định danh hoặc tên hiển thị. Khi Loại sản phẩm đã có **Sản phẩm** nào có hàng, chỉ được thêm trường tuỳ chọn hoặc đổi tên hiển thị — hai thay đổi này áp cho mọi Sản phẩm của Loại; mọi thay đổi khác bị từ chối trọn gói, kể cả với Sản phẩm chưa có hàng (ADR 0004).
