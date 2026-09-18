@@ -199,21 +199,22 @@ it('Bác bỏ ở trang Báo lỗi bắt buộc ghi chú', function () {
 });
 
 it('danh sách Báo lỗi có tab Chờ xác minh quá 24 giờ; Bán hàng và Quản trị vào được, Nhập kho thì không', function () {
-    [$old, $recent] = panelOrder('SP-001', 2, 'Anh Minh')->deliveries()->orderBy('deliveries.id')->get()->all();
-    [$oldReport] = app(DefectReporting::class)->report($this->seller, [$old], new DefectReportDraft('Cũ'));
+    // Hai Báo lỗi tồn đọng chứ không một: tab lọc bằng truy vấn con, một dòng thì lọc sai vẫn chạy được.
+    [$first, $second, $recent] = panelOrder('SP-001', 3, 'Anh Minh')->deliveries()->orderBy('deliveries.id')->get()->all();
+    $overdue = app(DefectReporting::class)->report($this->seller, [$first, $second], new DefectReportDraft('Cũ'));
     $this->travel(23)->hours();
     [$recentReport] = app(DefectReporting::class)->report($this->seller, [$recent], new DefectReportDraft('Mới'));
     $this->travel(2)->hours();
     $this->actingAs($this->seller);
 
     Livewire::test(ListDefectReports::class)
-        ->assertCanSeeTableRecords([$oldReport, $recentReport])
+        ->assertCanSeeTableRecords([...$overdue, $recentReport])
         ->set('activeTab', 'overdue')
-        ->assertCanSeeTableRecords([$oldReport])
+        ->assertCanSeeTableRecords($overdue)
         ->assertCanNotSeeTableRecords([$recentReport]);
 
     $this->get(DefectReportResource::getUrl('index'))->assertOk();
-    $this->get(DefectReportResource::getUrl('view', ['record' => $oldReport]))->assertOk();
+    $this->get(DefectReportResource::getUrl('view', ['record' => $overdue[0]]))->assertOk();
 
     $this->actingAs(staffMember(Role::NhapKho));
 

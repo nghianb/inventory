@@ -7,6 +7,7 @@ use App\Inventory\Claims\SupplierClaimStatus;
 use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Stock\StockUnitStatus;
 use App\Inventory\Stock\VoidReason;
+use App\Models\StockUnit;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
@@ -109,6 +110,9 @@ final class AdjustmentEvents
      * Tổn thất hết hạn: Slot Còn hàng của Đơn vị hàng Hoạt động đã quá Hạn sử dụng, tính vào **ngày
      * hết hạn** chứ không vào ngày phát hiện. Slot đã Huỷ hàng hay đã thành Tồn lỗi không vào đây: mỗi
      * Slot chỉ tính tổn thất một lần.
+     *
+     * {@see StockUnit::scopeExpired()} chép lại ba mệnh đề `where` này để lọc Đơn vị hàng quá hạn;
+     * đổi nghĩa "hết hạn" thì phải sửa cả hai nơi.
      */
     private static function expiryLosses(ProfitReportFilter $filter): QueryBuilder
     {

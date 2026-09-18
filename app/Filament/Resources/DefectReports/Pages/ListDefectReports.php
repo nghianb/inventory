@@ -26,18 +26,21 @@ class ListDefectReports extends ListRecords
             'all' => Tab::make('Tất cả'),
             'pending' => Tab::make('Chờ xác minh')
                 ->modifyQueryUsing(fn (Builder $query) => $query->where('status', DefectReportStatus::Pending)),
+            // Gọi thẳng scope, không lọc qua truy vấn con: `whereKey($subquery)` sinh ra `id = (...)`,
+            // và Postgres bỏ ngay khi tab có từ hai dòng. `$query` không khai kiểu vì Larastan không
+            // thấy scope của model trên Builder chung.
             'overdue' => Tab::make("Chờ xác minh quá {$hours} giờ")
                 ->badge(fn (): int => DefectReport::query()->overdue()->count())
                 ->badgeColor('danger')
-                ->modifyQueryUsing(fn (Builder $query) => $query->whereKey(DefectReport::query()->overdue()->select('id'))),
+                ->modifyQueryUsing(fn ($query) => $query->overdue()),
             'awaiting' => Tab::make('Chờ đổi')
                 ->badge(fn (): int => DefectReport::query()->awaitingReplacement()->count())
                 ->badgeColor('warning')
-                ->modifyQueryUsing(fn (Builder $query) => $query->whereKey(DefectReport::query()->awaitingReplacement()->select('id'))),
+                ->modifyQueryUsing(fn ($query) => $query->awaitingReplacement()),
             'approval' => Tab::make('Chờ Quản trị duyệt')
                 ->badge(fn (): int => DefectReport::query()->awaitingApproval()->count())
                 ->badgeColor('danger')
-                ->modifyQueryUsing(fn (Builder $query) => $query->whereKey(DefectReport::query()->awaitingApproval()->select('id'))),
+                ->modifyQueryUsing(fn ($query) => $query->awaitingApproval()),
         ];
     }
 }
