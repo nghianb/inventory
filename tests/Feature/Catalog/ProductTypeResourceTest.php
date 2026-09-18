@@ -211,6 +211,7 @@ it('Quản trị xoá được Loại chưa Sản phẩm nào dùng, xoá xong v
 
     Livewire::test(EditProductType::class, ['record' => $type->getRouteKey()])
         ->callAction('delete')
+        ->assertNotified('Đã xoá Loại sản phẩm.')
         ->assertRedirect(ProductTypeResource::getUrl('index'));
 
     expect(ProductType::count())->toBe(0);
