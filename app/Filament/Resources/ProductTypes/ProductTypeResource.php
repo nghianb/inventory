@@ -244,6 +244,7 @@ class ProductTypeResource extends Resource
     {
         return DeleteAction::make()
             ->modalDescription('Chỉ xoá được Loại chưa Sản phẩm nào dùng.')
+            ->successNotificationTitle('Đã xoá Loại sản phẩm.')
             // Filament đọc giá trị trả về làm cờ thành công, mà delete() trả về void: thiếu
             // `true` ở đây thì xoá xong vẫn hiện thông báo thất bại và không điều hướng.
             ->using(function (DeleteAction $action, ProductType $record, ProductTypeCatalog $catalog): bool {
