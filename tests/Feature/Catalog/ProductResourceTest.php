@@ -273,6 +273,7 @@ it('header trang Sửa có Xoá, xoá xong về danh sách', function () {
 
     Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
         ->callAction('delete')
+        ->assertNotified('Đã xoá Sản phẩm.')
         ->assertRedirect(ProductResource::getUrl('index'));
 
     expect(Product::count())->toBe(0);

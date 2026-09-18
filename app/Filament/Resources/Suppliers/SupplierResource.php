@@ -76,10 +76,14 @@ class SupplierResource extends Resource
                         fn () => $suppliers->update(InventoryAction::actor(), $record, $data['name'], $data['note'] ?? null),
                     )),
                 DeleteAction::make()
-                    ->using(fn (DeleteAction $action, Supplier $record, SupplierDirectory $suppliers) => InventoryAction::attempt(
-                        $action,
-                        fn () => $suppliers->delete(InventoryAction::actor(), $record),
-                    )),
+                    ->successNotificationTitle('Đã xoá Nhà cung cấp.')
+                    // Filament đọc giá trị trả về làm cờ thành công, mà SupplierDirectory::delete()
+                    // trả về void: thiếu `true` ở đây thì xoá xong vẫn hiện thông báo thất bại.
+                    ->using(function (DeleteAction $action, Supplier $record, SupplierDirectory $suppliers): bool {
+                        InventoryAction::attempt($action, fn () => $suppliers->delete(InventoryAction::actor(), $record));
+
+                        return true;
+                    }),
             ]);
     }
 
