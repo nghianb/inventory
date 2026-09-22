@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\StockUnits;
 
+use App\Filament\Resources\Batches\BatchResource;
 use App\Filament\Resources\StockUnits\Pages\ListStockUnits;
 use App\Filament\Resources\StockUnits\Pages\ViewStockUnit;
 use App\Filament\Resources\StockUnits\RelationManagers\RevealLogEntriesRelationManager;
@@ -105,7 +106,15 @@ class StockUnitResource extends Resource
                     TextEntry::make('batchLine.batch.supplier.name')
                         ->label('Nhà cung cấp')
                         ->visible(self::seesCost(...)),
-                    TextEntry::make('batchLine.batch_id')->label('Lô nhập')->prefix('#'),
+                    TextEntry::make('batchLine.batch_id')
+                        ->label('Lô nhập')
+                        ->prefix('#')
+                        // Hàng này vào kho từ đâu là câu hỏi hay hỏi tiếp, mà trước đây là text
+                        // trần nên phải tự sửa URL. Quan hệ batchLine.batch đã eager load sẵn, và
+                        // batch_line_id là NOT NULL kèm khoá ngoại nên Dòng nhập luôn có.
+                        ->url(fn (StockUnit $record): string => BatchResource::getUrl('view', [
+                            'record' => $record->batchLine->batch_id,
+                        ])),
                     TextEntry::make('renews_stock_unit_id')->label('Nhập lại Đơn vị hàng')->prefix('#')->placeholder('Không'),
                     TextEntry::make('created_at')->label('Nhập lúc')->dateTime('d/m/Y H:i'),
                 ]),
@@ -185,7 +194,10 @@ class StockUnitResource extends Resource
                     ->visible(self::seesCost(...)),
                 TextColumn::make('batchLine.batch_id')
                     ->label('Lô nhập')
-                    ->prefix('#'),
+                    ->prefix('#')
+                    ->url(fn (StockUnit $record): string => BatchResource::getUrl('view', [
+                        'record' => $record->batchLine->batch_id,
+                    ])),
                 TextColumn::make('created_at')
                     ->label('Nhập lúc')
                     ->dateTime('d/m/Y H:i'),
