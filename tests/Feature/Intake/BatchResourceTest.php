@@ -14,6 +14,7 @@ use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
 use App\Inventory\Intake\BatchStatus;
+use App\Inventory\Intake\InvalidBatch;
 use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Stock\StockUnitStatus;
 use App\Models\Batch;
@@ -44,6 +45,23 @@ beforeEach(function () {
         'STEAM-100K',
     );
 });
+
+/**
+ * Lô nhập vừa gửi đi, đang chờ job pha 1. Job chạy ngay trong test (queue sync) nên đặt lại
+ * trạng thái để chạm nhánh Đang kiểm tra.
+ */
+function validatingBatch(): Batch
+{
+    $batch = app(BatchIntake::class)->submit(test()->admin, new BatchDraft(
+        supplier: test()->supplier,
+        receivedOn: CarbonImmutable::parse('2026-09-15'),
+        lines: [new BatchLineDraft(test()->product, 95_000, 'AAAA-BBBB')],
+    ));
+
+    Batch::whereKey($batch->id)->update(['status' => BatchStatus::Validating]);
+
+    return $batch;
+}
 
 it('Quản trị và Nhập kho vào được trang Lô nhập, Bán hàng thì không; mọi Vai trò xem được Đơn vị hàng', function (Role $role, bool $seesBatches) {
     $this->actingAs(staffMember($role));
@@ -211,6 +229,42 @@ it('Nhập kho sửa Giá trị áp cho Đơn vị hàng ở màn xem trước r
 
     expect(StockUnit::orderBy('id')->get()->map(fn (StockUnit $unit) => [$unit->unit_cost, $unit->slot_count, $unit->expires_on?->toDateString()])->all())
         ->toBe([[120_000, 3, '2026-10-16'], [120_000, 3, '2026-10-16']]);
+});
+
+it('màn xem Lô nhập tự hiện kết quả khi job kiểm tra xong, nhân viên không phải bấm gì', function () {
+    $this->actingAs(staffMember(Role::NhapKho));
+    $batch = validatingBatch();
+
+    $page = Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
+        ->assertSee('Màn hình tự cập nhật khi kiểm tra xong')
+        ->assertSeeHtml('wire:poll')
+        ->assertActionHidden('confirm')
+        // Còn đang kiểm tra thì chưa có gì để báo.
+        ->call('notifyValidationResult')
+        ->assertNotNotified();
+
+    Batch::whereKey($batch->id)->update(['status' => BatchStatus::Validated]);
+
+    $page->call('notifyValidationResult')
+        ->assertNotified('Đã kiểm tra xong Lô nhập.')
+        ->assertActionVisible('confirm')
+        // Kiểm tra xong thì thôi hỏi lại.
+        ->assertDontSeeHtml('wire:poll');
+});
+
+it('màn xem Lô nhập tự hiện lý do khi job kiểm tra thất bại', function () {
+    $this->actingAs(staffMember(Role::NhapKho));
+    $batch = validatingBatch();
+
+    $page = Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])->assertSeeHtml('wire:poll');
+
+    app(BatchIntake::class)->markValidationFailed($batch, new InvalidBatch('Đang xoay khoá mã hoá HMAC nên nhập hàng tạm dừng; chạy xong lệnh xoay khoá rồi thử lại.'));
+
+    $page->call('notifyValidationResult')
+        ->assertNotified('Lô nhập kiểm tra thất bại.')
+        ->assertSee('Đang xoay khoá mã hoá HMAC nên nhập hàng tạm dừng')
+        ->assertActionHidden('confirm')
+        ->assertDontSeeHtml('wire:poll');
 });
 
 it('Nhập kho bỏ Lô nhập chưa xác nhận từ panel', function () {
