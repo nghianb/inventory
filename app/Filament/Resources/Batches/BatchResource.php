@@ -37,6 +37,7 @@ use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -81,6 +82,12 @@ class BatchResource extends Resource
         'comma' => [',', 'Dấu phẩy'],
         'semicolon' => [';', 'Dấu chấm phẩy'],
     ];
+
+    /**
+     * Nhịp màn xem hỏi lại trong lúc job pha 1 chạy. Đủ ngắn để nhân viên coi là "xong thì hiện",
+     * và lúc này trang gần như trống: kết quả kiểm tra chưa có gì để vẽ.
+     */
+    private const VALIDATION_POLL_INTERVAL = '3s';
 
     /**
      * Ba lựa chọn Hạn sử dụng trên form ↔ luật của Dòng nhập. Form tạo Lô nhập và form sửa Lô
@@ -315,6 +322,17 @@ class BatchResource extends Resource
         };
 
         return $schema->components([
+            // Job pha 1 chạy ngoài request, nên màn xem tự hỏi lại cho tới khi có kết quả: nhân
+            // viên không phải tự đoán lúc nào xong mà bấm lại. Kho chạy trên một node (ADR 0005)
+            // nên polling đủ, không cần broadcast. Mỗi lần hỏi vẽ lại cả trang, nên kết quả kiểm
+            // tra và các nút hiện ra ngay; ViewBatch::notifyValidationResult báo một tiếng.
+            // keep-alive vì Livewire bóp nhịp còn ~5% khi tab chạy nền, mà gửi xong lô lớn thì
+            // nhân viên hay chuyển tab đi làm việc khác — đúng lúc cần báo nhất.
+            Callout::make('Đang kiểm tra Lô nhập')
+                ->description('Màn hình tự cập nhật khi kiểm tra xong, không phải bấm gì.')
+                ->icon(Heroicon::OutlinedArrowPath)
+                ->visible(fn (Batch $record): bool => $record->status === BatchStatus::Validating)
+                ->extraAttributes(['wire:poll.'.self::VALIDATION_POLL_INTERVAL.'.keep-alive' => 'notifyValidationResult']),
             Section::make('Chứng từ')
                 ->columns(3)
                 ->schema([

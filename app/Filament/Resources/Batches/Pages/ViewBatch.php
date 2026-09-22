@@ -43,12 +43,6 @@ class ViewBatch extends ViewRecord
         $stockDuplicates = fn (BatchIntake $intake): int => $intake->preview(InventoryAction::actor(), $this->batch())->stockDuplicateCount();
 
         return [
-            Action::make('refresh')
-                ->label('Làm mới')
-                ->icon(Heroicon::OutlinedArrowPath)
-                ->color('gray')
-                ->visible(fn (): bool => $this->batch()->status === BatchStatus::Validating)
-                ->action(fn () => $this->batch()->refresh()),
             Action::make('confirm')
                 ->label('Xác nhận nhập kho')
                 ->icon(Heroicon::OutlinedCheck)
@@ -264,6 +258,34 @@ class ViewBatch extends ViewRecord
                     Notification::make()->success()->title('Đã bỏ Lô nhập.')->send();
                 }),
         ];
+    }
+
+    /**
+     * Tiếng báo khi job pha 1 xong, gọi từ wire:poll của Callout "Đang kiểm tra Lô nhập" (xem
+     * BatchResource::infolist). Việc màn hình tự cập nhật không nằm ở đây: mỗi lần hỏi đã là một
+     * lần vẽ lại cả trang, nên kết quả kiểm tra và các nút tự hiện ra.
+     * Mỗi tab báo một lần: xong thì Callout mang wire:poll biến mất nên tab đó thôi hỏi.
+     */
+    public function notifyValidationResult(): void
+    {
+        $batch = $this->batch();
+
+        match ($batch->status) {
+            BatchStatus::Validated => Notification::make()
+                ->success()
+                ->title('Đã kiểm tra xong Lô nhập.')
+                ->body('Xem kết quả kiểm tra rồi xác nhận nhập kho.')
+                ->send(),
+            BatchStatus::ValidationFailed => Notification::make()
+                ->danger()
+                ->title('Lô nhập kiểm tra thất bại.')
+                ->body($batch->validation_error)
+                ->send(),
+            // Còn đang kiểm tra thì chưa có gì để báo. Các trạng thái còn lại không phải kết quả
+            // kiểm tra: Đã bỏ và Đã xác nhận là thao tác của chính nhân viên, đã có thông báo
+            // riêng; Quá hạn xác nhận do lệnh dọn định kỳ đặt, và badge trạng thái đã nói ra.
+            default => null,
+        };
     }
 
     /**
