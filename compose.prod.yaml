@@ -1,0 +1,84 @@
+name: inventory
+
+# Stack production. Chạy trên một VPS, sau một reverse proxy cùng máy đã cầm TLS (xem ADR 0005).
+#
+#   INVENTORY_IMAGE=ghcr.io/nghianb/inventory:git-a1b2c3d \
+#       docker compose -f compose.prod.yaml up -d --wait
+#
+# Image không chứa secret: mọi biến nằm trong /srv/inventory/app.env (chmod 600), ngoài cây source.
+
+x-app: &app
+    image: ${INVENTORY_IMAGE:?chưa đặt INVENTORY_IMAGE, ví dụ ghcr.io/nghianb/inventory:git-a1b2c3d}
+    env_file:
+        - /srv/inventory/app.env
+    restart: unless-stopped
+    volumes:
+        # Nội dung Lô nhập chờ xác nhận (mã hoá, TTL 24 giờ) và ảnh Báo lỗi. Cả ba service PHP
+        # phải thấy cùng một chỗ: app ghi, queue đọc khi chạy ValidateBatch, scheduler xoá khi purge.
+        - app-storage:/app/storage/app
+    depends_on:
+        migrate:
+            condition: service_completed_successfully
+
+services:
+    # Chạy một lần mỗi lần deploy, xong mới tới lượt ba service PHP. Migration ở kho này tạo
+    # trigger plpgsql và CHECK constraint, và các bảng chỉ-ghi-thêm không migrate:rollback được —
+    # nên đúng một tiến trình được chạy, không phải ba tiến trình đua nhau.
+    migrate:
+        image: ${INVENTORY_IMAGE:?chưa đặt INVENTORY_IMAGE}
+        env_file:
+            - /srv/inventory/app.env
+        command: php artisan migrate --force
+        restart: "no"
+        volumes:
+            - app-storage:/app/storage/app
+        depends_on:
+            postgres:
+                condition: service_healthy
+
+    app:
+        <<: *app
+        # Khoá mã hoá không khớp dấu vân tay trong DB thì không khởi động.
+        command: sh -c "php artisan inventory:keys:verify && exec frankenphp run --config /etc/frankenphp/Caddyfile"
+        ports:
+            # Chỉ loopback. Reverse proxy cùng máy chuyển tiếp vào đây kèm X-Forwarded-Proto.
+            - "127.0.0.1:8000:8000"
+        healthcheck:
+            test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/up"]
+            interval: 10s
+            timeout: 5s
+            retries: 6
+            start_period: 40s
+
+    queue:
+        <<: *app
+        command: php artisan queue:work --tries=1
+        # Image nền khai HEALTHCHECK gọi endpoint admin của Caddy (cổng 2019). Worker không chạy
+        # Caddy nên sẽ mãi mãi "unhealthy". Tắt hẳn thay vì để lại một tín hiệu giám sát sai.
+        healthcheck:
+            disable: true
+
+    # inventory:dispatches:release-holds chạy mỗi phút; hai lệnh purge chạy mỗi giờ.
+    scheduler:
+        <<: *app
+        command: php artisan schedule:work
+        healthcheck:
+            disable: true
+
+    postgres:
+        image: postgres:17-alpine
+        # Cùng file với app: POSTGRES_* và DB_* phải khớp nhau, giữ một chỗ để không lệch.
+        env_file:
+            - /srv/inventory/app.env
+        restart: unless-stopped
+        volumes:
+            - postgres-data:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+            interval: 5s
+            timeout: 5s
+            retries: 20
+
+volumes:
+    postgres-data:
+    app-storage:

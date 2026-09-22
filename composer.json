@@ -6,7 +6,7 @@
     "keywords": ["laravel", "framework"],
     "license": "MIT",
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
         "filament/filament": "^5.8",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
@@ -79,6 +79,9 @@
     },
     "config": {
         "optimize-autoloader": true,
+        "platform": {
+            "php": "8.4.25"
+        },
         "preferred-install": "dist",
         "sort-packages": true,
         "allow-plugins": {
