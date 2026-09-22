@@ -199,6 +199,8 @@ class BatchIntake
                 ignoredColumns: $line->preview['ignored_columns'] ?? [],
                 totalCost: $line->total_cost,
                 reversedCount: $line->reversed_count,
+                slots: $line->preview['slots'] ?? [],
+                expiresOn: $line->preview['expires_on'] ?? [],
             ))->values()->all(),
             invoiceTotal: $batch->invoice_total,
             supplementsBatchId: $batch->supplements_batch_id,
@@ -750,6 +752,15 @@ class BatchIntake
         $importable = array_values(array_filter($classified, fn (ClassifiedLine $row): bool => $row->isImportable()));
         $rejected = array_values(array_filter($classified, fn (ClassifiedLine $row): bool => ! $row->isImportable()));
 
+        // Giá trị áp cho Đơn vị hàng đã chốt: cột file ghi đè từng dòng nên một Dòng nhập ra
+        // nhiều giá trị được. Giữ lại các giá trị phân biệt để màn xem trước nói ra con số thật.
+        $distinct = function (callable $of) use ($importable): array {
+            $values = array_values(array_unique(array_map($of, $importable), SORT_REGULAR));
+            sort($values);
+
+            return $values;
+        };
+
         $line->forceFill([
             'valid_count' => $count(LineClass::Valid),
             'renewal_count' => $count(LineClass::Renewal),
@@ -765,6 +776,8 @@ class BatchIntake
                 ], $rejected),
                 'sample' => array_map(fn (ClassifiedLine $row): array => self::sample($product, $row), array_slice($importable, 0, self::SAMPLE_SIZE)),
                 'ignored_columns' => $ignoredColumns,
+                'slots' => $distinct(fn (ClassifiedLine $row): int => $row->slots),
+                'expires_on' => $distinct(fn (ClassifiedLine $row): ?string => $row->expiresOn),
             ],
         ])->save();
     }

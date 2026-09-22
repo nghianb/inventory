@@ -13,6 +13,7 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Text;
@@ -68,6 +69,32 @@ class ViewBatch extends ViewRecord
                     $this->batch()->refresh();
 
                     Notification::make()->success()->title('Đã nhập kho phần hợp lệ của Lô nhập.')->send();
+                }),
+            // Ngoại lệ cố ý duy nhất sửa được sau khi xác nhận: hoá đơn hay về sau hàng, và con
+            // số này không đẻ ra Giá vốn hay báo cáo nào. Xem ADR 0006.
+            Action::make('invoiceTotal')
+                ->label('Tổng tiền hoá đơn')
+                ->color('gray')
+                ->modalDescription('Hoá đơn thường về sau hàng, nên ghi được cả khi Lô nhập đã Xác nhận. Con số này chỉ để đối chiếu với Tổng Giá vốn: nó không phải Giá vốn và không vào báo cáo nào.')
+                ->modalSubmitActionLabel('Lưu')
+                ->fillForm(fn (): array => ['invoice_total' => $this->batch()->invoice_total])
+                ->schema([
+                    TextInput::make('invoice_total')
+                        ->label('Tổng tiền hoá đơn')
+                        ->helperText('Để trống nếu chưa có hoá đơn.')
+                        ->suffix('₫')
+                        ->integer()
+                        ->minValue(0),
+                ])
+                ->visible(fn (): bool => in_array($this->batch()->status, [BatchStatus::Validated, BatchStatus::Confirmed], true)
+                    && InventoryAction::actor()->can('recordInvoiceTotal', $this->batch()))
+                ->action(function (array $data): void {
+                    $this->batch()->forceFill([
+                        'invoice_total' => filled($data['invoice_total'] ?? null) ? (int) $data['invoice_total'] : null,
+                    ])->save();
+                    $this->batch()->refresh();
+
+                    Notification::make()->success()->title('Đã ghi Tổng tiền hoá đơn.')->send();
                 }),
             Action::make('downloadRejected')
                 ->label('Tải CSV dòng bị bỏ')

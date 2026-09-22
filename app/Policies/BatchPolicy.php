@@ -36,6 +36,15 @@ class BatchPolicy
     }
 
     /**
+     * Ghi Tổng tiền hoá đơn: ngoại lệ cố ý duy nhất sửa được sau khi xác nhận (ADR 0006).
+     * Đi đường riêng thay vì mở update, vốn sẽ bật affordance sửa mặc định của Filament.
+     */
+    public function recordInvoiceTotal(User $user, Batch $batch): bool
+    {
+        return $this->roles->allows($user, Role::NhapKho);
+    }
+
+    /**
      * Huỷ nhập: chỉ Quản trị.
      */
     public function reverse(User $user, Batch $batch): bool

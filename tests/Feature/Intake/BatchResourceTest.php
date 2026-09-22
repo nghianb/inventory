@@ -69,7 +69,6 @@ it('Nhập kho dán hàng từ panel, xem trước rồi xác nhận', function 
                 'product_id' => $this->product->id,
                 'unit_cost' => 95000,
                 'source' => 'paste',
-                'separator' => 'tab',
                 'content' => "AAAA-BBBB\nCCCC-DDDD\naaaabbbb",
             ]],
         ])
@@ -108,7 +107,6 @@ it('Nhập kho tạo nhanh Nhà cung cấp, upload file Tài khoản kèm Dòng 
         ->assertSchemaStateSet(['supplier_id' => Supplier::where('name', 'G2A')->sole()->id])
         ->fillForm([
             'received_on' => '2026-09-16',
-            'invoice_total' => 400000,
             'lines' => [
                 [
                     'product_id' => $netflix->id,
@@ -124,7 +122,6 @@ it('Nhập kho tạo nhanh Nhà cung cấp, upload file Tài khoản kèm Dòng 
                     'unit_cost' => 95000,
                     'expiry_mode' => 'none',
                     'source' => 'paste',
-                    'separator' => 'tab',
                     'content' => "aaaa-bbbb\nEEEE-FFFF",
                 ],
             ],
@@ -141,6 +138,9 @@ it('Nhập kho tạo nhanh Nhà cung cấp, upload file Tài khoản kèm Dòng 
         ->assertSee('Ghi chú')
         ->assertSee('a@shop.test')
         ->assertDontSee('pw1')
+        // Giá trị áp cho Đơn vị hàng đã chốt: file không có cột ghi đè nên mỗi dòng một giá trị.
+        ->assertSee('2 slot')
+        ->assertSee('16/10/2026')
         ->callAction('confirm')
         ->assertHasActionErrors(['skip_stock_duplicates'])
         ->setActionData(['skip_stock_duplicates' => true])
@@ -151,6 +151,13 @@ it('Nhập kho tạo nhanh Nhà cung cấp, upload file Tài khoản kèm Dòng 
         ->and(StockUnit::count())->toBe(4)
         ->and(StockUnit::where('kind', StockForm::Account)->sum('slot_count'))->toBe(4)
         ->and(Storage::disk('intake')->allFiles('batch-lines'))->toBe([]);
+
+    // ADR 0006: Tổng tiền hoá đơn không nhập lúc tạo, và ghi được cả khi Lô nhập đã Xác nhận.
+    Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
+        ->callAction('invoiceTotal', data: ['invoice_total' => 400000])
+        ->assertHasNoActionErrors();
+
+    expect($batch->fresh()->invoice_total)->toBe(400000);
 });
 
 it('Nhập kho bỏ Lô nhập chưa xác nhận từ panel', function () {
@@ -209,7 +216,6 @@ it('panel báo lỗi nghiệp vụ và không tạo Lô nhập khi khoá mã ho�
                 'product_id' => $this->product->id,
                 'unit_cost' => 50000,
                 'source' => 'paste',
-                'separator' => 'tab',
                 'content' => 'AAAA-BBBB',
             ]],
         ])

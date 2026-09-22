@@ -157,7 +157,11 @@ _Avoid_: nhập kho (đó là tên **Vai trò**)
 Một lần nhập hàng vào kho từ một **Nhà cung cấp**, gồm một hoặc nhiều **Dòng nhập**. Chỉ vào kho khi nhân viên xác nhận sau bước xem trước; ghi lại số dòng bị bỏ vì lỗi hoặc trùng.
 
 **Dòng nhập** (Batch line):
-Phần của một **Lô nhập** dành cho đúng một **Sản phẩm**: một file hoặc một danh sách dán, kèm đơn giá **Giá vốn** và các giá trị mặc định (số slot, **Hạn sử dụng**) cho các **Đơn vị hàng** trong đó.
+Phần của một **Lô nhập** dành cho đúng một **Sản phẩm**: một file hoặc một danh sách dán, kèm **Giá trị áp cho Đơn vị hàng** của các **Đơn vị hàng** trong đó.
+
+**Giá trị áp cho Đơn vị hàng** (Unit values):
+**Số slot**, **Hạn sử dụng** và **Giá vốn** mà mỗi **Đơn vị hàng** nhận khi vào kho. Quyết định theo ba tầng, tầng sau thắng tầng trước: **Sản phẩm** (chỉ Số slot), **Dòng nhập**, rồi cột tuỳ chọn trong file nhập, ghi đè cho riêng từng dòng. Danh sách dán không có tầng file, nên mọi Đơn vị hàng của một Dòng nhập nhận cùng một bộ giá trị. Nhân viên thấy giá trị đã chốt ở màn xem trước, không phải tự suy ra luật.
+_Avoid_: giá trị ghi đè, giá trị mặc định của Dòng nhập
 
 **Huỷ nhập** (Import reversal):
 Rút lại hàng đã nhập nhầm, coi như chưa từng vào kho: giải phóng **Khoá chống trùng** để nhập lại được, nhưng vẫn giữ bản ghi. Làm theo **Dòng nhập** hoặc cả **Lô nhập**, chỉ **Quản trị**; chỉ huỷ **Đơn vị hàng** mà mọi **Slot** vẫn Còn hàng, phần còn lại ở lại. Hàng Đã huỷ nhập không tính là tồn.

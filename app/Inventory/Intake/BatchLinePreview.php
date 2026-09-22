@@ -14,6 +14,8 @@ final readonly class BatchLinePreview
      * @param  list<string>  $ignoredColumns  cột file bị bỏ qua
      * @param  int  $totalCost  tổng Giá vốn phần nhập được (hợp lệ và nhập lại), VND
      * @param  int  $reversedCount  số Đơn vị hàng đã bị Huỷ nhập sau khi xác nhận
+     * @param  list<int>  $slots  Số slot đã chốt của phần nhập được, mỗi giá trị một lần
+     * @param  list<?string>  $expiresOn  Hạn sử dụng đã chốt (YYYY-MM-DD, null là không có hạn), mỗi giá trị một lần
      */
     public function __construct(
         public string $productName,
@@ -29,6 +31,8 @@ final readonly class BatchLinePreview
         public array $ignoredColumns,
         public int $totalCost,
         public int $reversedCount = 0,
+        public array $slots = [],
+        public array $expiresOn = [],
     ) {}
 
     /**

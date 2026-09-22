@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property ?int $slots
  * @property ?CarbonImmutable $expires_on
  * @property ?int $expires_after_days
- * @property ?array{rejected: list<array{line: int, class: string, reason: string}>, sample: list<array<string, string>>, ignored_columns?: list<string>} $preview
+ * @property ?array{rejected: list<array{line: int, class: string, reason: string}>, sample: list<array<string, string>>, ignored_columns?: list<string>, slots?: list<int>, expires_on?: list<?string>} $preview
  * @property int $valid_count
  * @property int $renewal_count
  * @property int $invalid_count
