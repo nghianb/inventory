@@ -126,6 +126,57 @@ class BatchIntake
     }
 
     /**
+     * Sửa phần chứng từ và Giá trị áp cho Đơn vị hàng của một Lô nhập còn Chờ xác nhận, rồi đưa
+     * lại vào queue kiểm tra. Nội dung (danh sách Đơn vị hàng) không sửa: nó là thứ tốn công nhập
+     * nhất và Khoá chống trùng tính theo nó, nên giữ nguyên mới là điểm chính. Hạn 24 giờ của bản
+     * kiểm tra vẫn tính từ lúc tạo Lô nhập: sửa không gia hạn thời gian nội dung tạm nằm trên ổ.
+     *
+     * @throws MissingRole
+     * @throws KeyFingerprintMismatch
+     * @throws InvalidBatch
+     */
+    public function revise(User $actor, Batch $batch, BatchRevision $revision): Batch
+    {
+        $this->roles->authorize($actor, Role::NhapKho);
+        $this->fingerprints->verify();
+        self::ensureDedupeKeysSettled();
+
+        $revised = DB::transaction(function () use ($batch, $revision): Batch {
+            $current = Batch::query()->lockForUpdate()->findOrFail($batch->getKey());
+            self::ensureValidated($current, 'sửa');
+
+            $lines = $current->lines()->with(['product.productType'])->get()->keyBy('id');
+            self::validateRevision($lines, $revision);
+
+            $current->forceFill([
+                'received_on' => $revision->receivedOn->toDateString(),
+                'document_number' => self::blankToNull($revision->documentNumber),
+                'note' => self::blankToNull($revision->note),
+                'status' => BatchStatus::Validating,
+                'validation_error' => null,
+            ])->save();
+
+            foreach ($revision->lines as $lineRevision) {
+                $line = $lines[$lineRevision->line->getKey()];
+
+                $line->forceFill([
+                    'unit_cost' => $lineRevision->unitCost,
+                    'slots' => $line->product->form() === StockForm::Account ? $lineRevision->slots : null,
+                    'expires_on' => $lineRevision->expiry?->date?->toDateString(),
+                    'expires_after_days' => $lineRevision->expiry?->days,
+                ])->save();
+            }
+
+            return $current;
+        });
+
+        // Như lúc gửi lần đầu: job chỉ chạy khi lần sửa đã commit.
+        ValidateBatch::dispatch($revised)->afterCommit();
+
+        return $revised->refresh();
+    }
+
+    /**
      * Pha 1, chạy trong job: phân loại từng dòng theo cấu hình hiện tại của Sản phẩm.
      */
     public function validate(Batch $batch): void
@@ -249,7 +300,7 @@ class BatchIntake
         // Deadlock giữa hai Lô nhập khác Sản phẩm chèn cùng mã theo thứ tự khác nhau: chạy lại.
         return DB::transaction(function () use ($actor, $batch, $skipStockDuplicates): Batch {
             $current = Batch::query()->lockForUpdate()->findOrFail($batch->getKey());
-            self::ensureConfirmable($current);
+            self::ensureValidated($current, 'xác nhận');
 
             // Hàng thay thế: khoá Khiếu nại để hai Lô nhập xác nhận cùng lúc không vượt số được thay.
             $claim = $current->supplier_claim_id === null ? null : SupplierClaim::query()->lockForUpdate()->findOrFail($current->supplier_claim_id);
@@ -824,9 +875,14 @@ class BatchIntake
     }
 
     /**
+     * Xác nhận và sửa cùng một điều kiện: bản kiểm tra đã xong và còn trong hạn. Trước đó chưa
+     * có gì để xem mà quyết, sau đó thì hàng đã vào kho hoặc nội dung tạm đã bị xoá.
+     *
+     * @param  string  $action  việc đang làm, để câu cuối đọc tự nhiên ("chưa xác nhận được")
+     *
      * @throws InvalidBatch
      */
-    private static function ensureConfirmable(Batch $batch): void
+    private static function ensureValidated(Batch $batch, string $action): void
     {
         match ($batch->status) {
             BatchStatus::Validated => null,
@@ -834,7 +890,7 @@ class BatchIntake
             BatchStatus::Discarded => throw new InvalidBatch('Lô nhập đã bị bỏ.'),
             BatchStatus::Expired => throw self::expired(),
             BatchStatus::ValidationFailed => throw new InvalidBatch('Lô nhập kiểm tra thất bại; hãy tạo lại Lô nhập.'),
-            BatchStatus::Validating => throw new InvalidBatch('Lô nhập chưa kiểm tra xong, chưa xác nhận được.'),
+            BatchStatus::Validating => throw new InvalidBatch("Lô nhập chưa kiểm tra xong, chưa {$action} được."),
         };
 
         if ($batch->created_at !== null && $batch->created_at->lt(self::staleCutoff())) {
@@ -875,6 +931,67 @@ class BatchIntake
     }
 
     /**
+     * Mỗi Dòng nhập của Lô nhập phải có mặt đúng một lần: nội dung không sửa được nên tập Dòng
+     * nhập cũng không đổi, và một Dòng nhập bị bỏ quên sẽ im lặng giữ giá trị cũ.
+     *
+     * @param  Collection<int, BatchLine>  $lines  theo id
+     *
+     * @throws InvalidBatch
+     */
+    private static function validateRevision(Collection $lines, BatchRevision $revision): void
+    {
+        $seen = [];
+
+        foreach ($revision->lines as $lineRevision) {
+            $id = (int) $lineRevision->line->getKey();
+            $line = $lines->get($id) ?? throw new InvalidBatch('Dòng nhập không thuộc Lô nhập này.');
+
+            if (isset($seen[$id])) {
+                throw new InvalidBatch("Dòng nhập \"{$line->product->name}\" được nêu hai lần trong cùng lần sửa.");
+            }
+
+            $seen[$id] = true;
+            self::validateUnitValues($line->product, $lineRevision->unitCost, $lineRevision->slots, $lineRevision->expiry?->days);
+        }
+
+        foreach ($lines as $line) {
+            if (! isset($seen[$line->id])) {
+                throw new InvalidBatch(sprintf(
+                    'Phải nêu Giá trị áp cho Đơn vị hàng của mọi Dòng nhập; thiếu Dòng nhập "%s".',
+                    $line->product->name,
+                ));
+            }
+        }
+    }
+
+    /**
+     * Luật của Giá trị áp cho Đơn vị hàng khai ở Dòng nhập, dùng chung cho lần gửi đầu và lần
+     * sửa để hai đường ra cùng một thông báo.
+     *
+     * @throws InvalidBatch
+     */
+    private static function validateUnitValues(Product $product, int $unitCost, ?int $slots, ?int $expiryDays): void
+    {
+        $name = $product->name;
+
+        if ($unitCost < 0) {
+            throw new InvalidBatch("Giá vốn của Dòng nhập \"{$name}\" không được âm.");
+        }
+
+        if ($slots !== null && $product->form() === StockForm::OneTimeCode && $slots !== 1) {
+            throw new InvalidBatch("Mã dùng một lần luôn có đúng 1 slot (Dòng nhập \"{$name}\").");
+        }
+
+        if ($slots !== null && ($slots < 1 || $slots > LineClassifier::MAX_SLOTS)) {
+            throw new InvalidBatch(sprintf('Số slot của Dòng nhập "%s" phải từ 1 đến %s.', $name, self::formatCount(LineClassifier::MAX_SLOTS)));
+        }
+
+        if ($expiryDays !== null && $expiryDays < 0) {
+            throw new InvalidBatch("Số ngày Hạn sử dụng của Dòng nhập \"{$name}\" không được âm.");
+        }
+    }
+
+    /**
      * @throws InvalidBatch
      */
     private static function validateDraft(BatchDraft $draft): void
@@ -908,9 +1025,7 @@ class BatchIntake
 
             $products[$line->product->getKey()] = true;
 
-            if ($line->unitCost < 0) {
-                throw new InvalidBatch("Giá vốn của Dòng nhập \"{$name}\" không được âm.");
-            }
+            self::validateUnitValues($line->product, $line->unitCost, $line->slots, $line->expiry?->days);
 
             if (trim($line->content) === '') {
                 throw new InvalidBatch("Dòng nhập \"{$name}\" chưa có nội dung.");
@@ -922,18 +1037,6 @@ class BatchIntake
 
             if ($line->source === IntakeSource::Paste && $line->separator === '') {
                 throw new InvalidBatch("Dòng nhập \"{$name}\" chưa chọn ký tự phân tách.");
-            }
-
-            if ($line->slots !== null && $line->product->form() === StockForm::OneTimeCode && $line->slots !== 1) {
-                throw new InvalidBatch("Mã dùng một lần luôn có đúng 1 slot (Dòng nhập \"{$name}\").");
-            }
-
-            if ($line->slots !== null && ($line->slots < 1 || $line->slots > LineClassifier::MAX_SLOTS)) {
-                throw new InvalidBatch(sprintf('Số slot của Dòng nhập "%s" phải từ 1 đến %s.', $name, self::formatCount(LineClassifier::MAX_SLOTS)));
-            }
-
-            if ($line->expiry?->days !== null && $line->expiry->days < 0) {
-                throw new InvalidBatch("Số ngày Hạn sử dụng của Dòng nhập \"{$name}\" không được âm.");
             }
         }
     }

@@ -14,6 +14,7 @@ use App\Inventory\Catalog\SupplierDirectory;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLinePreview;
 use App\Inventory\Intake\BatchStatus;
+use App\Inventory\Intake\ExpiryRule;
 use App\Inventory\Intake\LineClassifier;
 use App\Inventory\Intake\RejectedLine;
 use App\Models\Batch;
@@ -23,6 +24,7 @@ use App\Models\Supplier;
 use App\Models\SupplierClaim;
 use BackedEnum;
 use Carbon\CarbonImmutable;
+use Closure;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
@@ -81,6 +83,77 @@ class BatchResource extends Resource
     ];
 
     /**
+     * Ba lựa chọn Hạn sử dụng trên form ↔ luật của Dòng nhập. Form tạo Lô nhập và form sửa Lô
+     * nhập Chờ xác nhận đọc cùng một chỗ, để hai màn không lệch nghĩa của "Không có".
+     *
+     * @param  array<string, mixed>  $state
+     */
+    public static function expiryRule(array $state): ?ExpiryRule
+    {
+        return match ($state['expiry_mode'] ?? 'none') {
+            'date' => ExpiryRule::on(CarbonImmutable::parse($state['expires_on'])),
+            'days' => ExpiryRule::afterDays((int) $state['expires_after_days']),
+            default => null,
+        };
+    }
+
+    /**
+     * Chiều ngược: giá trị đã lưu của một Dòng nhập thành state của form sửa.
+     *
+     * @return array{expiry_mode: string, expires_on: ?CarbonImmutable, expires_after_days: ?int}
+     */
+    public static function expiryState(?CarbonImmutable $date, ?int $days): array
+    {
+        return [
+            'expiry_mode' => match (true) {
+                $date !== null => 'date',
+                $days !== null => 'days',
+                default => 'none',
+            },
+            'expires_on' => $date,
+            'expires_after_days' => $days,
+        ];
+    }
+
+    /**
+     * Các ô Giá trị áp cho Đơn vị hàng mà form tạo và form sửa dùng chung, trừ Giá vốn: luật số
+     * slot và Hạn sử dụng khai một chỗ để hai màn không lệch nhau. Hai màn tìm Sản phẩm của Dòng
+     * nhập theo hai đường khác nhau, nên nhận đường đó vào làm tham số.
+     *
+     * @param  Closure(Get): ?Product  $product
+     * @return list<TextInput|ToggleButtons|DatePicker>
+     */
+    public static function unitValueFields(Closure $product): array
+    {
+        return [
+            TextInput::make('slots')
+                ->label('Số slot mỗi Tài khoản')
+                ->placeholder(fn (Get $get): string => (string) $product($get)?->default_slots)
+                ->integer()
+                ->minValue(1)
+                ->maxValue(LineClassifier::MAX_SLOTS)
+                ->visible(fn (Get $get): bool => $product($get)?->form() === StockForm::Account),
+            ToggleButtons::make('expiry_mode')
+                ->label('Hạn sử dụng')
+                ->options(['none' => 'Không có', 'date' => 'Ngày cụ thể', 'days' => 'Số ngày kể từ ngày nhập'])
+                ->default('none')
+                ->inline()
+                ->live()
+                ->required(),
+            DatePicker::make('expires_on')
+                ->label('Ngày hết hạn')
+                ->visible(fn (Get $get): bool => $get('expiry_mode') === 'date')
+                ->required(),
+            TextInput::make('expires_after_days')
+                ->label('Số ngày')
+                ->integer()
+                ->minValue(0)
+                ->visible(fn (Get $get): bool => $get('expiry_mode') === 'days')
+                ->required(),
+        ];
+    }
+
+    /**
      * Gọn hết mức: chỉ Nhà cung cấp và Ngày nhập đứng ngoài, phần chứng từ còn lại thu gọn.
      * Hạn sử dụng nằm ở thân chính chứ không thu gọn: nó là Giá trị áp cho Đơn vị hàng duy nhất
      * không có tầng Sản phẩm đỡ, lại mặc định im lặng thành "Không có", mà Lô nhập thì không sửa
@@ -89,7 +162,6 @@ class BatchResource extends Resource
      */
     public static function form(Schema $schema): Schema
     {
-        $stockForm = fn (Get $get): ?StockForm => Product::query()->with('productType')->find($get('product_id'))?->form();
         $contentFieldCount = fn (Get $get): int => Product::query()->with('contentFields')->find($get('product_id'))?->contentFields->count() ?? 2;
 
         return $schema->columns(1)->components([
@@ -219,30 +291,7 @@ class BatchResource extends Resource
                             // Chỗ của "Tuỳ chọn thêm" trong prototype, nhưng không còn vỏ thu gọn:
                             // Hạn sử dụng là Giá trị áp cho Đơn vị hàng duy nhất không có tầng
                             // Sản phẩm đỡ, lại mặc định im lặng thành "Không có".
-                            TextInput::make('slots')
-                                ->label('Số slot mỗi Tài khoản')
-                                ->placeholder(fn (Get $get): string => (string) Product::query()->find($get('product_id'))?->default_slots)
-                                ->integer()
-                                ->minValue(1)
-                                ->maxValue(LineClassifier::MAX_SLOTS)
-                                ->visible(fn (Get $get): bool => $stockForm($get) === StockForm::Account),
-                            ToggleButtons::make('expiry_mode')
-                                ->label('Hạn sử dụng')
-                                ->options(['none' => 'Không có', 'date' => 'Ngày cụ thể', 'days' => 'Số ngày kể từ ngày nhập'])
-                                ->default('none')
-                                ->inline()
-                                ->live()
-                                ->required(),
-                            DatePicker::make('expires_on')
-                                ->label('Ngày hết hạn')
-                                ->visible(fn (Get $get): bool => $get('expiry_mode') === 'date')
-                                ->required(),
-                            TextInput::make('expires_after_days')
-                                ->label('Số ngày')
-                                ->integer()
-                                ->minValue(0)
-                                ->visible(fn (Get $get): bool => $get('expiry_mode') === 'days')
-                                ->required(),
+                            ...self::unitValueFields(fn (Get $get): ?Product => Product::query()->with('productType')->find($get('product_id'))),
                         ]),
                 ]),
         ]);

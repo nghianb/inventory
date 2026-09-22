@@ -14,6 +14,8 @@ use App\Inventory\Encryption\KeyFingerprints;
 use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
+use App\Inventory\Intake\BatchLineRevision;
+use App\Inventory\Intake\BatchRevision;
 use App\Inventory\Intake\BatchStatus;
 use App\Inventory\Intake\ExpiryRule;
 use App\Inventory\Intake\IntakeSource;
@@ -23,6 +25,7 @@ use App\Inventory\Intake\RejectedLine;
 use App\Inventory\Stock\SlotStatus;
 use App\Inventory\Stock\StockUnitStatus;
 use App\Models\Batch;
+use App\Models\BatchLine;
 use App\Models\Product;
 use App\Models\StockLedgerEntry;
 use App\Models\StockUnit;
@@ -131,6 +134,20 @@ function xlsxFile(array $rows): string
     $writer->close();
 
     return tap((string) file_get_contents($path), fn () => unlink($path));
+}
+
+/**
+ * Lần sửa giữ nguyên mọi giá trị hiện tại của Lô nhập, trừ các Dòng nhập test đổi.
+ */
+function revisionOf(Batch $batch, BatchLineRevision ...$changed): BatchRevision
+{
+    $byLine = collect($changed)->keyBy(fn (BatchLineRevision $revision): int => $revision->line->getKey());
+
+    return new BatchRevision(
+        receivedOn: $batch->received_on,
+        lines: $batch->lines->map(fn (BatchLine $line): BatchLineRevision => $byLine[$line->id]
+            ?? new BatchLineRevision($line, $line->unit_cost, $line->slots))->values()->all(),
+    );
 }
 
 function pasteBatch(Product $product, string $content, int $unitCost = 95_000, string $separator = "\t"): BatchDraft
@@ -463,6 +480,122 @@ it('bản kiểm tra chưa xác nhận quá 24 giờ: không xác nhận đượ
     $this->intake->confirm($this->admin, $fresh);
 
     expect(StockUnit::count())->toBe(1);
+});
+
+it('sửa Giá trị áp cho Đơn vị hàng và chứng từ của Lô nhập Chờ xác nhận rồi kiểm tra lại, nội dung giữ nguyên', function () {
+    $batch = $this->intake->submit($this->admin, batchOf([
+        new BatchLineDraft(streamingAccount(), 100_000, "a@shop.test\tpw1\nb@shop.test\tpw2", slots: 2),
+    ], receivedOn: '2026-09-15'));
+
+    $revised = $this->intake->revise($this->admin, $batch, new BatchRevision(
+        receivedOn: CarbonImmutable::parse('2026-09-16'),
+        lines: [new BatchLineRevision($batch->lines[0], unitCost: 120_000, slots: 3, expiry: ExpiryRule::afterDays(30))],
+        documentNumber: 'HD-0916',
+        note: 'Gõ nhầm Giá vốn',
+    ));
+
+    expect($revised)
+        ->status->toBe(BatchStatus::Validated)
+        ->document_number->toBe('HD-0916')
+        ->note->toBe('Gõ nhầm Giá vốn')
+        ->and($this->intake->preview($this->admin, $revised)->lines[0])
+        ->validCount->toBe(2)
+        ->totalCost->toBe(240_000)
+        ->slots->toBe([3])
+        ->expiresOn->toBe(['2026-10-16']);
+
+    $this->intake->confirm($this->admin, $revised);
+
+    expect(StockUnit::orderBy('id')->get()->map(fn (StockUnit $unit) => [$unit->content['username'], $unit->unit_cost, $unit->slot_count, $unit->expires_on?->toDateString()])->all())
+        ->toBe([
+            ['a@shop.test', 120_000, 3, '2026-10-16'],
+            ['b@shop.test', 120_000, 3, '2026-10-16'],
+        ]);
+});
+
+it('từ chối lần sửa không hợp lệ và giữ nguyên bản kiểm tra', function (Closure $revision, string $message) {
+    $batch = $this->intake->submit($this->admin, batchOf([
+        new BatchLineDraft(streamingAccount(), 100_000, "a@shop.test\tpw"),
+        new BatchLineDraft(steamWallet(), 95_000, 'AAAA-BBBB'),
+    ]));
+
+    expect(fn () => $this->intake->revise($this->admin, $batch, $revision($batch)))->toThrow(InvalidBatch::class, $message)
+        ->and(Batch::findOrFail($batch->id))
+        ->status->toBe(BatchStatus::Validated)
+        ->and(Batch::findOrFail($batch->id)->lines->pluck('unit_cost')->all())->toBe([100_000, 95_000]);
+})->with([
+    'Giá vốn âm' => [
+        fn (Batch $batch) => revisionOf($batch, new BatchLineRevision($batch->lines[0], -1)),
+        'Giá vốn của Dòng nhập "Tài khoản NETFLIX-1M" không được âm.',
+    ],
+    'Mã dùng một lần nhiều slot' => [
+        fn (Batch $batch) => revisionOf($batch, new BatchLineRevision($batch->lines[1], 95_000, slots: 2)),
+        'Mã dùng một lần luôn có đúng 1 slot (Dòng nhập "Steam Wallet STEAM-100K").',
+    ],
+    'số slot vượt giới hạn' => [
+        fn (Batch $batch) => revisionOf($batch, new BatchLineRevision($batch->lines[0], 100_000, slots: 1_001)),
+        'Số slot của Dòng nhập "Tài khoản NETFLIX-1M" phải từ 1 đến 1.000.',
+    ],
+    'số ngày Hạn sử dụng âm' => [
+        fn (Batch $batch) => revisionOf($batch, new BatchLineRevision($batch->lines[0], 100_000, expiry: ExpiryRule::afterDays(-1))),
+        'Số ngày Hạn sử dụng của Dòng nhập "Tài khoản NETFLIX-1M" không được âm.',
+    ],
+    'thiếu một Dòng nhập' => [
+        fn (Batch $batch) => new BatchRevision($batch->received_on, [new BatchLineRevision($batch->lines[0], 100_000)]),
+        'Phải nêu Giá trị áp cho Đơn vị hàng của mọi Dòng nhập; thiếu Dòng nhập "Steam Wallet STEAM-100K".',
+    ],
+    'Dòng nhập của Lô nhập khác' => [
+        fn (Batch $batch) => new BatchRevision($batch->received_on, [
+            new BatchLineRevision($batch->lines[0], 100_000),
+            new BatchLineRevision($batch->lines[1], 95_000),
+            new BatchLineRevision(test()->intake->submit(test()->admin, pasteBatch(steamWallet('STEAM-50K'), 'ZZZZ-9999'))->lines[0], 1),
+        ]),
+        'Dòng nhập không thuộc Lô nhập này.',
+    ],
+]);
+
+it('chỉ sửa được Lô nhập đang Chờ xác nhận, và sửa không gia hạn hạn 24 giờ của nội dung tạm', function () {
+    $confirmed = $this->intake->submit($this->admin, pasteBatch(steamWallet(), 'AAAA-BBBB'));
+    $this->intake->confirm($this->admin, $confirmed);
+    $discarded = $this->intake->submit($this->admin, pasteBatch(steamWallet('STEAM-200K'), 'CCCC-DDDD'));
+    $this->intake->discard($this->admin, $discarded);
+    $pending = $this->intake->submit($this->admin, pasteBatch(steamWallet('STEAM-300K'), 'EEEE-FFFF'));
+
+    expect(fn () => $this->intake->revise(staffMember(Role::BanHang), $pending, revisionOf($pending)))->toThrow(MissingRole::class)
+        ->and(fn () => $this->intake->revise($this->admin, $confirmed, revisionOf($confirmed)))
+        ->toThrow(InvalidBatch::class, 'Lô nhập đã xác nhận và đã đóng.')
+        ->and(fn () => $this->intake->revise($this->admin, $discarded, revisionOf($discarded)))
+        ->toThrow(InvalidBatch::class, 'Lô nhập đã bị bỏ.');
+
+    // Chưa có cách giữ job pha 1 lại giữa test: đặt trạng thái trực tiếp để chạm nhánh Đang kiểm tra.
+    Batch::whereKey($pending->id)->update(['status' => BatchStatus::Validating]);
+
+    expect(fn () => $this->intake->revise($this->admin, $pending, revisionOf($pending)))
+        ->toThrow(InvalidBatch::class, 'Lô nhập chưa kiểm tra xong, chưa sửa được.');
+
+    Batch::whereKey($pending->id)->update(['status' => BatchStatus::Validated]);
+
+    // Sửa sát hạn không đẩy mốc 24 giờ đi: nội dung tạm vẫn hết hạn đúng giờ cũ.
+    $this->travel(23)->hours();
+    $this->intake->revise($this->admin, $pending, revisionOf($pending, new BatchLineRevision($pending->lines[0], 1)));
+    $this->travel(2)->hours();
+
+    expect(Batch::findOrFail($pending->id)->lines[0]->unit_cost)->toBe(1)
+        ->and(fn () => $this->intake->revise($this->admin, $pending, revisionOf($pending)))
+        ->toThrow(InvalidBatch::class, 'Bản kiểm tra quá 24 giờ chưa xác nhận nên nội dung tạm đã bị xoá; hãy tạo lại Lô nhập.')
+        ->and(fn () => $this->intake->confirm($this->admin, $pending))->toThrow(InvalidBatch::class, 'Bản kiểm tra quá 24 giờ');
+});
+
+it('sửa là kiểm tra lại từ đầu, nên thấy cả dòng vừa thành trùng trong kho', function () {
+    $batch = $this->intake->submit($this->admin, pasteBatch(steamWallet(), "AAAA-BBBB\nCCCC-DDDD"));
+    $this->intake->confirm($this->admin, $this->intake->submit($this->admin, pasteBatch(steamWallet('STEAM-200K'), 'aaaabbbb')));
+
+    $revised = $this->intake->revise($this->admin, $batch, revisionOf($batch, new BatchLineRevision($batch->lines[0], 120_000)));
+
+    expect($this->intake->preview($this->admin, $revised)->lines[0])
+        ->validCount->toBe(1)
+        ->stockDuplicateCount->toBe(1)
+        ->totalCost->toBe(120_000);
 });
 
 it('Lô nhập bổ sung trỏ về Lô nhập đã xác nhận; xem trước đối chiếu tổng tiền hoá đơn', function () {
