@@ -2,7 +2,7 @@
 
 Hệ thống quản lý kho nội bộ cho shop bán hàng số. Thuật ngữ nghiệp vụ nằm trong [`CONTEXT.md`](CONTEXT.md), quyết định kiến trúc trong [`docs/adr/`](docs/adr/).
 
-Nền tảng: Laravel 13, Filament 5, PostgreSQL 17, Pest. Chạy bằng Docker Compose (PHP 8.4).
+Nền tảng: Laravel 13, Filament 5, PostgreSQL 17, Pest. Chạy bằng Docker Compose với FrankenPHP (PHP 8.4): [`compose.yaml`](compose.yaml) cho dev, [`compose.prod.yaml`](compose.prod.yaml) cho production.
 
 ## Chạy lần đầu
 
@@ -23,6 +23,62 @@ docker compose up -d
 `staff:create-first-owner` hỏi tên, email và mật khẩu ban đầu ngay trên terminal, nên mật khẩu không nằm lại trong lịch sử shell. Lệnh chạy được đúng một lần: kho đã có Quản trị (kể cả Quản trị đang bị Khoá nhân viên) thì nó từ chối, vì từ đó Quản trị tự tạo nhân viên ở trang Nhân viên.
 
 Panel ở <http://localhost:8080/admin>. Mọi nhân viên phải bật 2FA (TOTP) ngay sau lần đăng nhập đầu tiên.
+
+Asset do service `node` build: `docker compose up -d` chạy luôn Vite dev server ở cổng 5173, không cần cài Node trên máy. Mở app ở địa chỉ khác `localhost` (ví dụ qua Tailscale) thì đặt `VITE_ORIGIN` và `VITE_HMR_HOST` cho khớp.
+
+## Triển khai production
+
+Một VPS, sau một reverse proxy **cùng máy đã cầm TLS** (xem [ADR 0005](docs/adr/0005-kho-chay-tren-mot-node.md)). Image build thủ công trên máy dev rồi đẩy lên GHCR; VPS chỉ kéo image về, không cần source, không cần Composer hay Node.
+
+### Yêu cầu với reverse proxy
+
+FrankenPHP chỉ nghe `127.0.0.1:8000`, không mở ra Internet. Proxy phải chuyển tiếp tới đó, **kèm `X-Forwarded-Proto: https` và `X-Forwarded-For`**. Thiếu header đầu thì Laravel tưởng mình chạy trên `http` và sinh URL sai scheme: trình duyệt chặn asset và panel Filament vỡ giao diện.
+
+### Chuẩn bị VPS (một lần)
+
+```bash
+mkdir -p /srv/inventory
+# chép docker/prod/app.env.example và compose.prod.yaml từ repo sang /srv/inventory/
+vi /srv/inventory/app.env        # điền APP_KEY, ba khoá INVENTORY_*, mật khẩu DB, APP_URL
+chmod 600 /srv/inventory/app.env
+```
+
+Khoá sinh như ở phần Chạy lần đầu (`openssl rand -base64 32`, dạng `1:base64:…`). `DB_*` và `POSTGRES_*` trong file đó phải khớp từng cặp.
+
+### Lần dựng đầu trên VPS trắng
+
+`migrate` tự chạy mỗi lần deploy, nhưng dấu vân tay khoá, Vai trò và Quản trị đầu tiên thì không — và service `app` từ chối khởi động khi khoá chưa đăng ký, nên ba lệnh này phải chạy **trước** lần `up` đầu tiên:
+
+```bash
+cd /srv/inventory
+export INVENTORY_IMAGE=ghcr.io/nghianb/inventory:git-<sha>
+docker compose -f compose.prod.yaml run --rm migrate
+docker compose -f compose.prod.yaml run --rm --no-deps app php artisan inventory:keys:register
+docker compose -f compose.prod.yaml run --rm --no-deps app php artisan db:seed --class=RoleSeeder --force
+docker compose -f compose.prod.yaml run --rm --no-deps app php artisan staff:create-first-owner
+```
+
+### Deploy
+
+Trên máy dev, từ một commit đã sạch (script từ chối chạy nếu cây làm việc còn thay đổi chưa commit):
+
+```bash
+docker/build-prod.sh
+```
+
+Trên VPS:
+
+```bash
+cd /srv/inventory
+INVENTORY_IMAGE=ghcr.io/nghianb/inventory:git-<sha> docker compose -f compose.prod.yaml up -d --wait
+```
+
+Service `migrate` chạy `migrate --force` đúng một lần rồi mới tới `app`, `queue`, `scheduler`, nên không có chuyện ba tiến trình đua nhau một migration. Deploy gián đoạn 15–60 giây. **Rollback** là chạy lại đúng lệnh trên với tag cũ — vì vậy đừng deploy bằng `:latest`.
+
+### Những gì stack này không lo
+
+- **Backup.** Chưa có gì tự động: `pg_dump` và ảnh Báo lỗi (`storage/app/private/defect-reports`, trong volume `app-storage`) là việc riêng. `INVENTORY_BACKUP_KEY` hiện mới chỉ đăng ký dấu vân tay, **chưa mã hoá bản backup nào**. Nội dung Lô nhập chờ xác nhận cố ý không vào backup. Khoá phải có bản sao ngoài server, tách khỏi backup (ADR 0001).
+- **TLS, tên miền, chứng chỉ**: của reverse proxy.
 
 ## Khoá mã hoá
 

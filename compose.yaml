@@ -1,56 +1,86 @@
 name: inventory
 
+# Stack dev. Production nằm ở compose.prod.yaml và không dùng chung file nào với stack này:
+# hai môi trường chỉ chia sẻ tầng `base` của docker/php/Dockerfile.
+
 services:
-  app:
-    build:
-      context: docker/php
-    image: inventory-app:dev
-    # Khoá mã hoá không khớp dấu vân tay trong DB thì không khởi động.
-    command: sh -c "php artisan inventory:keys:verify && exec php artisan serve --host=0.0.0.0 --port=8000"
-    volumes:
-      - .:/app
-    ports:
-      - "127.0.0.1:8080:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+    app:
+        build:
+            context: .
+            dockerfile: docker/php/Dockerfile
+            target: dev
+            args:
+                UID: ${UID:-1000}
+                GID: ${GID:-1000}
+        image: inventory-app:dev
+        # Khoá mã hoá không khớp dấu vân tay trong DB thì không khởi động.
+        command: sh -c "php artisan inventory:keys:verify && exec frankenphp run --config /etc/frankenphp/Caddyfile"
+        volumes:
+            - .:/app
+        ports:
+            - "127.0.0.1:8080:8000"
+        depends_on:
+            postgres:
+                condition: service_healthy
 
-  # Job kiểm tra Lô nhập. Worker từ chối khởi động và từ chối từng job khi khoá không khớp.
-  queue:
-    image: inventory-app:dev
-    command: php artisan queue:work --tries=1
-    volumes:
-      - .:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
+    # Job kiểm tra Lô nhập. Worker từ chối khởi động và từ chối từng job khi khoá không khớp.
+    queue:
+        image: inventory-app:dev
+        command: php artisan queue:work --tries=1
+        # Image nền khai HEALTHCHECK gọi endpoint admin của Caddy (cổng 2019). Worker không chạy
+        # Caddy nên sẽ mãi mãi "unhealthy". Tắt hẳn thay vì để lại một tín hiệu giám sát sai.
+        healthcheck:
+            disable: true
+        volumes:
+            - .:/app
+        depends_on:
+            postgres:
+                condition: service_healthy
 
-  # Lịch chạy: mỗi giờ cho hết hạn Lô nhập chưa xác nhận quá 24 giờ và xoá nội dung tạm.
-  scheduler:
-    image: inventory-app:dev
-    command: php artisan schedule:work
-    volumes:
-      - .:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
+    # Lịch chạy: mỗi giờ cho hết hạn Lô nhập chưa xác nhận quá 24 giờ và xoá nội dung tạm.
+    scheduler:
+        image: inventory-app:dev
+        command: php artisan schedule:work
+        healthcheck:
+            disable: true
+        volumes:
+            - .:/app
+        depends_on:
+            postgres:
+                condition: service_healthy
 
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: inventory
-      POSTGRES_PASSWORD: inventory
-      POSTGRES_DB: inventory
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "127.0.0.1:54330:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U inventory"]
-      interval: 2s
-      timeout: 5s
-      retries: 30
+    # Vite dev server. Cố định phiên bản Node ở đây để hai máy dev không build asset bằng hai
+    # Node khác nhau; production dùng đúng phiên bản này ở tầng `assets` của Dockerfile.
+    node:
+        image: node:22.23.2-trixie-slim
+        working_dir: /app
+        command: sh -c "npm install --ignore-scripts && exec npm run dev"
+        environment:
+            # Địa chỉ trình duyệt dùng để gọi vite. Đổi khi app không mở ở localhost
+            # (ví dụ qua Tailscale, xem compose.override.yaml).
+            VITE_ORIGIN: ${VITE_ORIGIN:-http://localhost:5173}
+            VITE_HMR_HOST: ${VITE_HMR_HOST:-localhost}
+        volumes:
+            - .:/app
+        ports:
+            - "127.0.0.1:5173:5173"
+
+    postgres:
+        image: postgres:17-alpine
+        environment:
+            POSTGRES_USER: inventory
+            POSTGRES_PASSWORD: inventory
+            POSTGRES_DB: inventory
+        volumes:
+            - postgres-data:/var/lib/postgresql/data
+            - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+        ports:
+            - "127.0.0.1:54330:5432"
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U inventory"]
+            interval: 2s
+            timeout: 5s
+            retries: 30
 
 volumes:
-  postgres-data:
+    postgres-data:

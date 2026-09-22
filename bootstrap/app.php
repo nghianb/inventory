@@ -14,7 +14,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Production chạy sau một reverse proxy cùng máy đã cầm TLS (ADR 0005). Không khai tin cậy
+        // thì Laravel thấy request là http và sinh URL sai scheme, làm panel Filament vỡ asset.
+        // `*` an toàn ở đây vì container chỉ bind 127.0.0.1: không ai ngoài máy chạm tới để giả header.
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
