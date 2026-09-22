@@ -375,7 +375,10 @@ class BatchResource extends Resource
         $chuaVaoKho = fn (Batch $record): bool => $record->status === BatchStatus::Validated;
         $daVaoKho = fn (Batch $record): bool => $record->status === BatchStatus::Confirmed;
 
-        return $schema->components([
+        // Một cột: infolist mặc định là grid 2 cột, nên thiếu dòng này thì mọi khối cấp trên xếp
+        // cặp hai-cái-một-hàng thay vì xếp dọc full-width — đúng lý do bản cũ phải gắn
+        // columnSpanFull() lên RepeatableEntry.
+        return $schema->columns(1)->components([
             // Job pha 1 chạy ngoài request, nên màn xem tự hỏi lại cho tới khi có kết quả: nhân
             // viên không phải tự đoán lúc nào xong mà bấm lại. Kho chạy trên một node (ADR 0005)
             // nên polling đủ, không cần broadcast. Mỗi lần hỏi vẽ lại cả trang, nên kết quả kiểm
@@ -441,8 +444,8 @@ class BatchResource extends Resource
                 ->columns(4)
                 ->visible($chuaVaoKho)
                 ->schema([
-                    ...self::soLieuVaoKho($money),
-                    self::ketQuaKiemTra($money, $oneOrMany)->label('Từng Dòng nhập'),
+                    ...self::soLieuVaoKho(),
+                    self::ketQuaKiemTra($money, $oneOrMany, 4)->label('Từng Dòng nhập'),
                 ]),
 
             // Sau khi vào kho, câu hỏi đổi: hàng của lô này giờ còn gì.
@@ -456,7 +459,7 @@ class BatchResource extends Resource
                 ->collapsible()
                 ->collapsed()
                 ->visible($daVaoKho)
-                ->schema([self::ketQuaKiemTra($money, $oneOrMany)->hiddenLabel()]),
+                ->schema([self::ketQuaKiemTra($money, $oneOrMany, 4)->hiddenLabel()]),
 
             // Chứng từ là bối cảnh, không phải việc cần làm, nên xuống aside. Ba loại thông tin
             // trước đây trộn trong một Section 13 entry giờ tách: chứng từ, tiền, liên kết.
@@ -481,6 +484,23 @@ class BatchResource extends Resource
                         }),
                     TextEntry::make('creator.name')->label('Người tạo'),
                     TextEntry::make('confirmed_at')->label('Xác nhận lúc')->dateTime('d/m/Y H:i')->placeholder('Chưa xác nhận'),
+                    // Hai liên kết nằm trong Chứng từ chứ không thành Section riêng: chúng chỉ hiện
+                    // khi lô có, tức hầu hết lô không thấy gì — một khối aside trống chỗ cho phần
+                    // lớn trường hợp không đáng. Đây cũng là chỗ người ta đang đọc bối cảnh của lô.
+                    TextEntry::make('supplements_batch_id')
+                        ->label('Bổ sung cho lô')
+                        ->prefix('#')
+                        // Trước đây là text trần nên muốn sang lô kia phải tự sửa URL.
+                        ->url(fn (Batch $record): ?string => $record->supplements_batch_id === null
+                            ? null
+                            : self::getUrl('view', ['record' => $record->supplements_batch_id]))
+                        ->visible(fn (Batch $record): bool => $record->supplements_batch_id !== null),
+                    TextEntry::make('supplier_claim_id')
+                        ->label('Hàng thay thế cho Khiếu nại')
+                        ->prefix('#')
+                        ->helperText('Giá vốn 0.')
+                        ->url(fn (Batch $record): ?string => $record->supplier_claim_id === null ? null : SupplierClaimResource::getUrl('view', ['record' => $record->supplier_claim_id]))
+                        ->visible(fn (Batch $record): bool => $record->supplier_claim_id !== null),
                     TextEntry::make('note')->label('Ghi chú')->placeholder('Không có')->columnSpanFull(),
                 ]),
 
@@ -505,27 +525,6 @@ class BatchResource extends Resource
                             && in_array($record->status, [BatchStatus::Validated, BatchStatus::Confirmed], true)),
                 ]),
 
-            Section::make('Liên kết')
-                ->aside()
-                ->columns(2)
-                ->visible(fn (Batch $record): bool => $record->supplements_batch_id !== null
-                    || $record->supplier_claim_id !== null)
-                ->schema([
-                    TextEntry::make('supplements_batch_id')
-                        ->label('Bổ sung cho lô')
-                        ->prefix('#')
-                        // Trước đây là text trần nên muốn sang lô kia phải tự sửa URL.
-                        ->url(fn (Batch $record): ?string => $record->supplements_batch_id === null
-                            ? null
-                            : self::getUrl('view', ['record' => $record->supplements_batch_id]))
-                        ->visible(fn (Batch $record): bool => $record->supplements_batch_id !== null),
-                    TextEntry::make('supplier_claim_id')
-                        ->label('Hàng thay thế cho Khiếu nại')
-                        ->prefix('#')
-                        ->helperText('Giá vốn 0.')
-                        ->url(fn (Batch $record): ?string => $record->supplier_claim_id === null ? null : SupplierClaimResource::getUrl('view', ['record' => $record->supplier_claim_id]))
-                        ->visible(fn (Batch $record): bool => $record->supplier_claim_id !== null),
-                ]),
         ]);
     }
 
@@ -550,7 +549,7 @@ class BatchResource extends Resource
      *
      * @return array<Entry>
      */
-    private static function soLieuVaoKho(callable $money): array
+    private static function soLieuVaoKho(): array
     {
         return [
             TextEntry::make('proto_import_count')
@@ -567,9 +566,11 @@ class BatchResource extends Resource
                 ->label('Bỏ vì trùng')
                 ->state(fn (Batch $record): string => number_format($record->rejectedDuplicateCount(), 0, ',', '.'))
                 ->color(fn (Batch $record): string => $record->rejectedDuplicateCount() > 0 ? 'warning' : 'gray'),
-            TextEntry::make('batch_total_cost')
-                ->label('Tổng Giá vốn')
-                ->state(fn (Batch $record): string => $money(self::preview($record)->totalCost())),
+            // Số Dòng nhập, không phải Tổng Giá vốn: con số ấy đã có ở Section Tiền, để đây nữa là
+            // hiện hai lần trên cùng một trang.
+            TextEntry::make('line_count')
+                ->label('Dòng nhập')
+                ->state(fn (Batch $record): string => (string) count(self::preview($record)->lines)),
         ];
     }
 
@@ -668,10 +669,10 @@ class BatchResource extends Resource
 
     /**
      * Kết quả kiểm tra từng Dòng nhập. Trước đây là grid 7 cột với 9 entry span-1 nên hàng đầu ăn
-     * đúng 7 ô rồi Hạn sử dụng và Số slot rơi xuống đứng lẻ; giờ 3 cột và các ô dài đi riêng.
-     * Dòng bị bỏ vẫn là bảng lồng, nhưng có sẵn cột Sản phẩm ở nhãn của từng khối.
+     * đúng 7 ô rồi Hạn sử dụng và Số slot rơi xuống đứng lẻ; giờ số cột là tham số và các ô dài đi
+     * riêng. Dòng bị bỏ vẫn là bảng lồng, nhưng có sẵn cột Sản phẩm ở nhãn của từng khối.
      */
-    private static function ketQuaKiemTra(callable $money, callable $oneOrMany): RepeatableEntry
+    private static function ketQuaKiemTra(callable $money, callable $oneOrMany, int $columns): RepeatableEntry
     {
         return RepeatableEntry::make('line_previews')
             ->state(fn (Batch $record): array => array_map(fn (BatchLinePreview $line): array => [
@@ -698,7 +699,7 @@ class BatchResource extends Resource
                 ], $line->rejected),
             ], self::preview($record)->lines))
             ->columnSpanFull()
-            ->columns(3)
+            ->columns($columns)
             ->schema([
                 TextEntry::make('product')->label('Sản phẩm')->weight(FontWeight::Bold),
                 TextEntry::make('vao_kho')->label('Vào kho')->color('success'),
