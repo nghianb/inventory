@@ -22,6 +22,7 @@ use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\SupplierClaim;
 use BackedEnum;
+use Carbon\CarbonImmutable;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
@@ -79,12 +80,20 @@ class BatchResource extends Resource
         'semicolon' => [';', 'Dấu chấm phẩy'],
     ];
 
+    /**
+     * Gọn hết mức: chỉ Nhà cung cấp và Ngày nhập đứng ngoài, phần chứng từ còn lại thu gọn.
+     * Hạn sử dụng nằm ở thân chính chứ không thu gọn: nó là Giá trị áp cho Đơn vị hàng duy nhất
+     * không có tầng Sản phẩm đỡ, lại mặc định im lặng thành "Không có", mà Lô nhập thì không sửa
+     * được sau khi gửi đi. Giá trị đã chốt hiện ở màn xem trước, nên form không giải thích luật
+     * ghi đè nữa.
+     */
     public static function form(Schema $schema): Schema
     {
         $stockForm = fn (Get $get): ?StockForm => Product::query()->with('productType')->find($get('product_id'))?->form();
+        $contentFieldCount = fn (Get $get): int => Product::query()->with('contentFields')->find($get('product_id'))?->contentFields->count() ?? 2;
 
-        return $schema->components([
-            Section::make('Chứng từ')
+        return $schema->columns(1)->components([
+            Section::make()
                 ->columns(2)
                 ->schema([
                     Select::make('supplier_id')
@@ -112,26 +121,15 @@ class BatchResource extends Resource
                         ->label('Ngày nhập')
                         ->default(now())
                         ->required(),
+                ]),
+            Section::make('Chi tiết chứng từ')
+                ->collapsible()
+                ->collapsed()
+                ->columns(3)
+                ->schema([
                     TextInput::make('document_number')
                         ->label('Số chứng từ')
                         ->maxLength(255),
-                    TextInput::make('invoice_total')
-                        ->label('Tổng tiền hoá đơn')
-                        ->helperText('Để đối chiếu với tổng Giá vốn ở màn xem trước.')
-                        ->suffix('₫')
-                        ->integer()
-                        ->minValue(0),
-                    Select::make('supplements_batch_id')
-                        ->label('Bổ sung cho lô')
-                        ->options(fn (): array => Batch::query()
-                            ->with('supplier')
-                            ->where('status', BatchStatus::Confirmed)
-                            ->latest('id')
-                            ->limit(200)
-                            ->get()
-                            ->mapWithKeys(fn (Batch $batch): array => [$batch->id => "#{$batch->id} · {$batch->supplier->name} · {$batch->received_on->format('d/m/Y')}"])
-                            ->all())
-                        ->searchable(),
                     Select::make('supplier_claim_id')
                         ->label('Hàng thay thế cho Khiếu nại')
                         ->helperText('Hàng thay thế từ Khiếu nại nhà cung cấp có Giá vốn 0.')
@@ -154,89 +152,98 @@ class BatchResource extends Resource
                     Textarea::make('note')
                         ->label('Ghi chú')
                         ->helperText('Hàng mua bằng ngoại tệ: ghi tỷ giá đã quy đổi.')
-                        ->rows(2),
+                        ->rows(2)
+                        ->columnSpanFull(),
                 ]),
-            Repeater::make('lines')
-                ->label('Dòng nhập')
-                ->addActionLabel('Thêm Dòng nhập')
-                ->minItems(1)
-                ->defaultItems(1)
-                ->columns(3)
+            Section::make('Dòng nhập')
                 ->schema([
-                    Select::make('product_id')
-                        ->label('Sản phẩm')
-                        ->options(fn (): array => Product::query()->with('productType')->orderBy('name')->get()
-                            ->mapWithKeys(fn (Product $product): array => [$product->id => "{$product->name} ({$product->form()->label()})"])
-                            ->all())
-                        ->searchable()
-                        ->distinct()
-                        ->live()
-                        ->required(),
-                    TextInput::make('unit_cost')
-                        ->label('Giá vốn mỗi Đơn vị hàng')
-                        ->helperText('Cột gia_von trong file ghi đè.')
-                        ->suffix('₫')
-                        ->integer()
-                        ->minValue(0)
-                        ->required()
-                        // Hàng thay thế từ Khiếu nại luôn Giá vốn 0.
-                        ->visible(fn (Get $get): bool => blank($get('../../supplier_claim_id'))),
-                    TextInput::make('slots')
-                        ->label('Số slot mỗi Tài khoản')
-                        ->helperText('Để trống thì theo Sản phẩm; cột slot trong file ghi đè.')
-                        ->placeholder(fn (Get $get): string => (string) Product::query()->find($get('product_id'))?->default_slots)
-                        ->integer()
-                        ->minValue(1)
-                        ->maxValue(LineClassifier::MAX_SLOTS)
-                        ->visible(fn (Get $get): bool => $stockForm($get) === StockForm::Account),
-                    Select::make('expiry_mode')
-                        ->label('Hạn sử dụng')
-                        ->options(['none' => 'Không có', 'date' => 'Ngày cụ thể', 'days' => 'Số ngày kể từ ngày nhập'])
-                        ->default('none')
-                        ->helperText('Cột han_su_dung trong file ghi đè.')
-                        ->selectablePlaceholder(false)
-                        ->live(),
-                    DatePicker::make('expires_on')
-                        ->label('Ngày hết hạn')
-                        ->visible(fn (Get $get): bool => $get('expiry_mode') === 'date')
-                        ->required(),
-                    TextInput::make('expires_after_days')
-                        ->label('Số ngày')
-                        ->integer()
-                        ->minValue(0)
-                        ->visible(fn (Get $get): bool => $get('expiry_mode') === 'days')
-                        ->required(),
-                    ToggleButtons::make('source')
-                        ->label('Nguồn')
-                        ->options(['paste' => 'Dán văn bản', 'file' => 'File CSV/XLSX'])
-                        ->default('paste')
-                        ->inline()
-                        ->live()
-                        ->required(),
-                    Select::make('separator')
-                        ->label('Ký tự phân tách')
-                        ->options(array_map(fn (array $separator): string => $separator[1], self::SEPARATORS))
-                        ->default('tab')
-                        ->helperText('Bỏ qua nếu Sản phẩm chỉ có một Trường nội dung.')
-                        ->selectablePlaceholder(false)
-                        ->visible(fn (Get $get): bool => $get('source') !== 'file')
-                        ->required(),
-                    Textarea::make('content')
-                        ->label('Danh sách Đơn vị hàng')
-                        ->helperText('Mỗi dòng một Đơn vị hàng, các trường theo thứ tự khai báo trên Sản phẩm.')
-                        ->rows(10)
-                        ->visible(fn (Get $get): bool => $get('source') !== 'file')
-                        ->required()
-                        ->columnSpanFull(),
-                    FileUpload::make('file')
-                        ->label('File CSV hoặc XLSX')
-                        ->helperText('Dòng đầu là tiêu đề trùng tên Trường nội dung; cột slot, han_su_dung, gia_von tuỳ chọn; cột khác bị bỏ qua.')
-                        ->storeFiles(false)
-                        ->acceptedFileTypes(['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
-                        ->maxSize(fn (): int => intdiv((int) config('inventory.intake.max_bytes'), 1024))
-                        ->visible(fn (Get $get): bool => $get('source') === 'file')
-                        ->required()
-                        ->columnSpanFull(),
+                    Repeater::make('lines')
+                        ->hiddenLabel()
+                        ->addActionLabel('Thêm Dòng nhập')
+                        ->minItems(1)
+                        ->defaultItems(1)
+                        ->collapsible()
+                        ->itemLabel(fn (array $state): ?string => filled($state['product_id'] ?? null)
+                            ? Product::query()->find($state['product_id'])?->name
+                            : null)
+                        ->columns(2)
+                        ->schema([
+                            Select::make('product_id')
+                                ->label('Sản phẩm')
+                                ->options(fn (): array => Product::query()->with('productType')->orderBy('name')->get()
+                                    ->mapWithKeys(fn (Product $product): array => [$product->id => "{$product->name} ({$product->form()->label()})"])
+                                    ->all())
+                                ->searchable()
+                                ->distinct()
+                                ->live()
+                                ->required(),
+                            TextInput::make('unit_cost')
+                                ->label('Giá vốn mỗi Đơn vị hàng')
+                                ->suffix('₫')
+                                ->integer()
+                                ->minValue(0)
+                                ->required()
+                                // Hàng thay thế từ Khiếu nại luôn Giá vốn 0.
+                                ->visible(fn (Get $get): bool => blank($get('../../supplier_claim_id'))),
+                            ToggleButtons::make('source')
+                                ->label('Nguồn')
+                                ->options(['paste' => 'Dán văn bản', 'file' => 'File CSV/XLSX'])
+                                ->default('paste')
+                                ->inline()
+                                ->live()
+                                ->required(),
+                            Select::make('separator')
+                                ->label('Ký tự phân tách')
+                                ->options(array_map(fn (array $separator): string => $separator[1], self::SEPARATORS))
+                                ->default('tab')
+                                ->selectablePlaceholder(false)
+                                // Sản phẩm một Trường nội dung thì không có gì để tách.
+                                ->visible(fn (Get $get): bool => $get('source') !== 'file' && $contentFieldCount($get) > 1)
+                                ->required(),
+                            Textarea::make('content')
+                                ->label('Danh sách Đơn vị hàng')
+                                ->helperText('Mỗi dòng một Đơn vị hàng, các trường theo thứ tự khai báo trên Sản phẩm.')
+                                ->rows(10)
+                                ->visible(fn (Get $get): bool => $get('source') !== 'file')
+                                ->required()
+                                ->columnSpanFull(),
+                            FileUpload::make('file')
+                                ->label('File CSV hoặc XLSX')
+                                ->helperText('Dòng đầu là tiêu đề trùng tên Trường nội dung; cột slot, han_su_dung, gia_von tuỳ chọn; cột khác bị bỏ qua.')
+                                ->storeFiles(false)
+                                ->acceptedFileTypes(['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
+                                ->maxSize(fn (): int => intdiv((int) config('inventory.intake.max_bytes'), 1024))
+                                ->visible(fn (Get $get): bool => $get('source') === 'file')
+                                ->required()
+                                ->columnSpanFull(),
+                            // Chỗ của "Tuỳ chọn thêm" trong prototype, nhưng không còn vỏ thu gọn:
+                            // Hạn sử dụng là Giá trị áp cho Đơn vị hàng duy nhất không có tầng
+                            // Sản phẩm đỡ, lại mặc định im lặng thành "Không có".
+                            TextInput::make('slots')
+                                ->label('Số slot mỗi Tài khoản')
+                                ->placeholder(fn (Get $get): string => (string) Product::query()->find($get('product_id'))?->default_slots)
+                                ->integer()
+                                ->minValue(1)
+                                ->maxValue(LineClassifier::MAX_SLOTS)
+                                ->visible(fn (Get $get): bool => $stockForm($get) === StockForm::Account),
+                            ToggleButtons::make('expiry_mode')
+                                ->label('Hạn sử dụng')
+                                ->options(['none' => 'Không có', 'date' => 'Ngày cụ thể', 'days' => 'Số ngày kể từ ngày nhập'])
+                                ->default('none')
+                                ->inline()
+                                ->live()
+                                ->required(),
+                            DatePicker::make('expires_on')
+                                ->label('Ngày hết hạn')
+                                ->visible(fn (Get $get): bool => $get('expiry_mode') === 'date')
+                                ->required(),
+                            TextInput::make('expires_after_days')
+                                ->label('Số ngày')
+                                ->integer()
+                                ->minValue(0)
+                                ->visible(fn (Get $get): bool => $get('expiry_mode') === 'days')
+                                ->required(),
+                        ]),
                 ]),
         ]);
     }
@@ -245,6 +252,18 @@ class BatchResource extends Resource
     {
         $preview = fn (Batch $record) => app(BatchIntake::class)->preview(InventoryAction::actor(), $record);
         $money = fn (int $amount): string => number_format($amount, 0, ',', '.').' ₫';
+
+        // Giá trị áp cho Đơn vị hàng: cột file ghi đè từng dòng nên một Dòng nhập ra nhiều giá
+        // trị được. Nói thẳng là "nhiều", không bịa ra một con số mà hàng thật không mang.
+        $oneOrMany = function (array $values, callable $format): ?string {
+            if ($values === []) {
+                return null;
+            }
+
+            return count($values) === 1
+                ? $format($values[0])
+                : sprintf('Nhiều giá trị (%d khác nhau)', count($values));
+        };
 
         return $schema->components([
             Section::make('Chứng từ')
@@ -310,6 +329,11 @@ class BatchResource extends Resource
                     'file_duplicate' => $line->fileDuplicateCount,
                     'stock_duplicate' => $line->stockDuplicateCount,
                     'total_cost' => $money($line->totalCost),
+                    'slots' => $oneOrMany($line->slots, fn (int $slots): string => $slots.' slot'),
+                    'expires_on' => $oneOrMany(
+                        $line->expiresOn,
+                        fn (?string $date): string => $date === null ? 'Không có' : CarbonImmutable::parse($date)->format('d/m/Y'),
+                    ),
                     'reversed' => $line->reversedCount === 0 ? null : $line->reversedCount,
                     'sample' => array_map(
                         fn (array $unit): string => collect($unit)->map(fn (string $value, string $label): string => "{$label}: {$value}")->implode(' · '),
@@ -331,6 +355,12 @@ class BatchResource extends Resource
                     TextEntry::make('file_duplicate')->label('Trùng trong file'),
                     TextEntry::make('stock_duplicate')->label('Trùng trong kho'),
                     TextEntry::make('total_cost')->label('Tổng Giá vốn'),
+                    TextEntry::make('expires_on')
+                        ->label('Hạn sử dụng')
+                        ->placeholder('Không có dòng hợp lệ'),
+                    TextEntry::make('slots')
+                        ->label('Số slot mỗi Đơn vị hàng')
+                        ->placeholder('Không có dòng hợp lệ'),
                     TextEntry::make('source')->label('Nguồn')->columnSpan(2),
                     TextEntry::make('reversed')->label('Đã Huỷ nhập')->color('danger')->placeholder('Không'),
                     TextEntry::make('ignored_columns')

@@ -9,7 +9,6 @@ use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
 use App\Inventory\Intake\ExpiryRule;
-use App\Models\Batch;
 use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\SupplierClaim;
@@ -61,8 +60,7 @@ class CreateBatch extends CreateRecord
                 lines: $lines,
                 documentNumber: $data['document_number'] ?? null,
                 note: $data['note'] ?? null,
-                invoiceTotal: filled($data['invoice_total'] ?? null) ? (int) $data['invoice_total'] : null,
-                supplements: filled($data['supplements_batch_id'] ?? null) ? Batch::query()->findOrFail($data['supplements_batch_id']) : null,
+                // Tổng tiền hoá đơn nhập ở màn xem trước, nơi đã có Tổng Giá vốn để đối chiếu (ADR 0006).
                 supplierClaim: $claim,
             )));
         } finally {
@@ -102,7 +100,9 @@ class CreateBatch extends CreateRecord
             product: $product,
             unitCost: $unitCost,
             content: (string) $line['content'],
-            separator: BatchResource::SEPARATORS[$line['separator']][0],
+            // Sản phẩm một Trường nội dung thì form ẩn ô phân tách, và Filament loại field bị
+            // ẩn khỏi state: không có gì để tách nên giá trị nào cũng như nhau.
+            separator: BatchResource::SEPARATORS[$line['separator'] ?? 'tab'][0],
             slots: $slots,
             expiry: $expiry,
         );
