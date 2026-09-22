@@ -8,7 +8,6 @@ use App\Filament\Support\InventoryAction;
 use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
-use App\Inventory\Intake\ExpiryRule;
 use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\SupplierClaim;
@@ -86,11 +85,7 @@ class CreateBatch extends CreateRecord
         $product = Product::query()->with(['contentFields', 'productType'])->findOrFail($line['product_id']);
         $unitCost = (int) $line['unit_cost'];
         $slots = filled($line['slots'] ?? null) ? (int) $line['slots'] : null;
-        $expiry = match ($line['expiry_mode'] ?? 'none') {
-            'date' => ExpiryRule::on(CarbonImmutable::parse($line['expires_on'])),
-            'days' => ExpiryRule::afterDays((int) $line['expires_after_days']),
-            default => null,
-        };
+        $expiry = BatchResource::expiryRule($line);
 
         if ($upload !== null) {
             return BatchLineDraft::file($product, $unitCost, (string) $upload->get(), $upload->getClientOriginalName(), $slots, $expiry);

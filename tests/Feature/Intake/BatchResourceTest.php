@@ -160,6 +160,59 @@ it('Nhập kho tạo nhanh Nhà cung cấp, upload file Tài khoản kèm Dòng 
     expect($batch->fresh()->invoice_total)->toBe(400000);
 });
 
+it('Nhập kho sửa Giá trị áp cho Đơn vị hàng ở màn xem trước rồi kiểm tra lại, không phải dán lại nội dung', function () {
+    $this->actingAs(staffMember(Role::NhapKho));
+    $netflix = productOf(
+        StockForm::Account,
+        [new ContentFieldDraft('username', 'Tên đăng nhập', dedupeKey: true, sensitive: false), new ContentFieldDraft('password', 'Mật khẩu')],
+        'Netflix 1 tháng',
+        'NETFLIX-1M',
+        defaultSlots: 4,
+    );
+    $batch = app(BatchIntake::class)->submit($this->admin, new BatchDraft(
+        supplier: $this->supplier,
+        receivedOn: CarbonImmutable::parse('2026-09-15'),
+        lines: [new BatchLineDraft($netflix, 100_000, "a@shop.test\tpw1\nb@shop.test\tpw2")],
+        documentNumber: 'HD-0915',
+    ));
+
+    Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
+        ->assertSee('4 slot')
+        ->callAction('revise', data: [
+            'received_on' => '2026-09-16',
+            'document_number' => 'HD-0916',
+            'note' => 'Gõ nhầm Giá vốn',
+            'lines' => [[
+                'id' => $batch->lines[0]->id,
+                'unit_cost' => 120_000,
+                'slots' => 3,
+                'expiry_mode' => 'days',
+                'expires_after_days' => 30,
+            ]],
+        ])
+        ->assertHasNoActionErrors()
+        ->assertNotified('Đã sửa Lô nhập và kiểm tra lại.')
+        ->assertSee('3 slot')
+        ->assertSee('16/10/2026')
+        // Nội dung không phải dán lại: mẫu đã che vẫn là hai Đơn vị hàng cũ.
+        ->assertSee('a@shop.test')
+        ->assertDontSee('pw1');
+
+    expect($batch->fresh())
+        ->document_number->toBe('HD-0916')
+        ->status->toBe(BatchStatus::Validated)
+        ->and($batch->lines[0]->fresh()->total_cost)->toBe(240_000);
+
+    Livewire::test(ViewBatch::class, ['record' => $batch->getRouteKey()])
+        ->callAction('confirm')
+        ->assertHasNoActionErrors()
+        // Lô nhập đã xác nhận thì đóng: không còn sửa được nữa.
+        ->assertActionHidden('revise');
+
+    expect(StockUnit::orderBy('id')->get()->map(fn (StockUnit $unit) => [$unit->unit_cost, $unit->slot_count, $unit->expires_on?->toDateString()])->all())
+        ->toBe([[120_000, 3, '2026-10-16'], [120_000, 3, '2026-10-16']]);
+});
+
 it('Nhập kho bỏ Lô nhập chưa xác nhận từ panel', function () {
     $this->actingAs(staffMember(Role::NhapKho));
     $batch = app(BatchIntake::class)->submit($this->admin, new BatchDraft($this->supplier, CarbonImmutable::parse('2026-09-15'), [new BatchLineDraft($this->product, 1, 'AAAA-BBBB')]));

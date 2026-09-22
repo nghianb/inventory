@@ -154,13 +154,13 @@ Nửa công việc đưa hàng vào kho: làm việc với **Nhà cung cấp**, 
 _Avoid_: nhập kho (đó là tên **Vai trò**)
 
 **Lô nhập** (Batch):
-Một lần nhập hàng vào kho từ một **Nhà cung cấp**, gồm một hoặc nhiều **Dòng nhập**. Chỉ vào kho khi nhân viên xác nhận sau bước xem trước; ghi lại số dòng bị bỏ vì lỗi hoặc trùng.
+Một lần nhập hàng vào kho từ một **Nhà cung cấp**, gồm một hoặc nhiều **Dòng nhập**. Chỉ vào kho khi nhân viên xác nhận sau bước xem trước; ghi lại số dòng bị bỏ vì lỗi hoặc trùng. Khi còn Chờ xác nhận thì sửa được phần chứng từ và **Giá trị áp cho Đơn vị hàng** rồi kiểm tra lại, nhưng nội dung, **Nhà cung cấp** và **Sản phẩm** thì không (ADR 0007).
 
 **Dòng nhập** (Batch line):
 Phần của một **Lô nhập** dành cho đúng một **Sản phẩm**: một file hoặc một danh sách dán, kèm **Giá trị áp cho Đơn vị hàng** của các **Đơn vị hàng** trong đó.
 
 **Giá trị áp cho Đơn vị hàng** (Unit values):
-**Số slot**, **Hạn sử dụng** và **Giá vốn** mà mỗi **Đơn vị hàng** nhận khi vào kho. Quyết định theo ba tầng, tầng sau thắng tầng trước: **Sản phẩm** (chỉ Số slot), **Dòng nhập**, rồi cột tuỳ chọn trong file nhập, ghi đè cho riêng từng dòng. Danh sách dán không có tầng file, nên mọi Đơn vị hàng của một Dòng nhập nhận cùng một bộ giá trị. Nhân viên thấy giá trị đã chốt ở màn xem trước, không phải tự suy ra luật.
+**Số slot**, **Hạn sử dụng** và **Giá vốn** mà mỗi **Đơn vị hàng** nhận khi vào kho. Quyết định theo ba tầng, tầng sau thắng tầng trước: **Sản phẩm** (chỉ Số slot), **Dòng nhập**, rồi cột tuỳ chọn trong file nhập, ghi đè cho riêng từng dòng. Danh sách dán không có tầng file, nên mọi Đơn vị hàng của một Dòng nhập nhận cùng một bộ giá trị. Nhân viên thấy giá trị đã chốt ở màn xem trước, không phải tự suy ra luật, và sửa lại được ngay tại đó khi **Lô nhập** còn Chờ xác nhận (ADR 0007).
 _Avoid_: giá trị ghi đè, giá trị mặc định của Dòng nhập
 
 **Huỷ nhập** (Import reversal):
@@ -254,3 +254,4 @@ Quản trị ghi lại một lần **Giao hàng** đã thực sự xảy ra như
 - "loại sản phẩm" từng nghĩa là **Mã dùng một lần** hay **Tài khoản**. Đã chốt: tách làm hai. **Dạng hàng** là hàng nằm trong kho dưới hình thức nào, **Loại sản phẩm** là khuôn khai **Trường nội dung** dùng chung cho nhiều **Sản phẩm**. Câu hỏi "sản phẩm này loại gì?" từ nay trả lời bằng tên Loại sản phẩm, không phải Mã dùng một lần hay Tài khoản.
 - Có **Loại sản phẩm** rồi thì dễ tưởng sửa Loại là sửa được mọi **Sản phẩm** thuộc nó. Đã chốt: chỉ thêm trường tuỳ chọn và đổi tên hiển thị mới áp xuống; mọi thay đổi chạm vào dữ liệu đã lưu (kiểu trường, cờ nhạy cảm, **Khoá chống trùng**, chuẩn hoá, **Dạng hàng**, xoá trường) bị từ chối trọn gói khi Loại đã có Sản phẩm có hàng, chứ không áp cho những Sản phẩm áp được (ADR 0004). Hệ quả cố ý: một Sản phẩm chưa có hàng vẫn bị chặn vì Sản phẩm anh em cùng Loại đã có hàng.
 - **Sản phẩm** dùng chung **Trường nội dung** nhưng cần hướng dẫn kích hoạt riêng. Đã chốt: chỉ **Mẫu giao hàng** được Sản phẩm ghi đè, vì nó chi phối văn bản gửi khách chứ không chi phối dữ liệu đã lưu; mọi khai báo khác của **Loại sản phẩm** thì Sản phẩm không lệch được.
+- "**Lô nhập** không sửa được" từng hiểu là bất biến ngay từ lúc gửi đi kiểm tra. Đã chốt: bất biến tính từ lúc Xác nhận; khi còn Chờ xác nhận thì phần chứng từ và **Giá trị áp cho Đơn vị hàng** sửa được rồi kiểm tra lại, còn nội dung, **Nhà cung cấp** và **Sản phẩm** thì không, vì đổi chúng là một Lô nhập khác chứ không phải một lần sửa (ADR 0007).
