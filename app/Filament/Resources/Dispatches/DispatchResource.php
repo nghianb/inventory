@@ -80,12 +80,11 @@ class DispatchResource extends Resource
         // Giao thêm: Thông tin đơn lấy từ phiếu cũ, chỉ đọc.
         $additional = fn (mixed $livewire): bool => $livewire instanceof CreateDispatch && $livewire->isAdditional();
 
-        return $schema->components([
+        return $schema->columns(1)->components([
             Callout::make('Phiếu xuất chưa hợp lệ')
                 ->danger()
                 ->description(fn (mixed $livewire): ?HtmlString => $livewire instanceof CreateDispatch ? self::problemList($livewire->problems) : null)
-                ->visible(fn (mixed $livewire): bool => $livewire instanceof CreateDispatch && $livewire->problems !== [])
-                ->columnSpanFull(),
+                ->visible(fn (mixed $livewire): bool => $livewire instanceof CreateDispatch && $livewire->problems !== []),
             Section::make('Thông tin đơn')
                 ->description(fn (mixed $livewire): ?string => $additional($livewire) ? 'Giao thêm vào phiếu này; không sửa được ở đây.' : null)
                 ->disabled($additional)
@@ -171,7 +170,7 @@ class DispatchResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(1)->components([
             Section::make('Phiếu xuất')
                 ->columns(3)
                 ->schema([
@@ -218,8 +217,7 @@ class DispatchResource extends Resource
                     TextEntry::make('kind')->badge(),
                     TextEntry::make('quantity'),
                     TextEntry::make('sale_price')->placeholder('Chưa có'),
-                ])
-                ->columnSpanFull(),
+                ]),
             // Phiếu Đang giữ chưa có Lần giao nào; đây là chỗ duy nhất trong panel thấy hàng nào
             // đang bị phiếu này giam.
             RepeatableEntry::make('held_slots')
@@ -236,16 +234,13 @@ class DispatchResource extends Resource
                 ->schema([
                     TextEntry::make('product'),
                     TextEntry::make('unit'),
-                ])
-                ->columnSpanFull(),
+                ]),
             Livewire::make(DispatchDeliveries::class, fn (Dispatch $record): array => ['record' => $record])
-                ->key('deliveries')
-                ->columnSpanFull(),
+                ->key('deliveries'),
             // Chỉ Quản trị: widget tự chặn ở mount, ẩn ở đây để vai trò khác không thấy cả tiêu đề.
             Livewire::make(DispatchRevealLogEntries::class, fn (Dispatch $record): array => ['record' => $record])
                 ->key('reveal-log-entries')
-                ->visible(fn (): bool => DispatchRevealLogEntries::canView())
-                ->columnSpanFull(),
+                ->visible(fn (): bool => DispatchRevealLogEntries::canView()),
             Section::make('Lịch sử sửa phiếu')
                 ->description('Ai sửa, khi nào, giá trị cũ → mới. Tách khỏi Sổ biến động kho.')
                 ->schema([
@@ -273,8 +268,7 @@ class DispatchResource extends Resource
                             TextEntry::make('old')->placeholder('Trống'),
                             TextEntry::make('new')->placeholder('Trống'),
                         ]),
-                ])
-                ->columnSpanFull(),
+                ]),
         ]);
     }
 

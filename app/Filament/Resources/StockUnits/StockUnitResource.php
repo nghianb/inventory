@@ -77,7 +77,7 @@ class StockUnitResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(1)->components([
             Section::make('Đơn vị hàng')
                 ->columns(3)
                 ->schema([
@@ -150,8 +150,7 @@ class StockUnitResource extends Resource
                             TextEntry::make('delivered_at'),
                             TextEntry::make('defect_report')->badge()->placeholder('Chưa có Báo lỗi'),
                         ]),
-                ])
-                ->columnSpanFull(),
+                ]),
         ]);
     }
 

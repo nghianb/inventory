@@ -55,7 +55,7 @@ class SalesChannelResource extends Resource
     {
         $isApi = fn (Get $get): bool => $get('type') === SalesChannelType::Api->value;
 
-        return $schema->components([
+        return $schema->columns(1)->components([
             TextInput::make('name')
                 ->label('Tên')
                 ->helperText('Ví dụ Shopee, Facebook, Zalo, Website.')

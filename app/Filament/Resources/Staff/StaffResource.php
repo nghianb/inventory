@@ -53,7 +53,7 @@ class StaffResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(1)->components([
             TextInput::make('name')
                 ->label('Tên')
                 ->required()

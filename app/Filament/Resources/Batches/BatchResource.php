@@ -375,9 +375,9 @@ class BatchResource extends Resource
         $chuaVaoKho = fn (Batch $record): bool => $record->status === BatchStatus::Validated;
         $daVaoKho = fn (Batch $record): bool => $record->status === BatchStatus::Confirmed;
 
-        // Một cột: infolist mặc định là grid 2 cột, nên thiếu dòng này thì mọi khối cấp trên xếp
-        // cặp hai-cái-một-hàng thay vì xếp dọc full-width — đúng lý do bản cũ phải gắn
-        // columnSpanFull() lên RepeatableEntry.
+        // Một cột ở gốc như mọi schema resource khác; lý do và hàng rào ở
+        // tests/Feature/SchemaLayoutTest.php. Thiếu dòng này là bản cũ phải gắn columnSpanFull()
+        // lên từng RepeatableEntry.
         return $schema->columns(1)->components([
             // Job pha 1 chạy ngoài request, nên màn xem tự hỏi lại cho tới khi có kết quả: nhân
             // viên không phải tự đoán lúc nào xong mà bấm lại. Kho chạy trên một node (ADR 0005)

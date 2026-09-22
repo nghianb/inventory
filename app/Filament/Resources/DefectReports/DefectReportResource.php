@@ -53,7 +53,7 @@ class DefectReportResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(1)->components([
             Section::make('Báo lỗi')
                 ->columns(3)
                 ->schema([
@@ -192,8 +192,7 @@ class DefectReportResource extends Resource
                     TextEntry::make('status')->badge(),
                     TextEntry::make('description'),
                     TextEntry::make('note')->placeholder('—'),
-                ])
-                ->columnSpanFull(),
+                ]),
         ]);
     }
 
