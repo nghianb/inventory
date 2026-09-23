@@ -48,7 +48,7 @@ class ApiKeyResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(1)->components([
             Select::make('sales_channel_id')
                 ->label('Kênh bán')
                 ->options(fn (): array => SalesChannel::query()

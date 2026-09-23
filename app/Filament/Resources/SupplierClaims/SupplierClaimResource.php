@@ -58,7 +58,7 @@ class SupplierClaimResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(1)->components([
             Select::make('supplier_id')
                 ->label('Nhà cung cấp')
                 ->options(fn (): array => Supplier::query()->orderBy('name')->pluck('name', 'id')->all())
@@ -74,7 +74,7 @@ class SupplierClaimResource extends Resource
             Textarea::make('note')
                 ->label('Ghi chú')
                 ->rows(2),
-        ])->columns(1);
+        ]);
     }
 
     /**
@@ -108,7 +108,7 @@ class SupplierClaimResource extends Resource
 
     public static function infolist(Schema $schema): Schema
     {
-        return $schema->components([
+        return $schema->columns(1)->components([
             Section::make('Khiếu nại')
                 ->columns(3)
                 ->schema([
@@ -165,8 +165,7 @@ class SupplierClaimResource extends Resource
                         ->url(fn (int $state): string => BatchResource::getUrl('view', ['record' => $state])),
                     TextEntry::make('received_on'),
                     TextEntry::make('status')->badge(),
-                ])
-                ->columnSpanFull(),
+                ]),
         ]);
     }
 
