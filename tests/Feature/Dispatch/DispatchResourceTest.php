@@ -368,6 +368,24 @@ it('tìm Phiếu xuất theo mã đơn ngoài, khách, Kênh bán, người tạ
         ->assertCanNotSeeTableRecords([$first, $second]);
 });
 
+it('lọc Phiếu xuất theo Trạng thái', function () {
+    $manual = app(ManualDispatch::class);
+    $completed = $manual->create($this->seller, new DispatchDraft($this->shopee, 'SP-001', [new DispatchLineDraft($this->steam, 1)]));
+    $cancelled = $manual->create($this->seller, new DispatchDraft($this->zalo, 'ZL-001', [new DispatchLineDraft($this->steam, 1)]));
+    DB::table('dispatches')->where('id', $cancelled->id)->update(['status' => DispatchStatus::Cancelled->value]);
+    $this->actingAs($this->seller);
+
+    Livewire::test(ListDispatches::class)
+        ->filterTable('status', DispatchStatus::Completed->value)
+        ->assertCanSeeTableRecords([$completed])
+        ->assertCanNotSeeTableRecords([$cancelled])
+        ->filterTable('status', DispatchStatus::Cancelled->value)
+        ->assertCanSeeTableRecords([$cancelled])
+        ->assertCanNotSeeTableRecords([$completed])
+        ->filterTable('status', DispatchStatus::Holding->value)
+        ->assertCountTableRecords(0);
+});
+
 it('tìm theo Khoá chống trùng từ danh sách Phiếu xuất: trả lần giao và phiếu, không hiện nội dung, không ghi Nhật ký xem mã', function () {
     app(ManualDispatch::class)->create($this->admin, new DispatchDraft($this->shopee, 'SP-001', [new DispatchLineDraft($this->steam, 1)]));
     $this->actingAs($this->seller);

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchStatus;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -46,6 +47,20 @@ class Batch extends Model
             'status' => BatchStatus::class,
             'confirmed_at' => 'immutable_datetime',
         ];
+    }
+
+    /**
+     * Lô nhập đang chờ nhân viên xác nhận và **còn cứu được**: quá hạn xác nhận thì nội dung tạm đã
+     * mất, phải nhập lại từ đầu. Không lọc thẳng `status = Validated` được vì
+     * {@see BatchIntake::purgeExpired()} là job chạy định kỳ, nên giữa hai lần chạy vẫn còn Lô nhập
+     * quá hạn thật mà cột `status` chưa kịp đổi.
+     *
+     * @param  EloquentBuilder<Batch>  $query
+     */
+    public function scopeAwaitingConfirmation(EloquentBuilder $query): void
+    {
+        $query->where('status', BatchStatus::Validated)
+            ->where('created_at', '>=', BatchIntake::staleCutoff());
     }
 
     /**

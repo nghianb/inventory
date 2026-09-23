@@ -132,6 +132,10 @@ class StockReportPage extends Page implements HasTable
                     ->label('Sắp hết')
                     ->toggle()
                     ->query(fn (Builder $query): Builder => $query),
+                Filter::make('defective')
+                    ->label('Có Tồn lỗi')
+                    ->toggle()
+                    ->query(fn (Builder $query): Builder => $query),
                 Filter::make('expiring')
                     ->schema([
                         TextInput::make('days')
@@ -181,6 +185,7 @@ class StockReportPage extends Page implements HasTable
             lowStockOnly: (bool) ($filters['low_stock']['isActive'] ?? false),
             expiringWithinDays: is_numeric($days) ? max(0, min(StockReportFilter::MAX_EXPIRING_DAYS, (int) $days)) : StockReportFilter::DEFAULT_EXPIRING_DAYS,
             expiringOnly: (bool) ($filters['expiring']['only'] ?? false),
+            defectiveOnly: (bool) ($filters['defective']['isActive'] ?? false),
         );
     }
 }

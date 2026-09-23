@@ -173,6 +173,27 @@ it('mỗi Sản phẩm một dòng, đếm theo Slot từng cột, kèm số Đ�
     ]);
 });
 
+it('tổng cho ô số trên Tổng quan cộng đúng các dòng, và đi theo bộ lọc', function () {
+    // Netflix 2 + Steam 1 Tồn bán được; Tồn lỗi 3 Slot của d; chỉ Netflix bị cảnh báo sắp hết.
+    expect($this->report->totals($this->admin, new StockReportFilter))
+        ->sellableSlots->toBe(3)
+        ->defectiveSlots->toBe(3)
+        ->lowStockProducts->toBe(1);
+
+    // Cùng bộ lọc thì tổng phải khớp các dòng mà bảng đang hiện.
+    $filter = new StockReportFilter(productIds: [$this->steam->id]);
+    expect($this->report->totals($this->admin, $filter))
+        ->sellableSlots->toBe(1)
+        ->defectiveSlots->toBe(0)
+        ->lowStockProducts->toBe(0);
+});
+
+it('Bán hàng lấy được tổng; nhân viên không có vai trò thì không', function () {
+    expect($this->report->totals($this->seller, new StockReportFilter)->sellableSlots)->toBe(3);
+
+    expect(fn () => $this->report->totals(staffMember(), new StockReportFilter))->toThrow(MissingRole::class);
+});
+
 it('Tồn bán được dùng chung định nghĩa với form xuất kho', function () {
     $rows = collect($this->report->rows($this->admin, new StockReportFilter))->keyBy('productId');
     $stock = app(SellableStock::class);

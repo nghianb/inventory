@@ -20,6 +20,9 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class StockAlerts extends TableWidget
 {
+    // Dưới các ô số: ô trả lời "còn bao nhiêu", bảng trả lời "cụ thể cái nào".
+    protected static ?int $sort = 50;
+
     protected int|string|array $columnSpan = 'full';
 
     public static function canView(): bool

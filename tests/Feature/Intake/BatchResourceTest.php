@@ -2,6 +2,7 @@
 
 use App\Filament\Resources\Batches\BatchResource;
 use App\Filament\Resources\Batches\Pages\CreateBatch;
+use App\Filament\Resources\Batches\Pages\ListBatches;
 use App\Filament\Resources\Batches\Pages\ViewBatch;
 use App\Filament\Resources\StockUnits\Pages\ListStockUnits;
 use App\Filament\Resources\StockUnits\StockUnitResource;
@@ -355,3 +356,28 @@ it('danh sách Đơn vị hàng hiện nội dung dạng che; Bán hàng không 
     'Nhập kho' => [Role::NhapKho, true],
     'Bán hàng' => [Role::BanHang, false],
 ]);
+
+it('lọc Lô nhập theo Trạng thái', function () {
+    $intake = app(BatchIntake::class);
+    $line = fn (string $content) => new BatchLineDraft($this->product, 95_000, $content);
+    $draft = fn (string $content) => new BatchDraft(
+        supplier: $this->supplier,
+        receivedOn: CarbonImmutable::parse('2026-09-15'),
+        lines: [$line($content)],
+    );
+
+    $confirmed = $intake->confirm($this->admin, $intake->submit($this->admin, $draft('AAAA-0001')));
+    $awaiting = $intake->submit($this->admin, $draft('AAAA-0002'));
+    $this->actingAs($this->admin);
+
+    Livewire::test(ListBatches::class)
+        ->assertCanSeeTableRecords([$confirmed, $awaiting])
+        ->filterTable('status', BatchStatus::Validated->value)
+        ->assertCanSeeTableRecords([$awaiting])
+        ->assertCanNotSeeTableRecords([$confirmed])
+        ->filterTable('status', BatchStatus::Confirmed->value)
+        ->assertCanSeeTableRecords([$confirmed])
+        ->assertCanNotSeeTableRecords([$awaiting])
+        ->filterTable('status', BatchStatus::Expired->value)
+        ->assertCountTableRecords(0);
+});
