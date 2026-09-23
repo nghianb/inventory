@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ApiKeys;
 
 use App\Filament\Resources\ApiKeys\Pages\ManageApiKeys;
+use App\Filament\Support\Clipboard;
 use App\Filament\Support\InventoryAction;
 use App\Filament\Support\NavGroup;
 use App\Inventory\Api\ApiKeys;
@@ -14,14 +15,18 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\FontFamily;
+use Filament\Support\Enums\Width;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\HtmlString;
 use UnitEnum;
 
 /**
@@ -30,6 +35,12 @@ use UnitEnum;
  */
 class ApiKeyResource extends Resource
 {
+    /**
+     * Tên action của modal hiện khoá vừa cấp. {@see ManageApiKeys::newApiKeySecretAction()} khai nó
+     * trên trang để Filament mount được theo tên.
+     */
+    public const SECRET_ACTION = 'newApiKeySecret';
+
     protected static ?string $model = ApiKey::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedKey;
@@ -106,8 +117,8 @@ class ApiKeyResource extends Resource
                     ->requiresConfirmation()
                     ->modalDescription('Cấp khoá mới cho kênh này; khoá cũ vẫn dùng được cho tới khi bạn thu hồi. Khoá mới chỉ hiện một lần.')
                     ->visible(fn (ApiKey $record): bool => ! $record->isRevoked() && InventoryAction::actor()->can('create', ApiKey::class))
-                    ->action(function (Action $action, ApiKey $record, ApiKeys $keys): void {
-                        self::announce(InventoryAction::attempt($action, fn (): IssuedApiKey => $keys->rotate(InventoryAction::actor(), $record)));
+                    ->action(function (Action $action, ApiKey $record, ApiKeys $keys, ManageApiKeys $livewire): void {
+                        self::announce($livewire, InventoryAction::attempt($action, fn (): IssuedApiKey => $keys->rotate(InventoryAction::actor(), $record)));
                     }),
                 Action::make('revoke')
                     ->label('Thu hồi')
@@ -125,21 +136,50 @@ class ApiKeyResource extends Resource
     }
 
     /**
-     * Hiện giá trị khoá đúng một lần. Thông báo ở lại cho tới khi Quản trị tự đóng, để không lỡ tay
-     * mất khoá vừa cấp.
+     * Hiện giá trị khoá đúng một lần, thay cho modal vừa tạo hoặc vừa xoay. Gọi được từ cả header
+     * action lẫn record action vì stack mount là của trang.
      */
-    public static function announce(IssuedApiKey $issued): void
+    public static function announce(ManageApiKeys $livewire, IssuedApiKey $issued): void
     {
-        Notification::make()
-            ->success()
-            ->persistent()
-            ->title('Khoá API mới — chỉ hiện một lần')
-            ->body(new HtmlString(sprintf(
-                'Kênh bán %s. Chép ngay và cất kỹ; kho chỉ lưu hash nên không xem lại được.<br><code>%s</code>',
-                e($issued->key->salesChannel->name),
-                e($issued->secret),
-            )))
-            ->send();
+        $livewire->replaceMountedAction(self::SECRET_ACTION, [
+            'secret' => $issued->secret,
+            'channel' => $issued->key->salesChannel->name,
+            'label' => $issued->key->label,
+        ]);
+    }
+
+    /**
+     * Modal khoá vừa cấp: kho lưu hash nên đây là lần duy nhất đọc được giá trị. Không đóng được
+     * bằng Esc, bằng click ra ngoài hay bằng nút X — lối ra duy nhất là nút đã-lưu, để không mất
+     * khoá vì một cú bấm lạc.
+     */
+    public static function secretAction(): Action
+    {
+        return Action::make(self::SECRET_ACTION)
+            ->modalHeading('Khoá API mới — chỉ hiện một lần')
+            ->modalDescription(fn (array $arguments): string => $arguments['label'] === null
+                ? "Kênh bán {$arguments['channel']}"
+                : "Kênh bán {$arguments['channel']} · Tên gợi nhớ \"{$arguments['label']}\"")
+            ->modalWidth(Width::TwoExtraLarge)
+            ->modalCloseButton(false)
+            ->closeModalByClickingAway(false)
+            ->closeModalByEscaping(false)
+            ->schema(fn (Schema $schema, array $arguments): Schema => $schema->columns(1)->components([
+                Callout::make('Kho chỉ lưu hash của khoá. Đóng cửa sổ này là không xem lại được; muốn khoá khác phải Xoay khoá và sửa lại cấu hình website.')
+                    ->warning(),
+                TextEntry::make('secret')
+                    ->label('Khoá API')
+                    ->state($arguments['secret'])
+                    ->fontFamily(FontFamily::Mono),
+                Actions::make([
+                    Action::make('copySecret')
+                        ->label('Copy khoá')
+                        ->icon(Heroicon::OutlinedClipboardDocument)
+                        ->alpineClickHandler(Clipboard::copy($arguments['secret'], 'Đã copy Khoá API.')),
+                ]),
+            ]))
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Tôi đã lưu khoá');
     }
 
     public static function getPages(): array
