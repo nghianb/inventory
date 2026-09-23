@@ -35,6 +35,8 @@ class StockReport
 
     private const EXPIRING = 'COALESCE(stock.expiring_slots, 0) > 0';
 
+    private const DEFECTIVE = 'COALESCE(stock.defective_slots, 0) > 0';
+
     public function __construct(private RoleGate $roles) {}
 
     public function canView(User $user): bool
@@ -90,6 +92,7 @@ class StockReport
                 ->where('batches.status', BatchStatus::Confirmed->value)))
             ->when($filter->lowStockOnly, fn (Builder $query) => $query->whereRaw(self::LOW_STOCK))
             ->when($filter->expiringOnly, fn (Builder $query) => $query->whereRaw(self::EXPIRING))
+            ->when($filter->defectiveOnly, fn (Builder $query) => $query->whereRaw(self::DEFECTIVE))
             ->when($filter->alertsOnly, fn (Builder $query) => $query->where(fn (Builder $alerts) => $alerts
                 ->whereRaw(self::LOW_STOCK)
                 ->orWhereRaw(self::EXPIRING)));
@@ -108,6 +111,28 @@ class StockReport
             ->get()
             ->map(fn (Product $product): StockReportRow => StockReportRow::fromProduct($product))
             ->all());
+    }
+
+    /**
+     * Tổng của cả báo cáo, cho ô số trên trang Tổng quan. Đi qua đúng {@see query()} mà bảng đang
+     * dùng, nên ô số và bảng không bao giờ nói hai con số khác nhau.
+     *
+     * @throws MissingRole
+     */
+    public function totals(User $actor, StockReportFilter $filter): StockReportTotals
+    {
+        $totals = DB::query()
+            ->fromSub($this->query($actor, $filter)->toBase(), 'stock_report')
+            ->selectRaw('COALESCE(SUM(sellable_slots), 0) AS sellable_slots')
+            ->selectRaw('COALESCE(SUM(defective_slots), 0) AS defective_slots')
+            ->selectRaw('COUNT(*) FILTER (WHERE low_stock) AS low_stock_products')
+            ->first();
+
+        return new StockReportTotals(
+            sellableSlots: (int) ($totals->sellable_slots ?? 0),
+            defectiveSlots: (int) ($totals->defective_slots ?? 0),
+            lowStockProducts: (int) ($totals->low_stock_products ?? 0),
+        );
     }
 
     /**

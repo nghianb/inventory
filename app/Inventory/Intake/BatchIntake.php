@@ -920,7 +920,12 @@ class BatchIntake
         }
     }
 
-    private static function staleCutoff(): CarbonImmutable
+    /**
+     * Mốc quá hạn xác nhận: Lô nhập chưa xác nhận tạo trước mốc này coi như đã mất nội dung tạm.
+     * Công khai để {@see Batch::scopeAwaitingConfirmation()} không chép lại phép tính — lệch hai bên
+     * là màn hình đếm một tập còn danh sách mở ra một tập khác.
+     */
+    public static function staleCutoff(): CarbonImmutable
     {
         return CarbonImmutable::now()->subHours((int) config('inventory.intake.pending_ttl_hours'));
     }

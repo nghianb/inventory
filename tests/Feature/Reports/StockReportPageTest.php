@@ -12,6 +12,8 @@ use App\Inventory\Intake\BatchDraft;
 use App\Inventory\Intake\BatchIntake;
 use App\Inventory\Intake\BatchLineDraft;
 use App\Inventory\Intake\ExpiryRule;
+use App\Inventory\Stock\StockDefect;
+use App\Models\StockUnit;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Database\Seeders\RoleSeeder;
@@ -155,4 +157,16 @@ it('xuất CSV và XLSX tải file theo ngày', function () {
         ->assertFileDownloaded('bao-cao-ton-kho-2026-09-15.csv')
         ->callAction('exportXlsx')
         ->assertFileDownloaded('bao-cao-ton-kho-2026-09-15.xlsx');
+});
+
+it('lọc Sản phẩm đang có Tồn lỗi', function () {
+    $steamUnit = StockUnit::query()->where('product_id', $this->steam->id)->sole();
+    app(StockDefect::class)->markDefective($this->admin, $steamUnit, 'Nhà cung cấp thu hồi');
+    $this->actingAs($this->stocker);
+
+    Livewire::test(StockReportPage::class)
+        ->assertCanSeeTableRecords([$this->netflix, $this->steam, $this->spotify])
+        ->filterTable('defective')
+        ->assertCanSeeTableRecords([$this->steam])
+        ->assertCanNotSeeTableRecords([$this->netflix, $this->spotify]);
 });

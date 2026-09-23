@@ -885,3 +885,20 @@ it('Nhà cung cấp và Sản phẩm đã có Lô nhập, kể cả chưa xác n
         ->and($this->supplier->fresh())->not->toBeNull()
         ->and($product->fresh())->not->toBeNull();
 });
+
+it('Lô nhập Chờ xác nhận chỉ gồm lô còn trong hạn xác nhận, kể cả khi job dọn chưa chạy', function () {
+    $batch = $this->intake->submit($this->admin, pasteBatch(steamWallet(), 'AAAA'));
+
+    expect($batch->status)->toBe(BatchStatus::Validated)
+        ->and(Batch::query()->awaitingConfirmation()->pluck('id')->all())->toBe([$batch->id]);
+
+    // Quá hạn thật nhưng purgeExpired() chưa chạy: cột status vẫn Chờ xác nhận, lô thì đã hết cứu.
+    $this->travel(25)->hours();
+
+    expect($batch->fresh()->status)->toBe(BatchStatus::Validated)
+        ->and(Batch::query()->awaitingConfirmation()->count())->toBe(0);
+
+    $this->intake->purgeExpired();
+
+    expect($batch->fresh()->status)->toBe(BatchStatus::Expired);
+});

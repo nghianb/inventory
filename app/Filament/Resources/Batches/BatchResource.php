@@ -52,6 +52,8 @@ use Filament\Support\Enums\TextSize;
 use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\DB;
 use stdClass;
@@ -782,6 +784,16 @@ class BatchResource extends Resource
                     ->formatStateUsing(fn (BatchStatus $state): string => $state->label()),
                 TextColumn::make('creator.name')
                     ->label('Người tạo'),
+            ])
+            ->filters([
+                SelectFilter::make('status')
+                    ->label('Trạng thái')
+                    ->options(collect(BatchStatus::cases())->mapWithKeys(fn (BatchStatus $status): array => [$status->value => $status->label()])->all()),
+                // Hẹp hơn Trạng thái = Chờ xác nhận: bỏ các lô đã quá hạn thật mà job dọn chưa chạy.
+                // `$query` không khai kiểu vì Larastan không thấy scope của model trên Builder chung.
+                Filter::make('awaiting_confirmation')
+                    ->label('Chờ xác nhận, còn trong hạn')
+                    ->query(fn ($query) => $query->awaitingConfirmation()),
             ])
             ->modifyQueryUsing(fn ($query) => $query->with(['supplier', 'creator', 'lines.product']))
             ->recordActions([

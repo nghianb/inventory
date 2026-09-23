@@ -13,8 +13,6 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Widgets\AccountWidget;
-use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -45,11 +43,9 @@ class AdminPanelProvider extends PanelProvider
             ])
             // Thứ tự nhóm lấy theo thứ tự case của enum.
             ->navigationGroups(NavGroup::class)
+            // Không đăng ký widget mặc định của Filament: sau khi Tổng quan có widget của kho, ô tài
+            // khoản và ô phiên bản Filament là hai thứ duy nhất trên đó không nói gì về kho.
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
-            ->widgets([
-                AccountWidget::class,
-                FilamentInfoWidget::class,
-            ])
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

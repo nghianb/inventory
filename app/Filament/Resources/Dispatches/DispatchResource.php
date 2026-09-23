@@ -305,6 +305,9 @@ class DispatchResource extends Resource
                     ->sortable(),
             ])
             ->filters([
+                SelectFilter::make('status')
+                    ->label('Trạng thái')
+                    ->options(collect(DispatchStatus::cases())->mapWithKeys(fn (DispatchStatus $status): array => [$status->value => $status->label()])->all()),
                 SelectFilter::make('sales_channel_id')
                     ->label('Kênh bán')
                     ->relationship('salesChannel', 'name'),

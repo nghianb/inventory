@@ -17,6 +17,7 @@ final readonly class StockReportFilter
      * @param  bool  $lowStockOnly  chỉ Sản phẩm sắp hết
      * @param  int  $expiringWithinDays  N của cột Hết hạn trong N ngày
      * @param  bool  $expiringOnly  chỉ Sản phẩm có Slot hết hạn trong N ngày
+     * @param  bool  $defectiveOnly  chỉ Sản phẩm đang có Tồn lỗi
      * @param  bool  $alertsOnly  chỉ Sản phẩm sắp hết hoặc có Slot hết hạn trong N ngày (widget cảnh báo)
      */
     public function __construct(
@@ -25,6 +26,7 @@ final readonly class StockReportFilter
         public bool $lowStockOnly = false,
         public int $expiringWithinDays = self::DEFAULT_EXPIRING_DAYS,
         public bool $expiringOnly = false,
+        public bool $defectiveOnly = false,
         public bool $alertsOnly = false,
     ) {}
 }
