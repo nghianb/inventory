@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Dispatches\Pages;
 
 use App\Filament\Resources\Dispatches\DispatchResource;
+use App\Filament\Support\Clipboard;
 use App\Filament\Support\InventoryAction;
 use App\Inventory\Dispatch\DeliveredContent;
 use App\Inventory\Dispatch\DeliveryTemplate;
@@ -25,7 +26,6 @@ use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontFamily;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\HtmlString;
-use Illuminate\Support\Js;
 use Livewire\Attributes\Locked;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
@@ -124,13 +124,13 @@ class DispatchResult extends Page
                         ->action(function (Action $action, ContentReveal $reveal): void {
                             $text = InventoryAction::attempt($action, fn (): string => $reveal->copyAllDispatchResult(InventoryAction::actor(), $this->dispatchRecord()));
 
-                            $this->js(self::copyHandler($text, sprintf('Đã copy %s Slot.', DispatchResource::count(count($this->delivered)))));
+                            $this->js(Clipboard::copy($text, sprintf('Đã copy %s Slot.', DispatchResource::count(count($this->delivered)))));
                         })
                         ->visible($this->delivered !== [])
                     : Action::make('copyAll')
                         ->label('Copy tất cả')
                         ->icon(Heroicon::OutlinedClipboardDocument)
-                        ->alpineClickHandler(self::copyHandler($this->copyAll, 'Đã copy tất cả Slot.'))
+                        ->alpineClickHandler(Clipboard::copy($this->copyAll, 'Đã copy tất cả Slot.'))
                         ->visible($this->delivered !== []),
                 ...array_map(fn (DispatchResultFormat $format): Action => Action::make("download{$format->label()}")
                     ->label("Tải {$format->label()}")
@@ -168,7 +168,7 @@ class DispatchResult extends Page
                         ->icon(Heroicon::OutlinedClipboard)
                         ->color('gray')
                         ->size('sm')
-                        ->alpineClickHandler(self::copyHandler((string) $slot['message'], sprintf('Đã copy Slot #%d.', $index + 1))),
+                        ->alpineClickHandler(Clipboard::copy((string) $slot['message'], sprintf('Đã copy Slot #%d.', $index + 1))),
                 ])
                 ->schema([
                     TextEntry::make("slot{$index}")
@@ -208,18 +208,6 @@ class DispatchResult extends Page
                 TextEntry::make('warranty_ends_on'),
             ])
             ->columnSpanFull();
-    }
-
-    /**
-     * Copy vào clipboard ở trình duyệt.
-     */
-    private static function copyHandler(string $text, string $notification): string
-    {
-        return sprintf(
-            'window.navigator.clipboard.writeText(%s).then(() => new FilamentNotification().title(%s).success().send())',
-            Js::from($text),
-            Js::from($notification),
-        );
     }
 
     private function dispatchRecord(): Dispatch
